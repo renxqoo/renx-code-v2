@@ -49,11 +49,17 @@ function createRuntime(
       safeError: async (callback, error) => callback?.(error),
     },
     messages: {
-      compactIfNeeded: async () => [],
-      estimateContextUsage: () => ({
-        contextTokens: 1,
-        contextLimitTokens: 10,
-        contextUsagePercent: 10,
+      prepareForLlmStep: async () => ({
+        messageCountBeforeCompaction: 1,
+        compaction: {
+          status: 'skipped',
+          removedMessageIds: [],
+        },
+        contextUsage: {
+          contextTokens: 1,
+          contextLimitTokens: 10,
+          contextUsagePercent: 10,
+        },
       }),
       mergeLLMConfig: (config) => config,
     },
@@ -258,5 +264,114 @@ describe('run-loop', () => {
       data: { errorCode: 'AGENT_ABORTED' },
     });
     expect(llmStage).not.toHaveBeenCalled();
+  });
+
+  it('drains pending user messages before the llm step and emits user_message events', async () => {
+    const lateUserMessage = createMessage('late-user');
+    const llmStage = vi.fn(async function* () {
+      return {
+        assistantMessage: {
+          messageId: 'assistant_after_late_user',
+          type: 'assistant-text',
+          role: 'assistant',
+          content: 'done',
+          timestamp: Date.now(),
+        } as Message,
+        toolCalls: [],
+      };
+    });
+    const runtime = createRuntime({
+      stages: {
+        llm: llmStage,
+        tools: async function* () {
+          throw new Error('not-used');
+        },
+      },
+    });
+    const state = createState();
+    state.input.pendingInput = {
+      takePendingMessages: vi.fn().mockResolvedValue([lateUserMessage]),
+      hasPendingMessages: vi.fn().mockResolvedValue(false),
+    };
+
+    const events = await collectEvents(runAgentLoop(runtime, state));
+
+    expect(events.map((event) => event.type)).toEqual(['user_message', 'progress', 'done']);
+    expect(events[0]).toMatchObject({
+      type: 'user_message',
+      data: {
+        message: lateUserMessage,
+        stepIndex: 1,
+      },
+    });
+    expect(state.messages.map((message) => message.content)).toEqual([
+      'hello',
+      'late-user',
+      'done',
+    ]);
+    expect(llmStage).toHaveBeenCalledOnce();
+  });
+
+  it('continues the loop instead of finishing when pending user input exists at stop time', async () => {
+    const llmStage = vi
+      .fn()
+      .mockImplementationOnce(async function* () {
+        return {
+          assistantMessage: {
+            messageId: 'assistant_1',
+            type: 'assistant-text',
+            role: 'assistant',
+            content: 'first',
+            timestamp: Date.now(),
+          } as Message,
+          toolCalls: [],
+        };
+      })
+      .mockImplementationOnce(async function* () {
+        return {
+          assistantMessage: {
+            messageId: 'assistant_2',
+            type: 'assistant-text',
+            role: 'assistant',
+            content: 'second',
+            timestamp: Date.now(),
+          } as Message,
+          toolCalls: [],
+        };
+      });
+
+    const runtime = createRuntime({
+      stages: {
+        llm: llmStage,
+        tools: async function* () {
+          throw new Error('not-used');
+        },
+      },
+    });
+    const state = createState();
+    state.input.pendingInput = {
+      takePendingMessages: vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([createMessage('follow-up-user')]),
+      hasPendingMessages: vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false),
+    };
+
+    const events = await collectEvents(runAgentLoop(runtime, state));
+
+    expect(events.map((event) => event.type)).toEqual([
+      'progress',
+      'user_message',
+      'progress',
+      'done',
+    ]);
+    expect(llmStage).toHaveBeenCalledTimes(2);
+    expect(events.at(-1)).toMatchObject({
+      type: 'done',
+      data: {
+        stepIndex: 2,
+        finishReason: 'stop',
+      },
+    });
   });
 });

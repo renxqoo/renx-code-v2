@@ -17,7 +17,7 @@ import type {
 import type { ReplySegmentType } from '../types/chat';
 
 type BuildAgentEventHandlersParams = {
-  turnId: number;
+  getTurnId: () => number;
   isCurrentRequest: () => boolean;
   appendSegment: (
     turnId: number,
@@ -35,7 +35,7 @@ const shouldShowEventLog = () => {
 };
 
 export const buildAgentEventHandlers = ({
-  turnId,
+  getTurnId,
   isCurrentRequest,
   appendSegment,
   appendEventLine,
@@ -53,6 +53,7 @@ export const buildAgentEventHandlers = ({
 
   const createStreamSegmentId = (type: 'thinking' | 'text') => {
     streamSegmentCursor += 1;
+    const turnId = getTurnId();
     return `${turnId}:${type}:${streamSegmentCursor}`;
   };
 
@@ -64,7 +65,7 @@ export const buildAgentEventHandlers = ({
         type,
       };
     }
-    appendSegment(turnId, activeTextSegment.id, type, text);
+    appendSegment(getTurnId(), activeTextSegment.id, type, text);
   };
 
   const breakTextDeltaContinuation = () => {
@@ -91,7 +92,7 @@ export const buildAgentEventHandlers = ({
     if (!showEvents) {
       return;
     }
-    appendEventLine(turnId, text);
+    appendEventLine(getTurnId(), text);
   };
 
   return {
@@ -115,6 +116,7 @@ export const buildAgentEventHandlers = ({
       breakTextDeltaContinuation();
       const mapped = formatToolStreamEvent(event);
       if (mapped.codeChunk && mapped.segmentKey) {
+        const turnId = getTurnId();
         appendSegment(turnId, `${turnId}:tool:${mapped.segmentKey}`, 'code', mapped.codeChunk);
       }
       if (
@@ -147,6 +149,7 @@ export const buildAgentEventHandlers = ({
         renderedToolUseIds.add(toolCallId);
       }
       const segmentSuffix = toolCallId ?? `anonymous_${++anonymousToolUseCounter}`;
+      const turnId = getTurnId();
       appendSegment(
         turnId,
         `${turnId}:tool-use:${segmentSuffix}`,
@@ -164,6 +167,7 @@ export const buildAgentEventHandlers = ({
       const toolCallId = readToolCallIdFromResult(event);
       const suppressOutput = Boolean(toolCallId && streamedToolCallIds.has(toolCallId));
       const segmentSuffix = toolCallId ?? `anonymous_${++anonymousToolResultCounter}`;
+      const turnId = getTurnId();
       appendSegment(
         turnId,
         `${turnId}:tool-result:${segmentSuffix}`,

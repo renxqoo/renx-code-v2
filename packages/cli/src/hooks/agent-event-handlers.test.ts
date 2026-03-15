@@ -15,7 +15,7 @@ const buildHarness = () => {
   const notes: string[] = [];
 
   const handlers = buildAgentEventHandlers({
-    turnId,
+    getTurnId: () => turnId,
     isCurrentRequest: () => true,
     appendSegment: (_turnId, segmentId, type, chunk, data) => {
       segments = appendToSegment(segments, segmentId, type, chunk, data);

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { BaseTool, ToolResult } from '../base-tool';
+import { BashTool } from '../bash';
 import { DefaultToolManager } from '../tool-manager';
 import {
   EmptyToolNameError,
@@ -410,6 +411,28 @@ describe('DefaultToolManager', () => {
     expect(result.output).toBe('run failed');
   });
 
+  it('reproduces uncaught bash policy parse errors from shouldConfirm', async () => {
+    const manager = new DefaultToolManager();
+    manager.registerTool(new BashTool());
+
+    const command = ["node - <<'NODE'", 'console.log(`${String(1)}`)', 'NODE'].join('\n');
+
+    await expect(
+      manager.execute(
+        {
+          id: 't8_bad_substitution',
+          type: 'function',
+          index: 0,
+          function: {
+            name: 'bash',
+            arguments: JSON.stringify({ command }),
+          },
+        },
+        createContext()
+      )
+    ).rejects.toThrow('Bad substitution: String');
+  });
+
   it('registerTool and getTools returns all tools', () => {
     const manager = new DefaultToolManager();
     manager.registerTool(new EchoTool());
@@ -420,16 +443,31 @@ describe('DefaultToolManager', () => {
     expect(tools.map((t) => t.name)).toEqual(['echo', 'confirm-echo']);
   });
 
-  it('toToolsSchema maps registered handlers to LLM tool schemas', () => {
+  it('registerTools registers multiple handlers in one call', () => {
+    const manager = new DefaultToolManager();
+
+    manager.registerTools([new EchoTool(), new ConfirmEchoTool()]);
+
+    expect(manager.getTools().map((tool) => tool.name)).toEqual(['echo', 'confirm-echo']);
+  });
+
+  it('getToolSchemas maps registered handlers to LLM tool schemas', () => {
     const manager = new DefaultToolManager();
     manager.registerTool(new EchoTool());
 
-    const schemas = manager.toToolsSchema();
+    const schemas = manager.getToolSchemas();
     expect(schemas).toHaveLength(1);
     expect(schemas[0]).toMatchObject({
       type: 'function',
       function: { name: 'echo' },
     });
+  });
+
+  it('toToolsSchema remains aligned with getToolSchemas', () => {
+    const manager = new DefaultToolManager();
+    manager.registerTool(new EchoTool());
+
+    expect(manager.toToolsSchema()).toEqual(manager.getToolSchemas());
   });
 
   it('getConcurrencyPolicy returns exclusive for unknown tool', () => {

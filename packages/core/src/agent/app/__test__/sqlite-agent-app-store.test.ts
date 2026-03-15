@@ -434,4 +434,66 @@ describe('SqliteAgentAppStore', () => {
     const dropped = await store.listDroppedMessages('exec_compact_conc');
     expect(dropped.map((record) => record.removedMessageId)).toEqual(['msg_drop_1', 'msg_drop_2']);
   });
+
+  it('stores pending runtime inputs in FIFO order and drains them atomically', async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'renx-app-sqlite-pending-'));
+    const dbPath = path.join(tempDir, 'agent.db');
+    store = new SqliteAgentAppStore(dbPath);
+
+    const now = Date.now();
+    await store.create({
+      executionId: 'exec_pending',
+      runId: 'exec_pending',
+      conversationId: 'conv_pending',
+      status: 'RUNNING',
+      createdAt: now,
+      updatedAt: now,
+      stepIndex: 1,
+    });
+
+    const pendingMessages: Message[] = [
+      {
+        messageId: 'msg_pending_1',
+        type: 'user',
+        role: 'user',
+        content: 'first',
+        timestamp: now + 1,
+      },
+      {
+        messageId: 'msg_pending_2',
+        type: 'user',
+        role: 'user',
+        content: 'second',
+        timestamp: now + 2,
+      },
+      {
+        messageId: 'msg_pending_3',
+        type: 'user',
+        role: 'user',
+        content: 'third',
+        timestamp: now + 3,
+      },
+    ];
+
+    for (const [index, message] of pendingMessages.entries()) {
+      await store.enqueuePendingInput({
+        executionId: 'exec_pending',
+        conversationId: 'conv_pending',
+        message,
+        createdAt: now + index + 1,
+      });
+    }
+
+    expect(await store.hasPendingInputs('exec_pending')).toBe(true);
+
+    const drained = await store.takePendingInputs('exec_pending');
+    expect(drained.map((message) => message.messageId)).toEqual([
+      'msg_pending_1',
+      'msg_pending_2',
+      'msg_pending_3',
+    ]);
+    expect(drained.map((message) => message.content)).toEqual(['first', 'second', 'third']);
+    expect(await store.hasPendingInputs('exec_pending')).toBe(false);
+    expect(await store.takePendingInputs('exec_pending')).toEqual([]);
+  });
 });

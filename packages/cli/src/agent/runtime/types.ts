@@ -47,6 +47,11 @@ export type AgentLoopEvent = {
   steps: number;
 };
 
+export type AgentUserMessageEvent = {
+  text: string;
+  stepIndex: number;
+};
+
 export type AgentStopEvent = {
   reason: string;
   message?: string;
@@ -84,6 +89,7 @@ export type AgentEventHandlers = {
   onToolResult?: (event: AgentToolResultEvent) => void;
   onStep?: (event: AgentStepEvent) => void;
   onLoop?: (event: AgentLoopEvent) => void;
+  onUserMessage?: (event: AgentUserMessageEvent) => void;
   onStop?: (event: AgentStopEvent) => void;
   onContextUsage?: (event: AgentContextUsageEvent) => void;
   onUsage?: (event: AgentUsageEvent) => void;

@@ -1,24 +1,31 @@
-import type {
-  AgentCallbacks,
-  AgentInput,
-  CompactionInfo,
-  ErrorDecision,
-  Message,
-  StreamEvent,
-} from '../types';
+import type { AgentCallbacks, AgentInput, ErrorDecision, Message, StreamEvent } from '../types';
 import type { Tool, ToolCall } from '../../providers';
 
-import { AgentAbortedError, type AgentError, type TimeoutBudgetExceededError } from './error';
+import type { AgentError, TimeoutBudgetExceededError } from './error';
 import type { LLMStreamResult } from './llm-stream-runtime';
 import type { AbortScope, TimeoutBudgetState } from './timeout-budget';
 import type { WriteBufferRuntime } from './write-file-session';
 import {
-  createNoopObservation,
   type AgentRunOutcome,
   type AgentRuntimeLifecycleHooks,
   type AgentRuntimeObservation,
   type RunLifecycleFinishContext,
 } from './runtime-hooks';
+import {
+  handleStepFailure,
+  hasPendingUserMessages,
+  prepareMessagesForStep,
+  resolvePreStepTerminalState,
+  type RunLoopProgressState,
+} from './run-loop-control';
+import { runLLMStage, runToolStage } from './run-loop-stages';
+
+export type CompactionExecutionResult = {
+  status: 'skipped' | 'applied' | 'failed';
+  removedMessageIds: string[];
+  reason?: string;
+  diagnostics?: unknown;
+};
 
 export type RunLoopState = {
   input: AgentInput;
@@ -49,20 +56,19 @@ export type RunLoopRuntime = {
     ) => Promise<ErrorDecision | void>;
   };
   messages: {
-    compactIfNeeded: (
+    prepareForLlmStep: (
       messages: Message[],
       tools?: Tool[],
       contextLimitTokens?: number
-    ) => Promise<string[]>;
-    estimateContextUsage: (
-      messages: Message[],
-      tools?: Tool[],
-      contextLimitTokens?: number
-    ) => {
-      contextTokens: number;
-      contextLimitTokens: number;
-      contextUsagePercent: number;
-    };
+    ) => Promise<{
+      messageCountBeforeCompaction: number;
+      compaction: CompactionExecutionResult;
+      contextUsage: {
+        contextTokens: number;
+        contextLimitTokens: number;
+        contextUsagePercent: number;
+      };
+    }>;
     mergeLLMConfig: (
       config: AgentInput['config'],
       tools?: AgentInput['tools'],
@@ -133,145 +139,6 @@ export type RunLoopRuntime = {
   hooks: AgentRuntimeLifecycleHooks;
 };
 
-async function* forwardEvents<T>(
-  generator: AsyncGenerator<StreamEvent, T, unknown>
-): AsyncGenerator<StreamEvent, T, unknown> {
-  // Helper for stage generators that emit stream events before returning a
-  // structured result. This lets the outer loop treat "streaming side effects"
-  // and "final stage result" as one logical operation.
-  for (;;) {
-    const next = await generator.next();
-    if (next.done) {
-      return next.value;
-    }
-    yield next.value as StreamEvent;
-  }
-}
-
-async function* runLLMStage(
-  runtime: RunLoopRuntime,
-  state: RunLoopState,
-  stepIndex: number
-): AsyncGenerator<StreamEvent, LLMStreamResult, unknown> {
-  // Stage-level observations wrap the entire LLM interaction, including stream
-  // consumption and post-stream validation, so latency/error metrics match the
-  // business step the agent actually reasons about.
-  const llmObservation =
-    (await runtime.hooks.onLLMStageStart?.({
-      callbacks: state.callbacks,
-      traceId: state.traceId,
-      parentSpanId: state.runObservation.spanId,
-      executionId: state.input.executionId,
-      stepIndex,
-      messageCount: state.messages.length,
-    })) ?? createNoopObservation();
-  const llmScope = runtime.resilience.createStageAbortScope(
-    state.abortSignal,
-    state.timeoutBudget,
-    'llm'
-  );
-  let llmErrorCode: string | undefined;
-  let llmSucceeded = false;
-
-  try {
-    const result = yield* forwardEvents(
-      runtime.stages.llm(
-        state.messages,
-        runtime.messages.mergeLLMConfig(
-          state.input.config,
-          state.effectiveTools,
-          llmScope.signal,
-          state.input.conversationId
-        ),
-        llmScope.signal,
-        state.input.executionId,
-        stepIndex,
-        state.writeBufferSessions
-      )
-    );
-    runtime.resilience.throwIfAborted(llmScope.signal);
-    llmSucceeded = true;
-    return result;
-  } catch (error) {
-    llmErrorCode = runtime.diagnostics.extractErrorCode(error) || 'AGENT_LLM_STAGE_FAILED';
-    throw error;
-  } finally {
-    llmScope.release();
-    const llmLatencyMs = Date.now() - llmObservation.startedAt;
-    await llmObservation.finish({
-      callbacks: state.callbacks,
-      traceId: state.traceId,
-      executionId: state.input.executionId,
-      stepIndex,
-      latencyMs: llmLatencyMs,
-      success: llmSucceeded,
-      errorCode: llmErrorCode,
-      messageCount: state.messages.length,
-    });
-  }
-}
-
-async function* runToolStage(
-  runtime: RunLoopRuntime,
-  state: RunLoopState,
-  stepIndex: number,
-  toolCalls: ToolCall[]
-): AsyncGenerator<StreamEvent, Message, unknown> {
-  // This stage measures the orchestration cost of the full tool batch produced
-  // by one assistant turn. Individual tool timings are recorded deeper in the
-  // tool runtime.
-  const toolStageObservation =
-    (await runtime.hooks.onToolStageStart?.({
-      callbacks: state.callbacks,
-      traceId: state.traceId,
-      parentSpanId: state.runObservation.spanId,
-      executionId: state.input.executionId,
-      stepIndex,
-      toolCalls: toolCalls.length,
-    })) ?? createNoopObservation();
-  const toolScope = runtime.resilience.createStageAbortScope(
-    state.abortSignal,
-    state.timeoutBudget,
-    'tool'
-  );
-  let toolStageErrorCode: string | undefined;
-  let toolStageSucceeded = false;
-
-  try {
-    const result = yield* forwardEvents(
-      runtime.stages.tools(
-        toolCalls,
-        state.messages,
-        stepIndex,
-        state.callbacks,
-        toolScope.signal,
-        state.input.executionId,
-        state.traceId,
-        toolStageObservation.spanId,
-        state.writeBufferSessions
-      )
-    );
-    toolStageSucceeded = true;
-    return result;
-  } catch (error) {
-    toolStageErrorCode = runtime.diagnostics.extractErrorCode(error) || 'AGENT_TOOL_STAGE_FAILED';
-    throw error;
-  } finally {
-    toolScope.release();
-    const toolStageLatencyMs = Date.now() - toolStageObservation.startedAt;
-    await toolStageObservation.finish({
-      callbacks: state.callbacks,
-      traceId: state.traceId,
-      executionId: state.input.executionId,
-      stepIndex,
-      latencyMs: toolStageLatencyMs,
-      success: toolStageSucceeded,
-      errorCode: toolStageErrorCode,
-      toolCalls: toolCalls.length,
-    });
-  }
-}
-
 export async function* runAgentLoop(
   runtime: RunLoopRuntime,
   state: RunLoopState
@@ -287,66 +154,26 @@ export async function* runAgentLoop(
 
   try {
     while (stepIndex < state.maxSteps) {
-      if (state.abortSignal?.aborted) {
-        const timeoutError = runtime.resilience.timeoutBudgetErrorFromSignal(state.abortSignal);
-        if (timeoutError) {
-          runOutcome = 'timeout';
-          runErrorCode = timeoutError.errorCode;
-          yield* runtime.stream.error(timeoutError);
-        } else {
-          runOutcome = 'aborted';
-          runErrorCode = 'AGENT_ABORTED';
-          yield* runtime.stream.error(new AgentAbortedError(runtime.limits.abortedMessage));
-        }
-        break;
-      }
-
-      if (retryCount >= runtime.limits.maxRetryCount) {
-        runOutcome = 'max_retries';
-        runErrorCode = 'AGENT_MAX_RETRIES_REACHED';
-        yield* runtime.stream.maxRetries();
+      const preStepTerminalState = yield* resolvePreStepTerminalState(runtime, state, {
+        stepIndex,
+        retryCount,
+        runOutcome,
+        runErrorCode,
+        terminalDoneEmitted,
+        retryScheduled: false,
+      });
+      if (preStepTerminalState) {
+        runOutcome = preStepTerminalState.runOutcome;
+        runErrorCode = preStepTerminalState.runErrorCode;
+        retryCount = preStepTerminalState.retryCount;
+        terminalDoneEmitted = preStepTerminalState.terminalDoneEmitted;
         break;
       }
 
       stepIndex += 1;
 
       try {
-        runtime.resilience.throwIfAborted(state.abortSignal);
-        // Compaction happens before context-usage reporting so callbacks see
-        // the message set that will actually be sent to the provider.
-        const messageCountBeforeCompaction = state.messages.length;
-        const removedMessageIds = await runtime.messages.compactIfNeeded(
-          state.messages,
-          state.effectiveTools,
-          state.input.contextLimitTokens
-        );
-        if (removedMessageIds.length > 0) {
-          const compactionInfo: CompactionInfo = {
-            executionId: state.input.executionId,
-            stepIndex,
-            removedMessageIds,
-            messageCountBefore: messageCountBeforeCompaction,
-            messageCountAfter: state.messages.length,
-          };
-          await runtime.callbacks.safe(state.callbacks?.onCompaction, compactionInfo);
-          yield {
-            type: 'compaction',
-            data: compactionInfo,
-          };
-        }
-
-        runtime.resilience.throwIfAborted(state.abortSignal);
-
-        const contextUsage = runtime.messages.estimateContextUsage(
-          state.messages,
-          state.effectiveTools,
-          state.input.contextLimitTokens
-        );
-        await runtime.callbacks.safe(state.callbacks?.onContextUsage, {
-          stepIndex,
-          messageCount: state.messages.length,
-          ...contextUsage,
-        });
+        yield* prepareMessagesForStep(runtime, state, stepIndex);
 
         yield* runtime.stream.progress(
           state.input.executionId,
@@ -384,87 +211,32 @@ export async function* runAgentLoop(
 
         retryCount = 0;
         runOutcome = 'done';
+        if (await hasPendingUserMessages(state)) {
+          continue;
+        }
         terminalDoneEmitted = true;
         yield* runtime.stream.done(stepIndex, 'stop');
         break;
       } catch (error) {
-        // Timeout and abort are handled before generic normalization because
-        // they are control-flow outcomes, not business failures. This avoids
-        // misclassifying a cancelled run as a retryable agent error.
-        const timeoutError = runtime.resilience.normalizeTimeoutBudgetError(
-          error,
-          state.abortSignal
+        const nextProgress: RunLoopProgressState = yield* handleStepFailure(
+          runtime,
+          state,
+          {
+            stepIndex,
+            retryCount,
+            runOutcome,
+            runErrorCode,
+            terminalDoneEmitted,
+            retryScheduled: false,
+          },
+          error
         );
-        if (timeoutError) {
-          runOutcome = 'timeout';
-          runErrorCode = timeoutError.errorCode;
-          yield* runtime.stream.error(timeoutError);
+        runOutcome = nextProgress.runOutcome;
+        runErrorCode = nextProgress.runErrorCode;
+        retryCount = nextProgress.retryCount;
+        terminalDoneEmitted = nextProgress.terminalDoneEmitted;
+        if (!nextProgress.retryScheduled) {
           break;
-        }
-
-        if (runtime.resilience.isAbortError(error) || state.input.abortSignal?.aborted) {
-          runOutcome = 'aborted';
-          runErrorCode = 'AGENT_ABORTED';
-          yield* runtime.stream.error(new AgentAbortedError(runtime.limits.abortedMessage));
-          break;
-        }
-
-        const normalizedError = runtime.resilience.normalizeError(error);
-        await runtime.hooks.onRunError?.({
-          executionId: state.input.executionId,
-          traceId: state.traceId,
-          stepIndex,
-          retryCount,
-          errorCode: normalizedError.errorCode,
-          category: normalizedError.category,
-          error: normalizedError,
-        });
-        runOutcome = 'error';
-        runErrorCode = normalizedError.errorCode;
-        const decision = await runtime.callbacks.safeError(
-          state.callbacks?.onError,
-          normalizedError
-        );
-        yield* runtime.stream.error(normalizedError);
-
-        // An emitted error event only describes the current attempt. The run
-        // may still continue if policy marks the failure as retryable.
-        const shouldRetry = decision?.retry ?? normalizedError.retryable;
-        if (!shouldRetry) {
-          break;
-        }
-
-        retryCount += 1;
-        await runtime.hooks.onRetryScheduled?.({
-          executionId: state.input.executionId,
-          traceId: state.traceId,
-          stepIndex,
-          retryCount,
-          errorCode: normalizedError.errorCode,
-        });
-        if (retryCount < runtime.limits.maxRetryCount) {
-          const retryDelay = runtime.resilience.calculateRetryDelay(retryCount, error as Error);
-          try {
-            await runtime.resilience.sleep(retryDelay, state.abortSignal);
-          } catch (sleepError) {
-            const sleepTimeoutError = runtime.resilience.normalizeTimeoutBudgetError(
-              sleepError,
-              state.abortSignal
-            );
-            if (sleepTimeoutError) {
-              runOutcome = 'timeout';
-              runErrorCode = sleepTimeoutError.errorCode;
-              yield* runtime.stream.error(sleepTimeoutError);
-              break;
-            }
-            if (runtime.resilience.isAbortError(sleepError) || state.input.abortSignal?.aborted) {
-              runOutcome = 'aborted';
-              runErrorCode = 'AGENT_ABORTED';
-              yield* runtime.stream.error(new AgentAbortedError(runtime.limits.abortedMessage));
-              break;
-            }
-            throw sleepError;
-          }
         }
       }
     }

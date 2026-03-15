@@ -1,116 +1,90 @@
 # Agent Execution Flow
 
-## 目标
+## Purpose
 
-本文档描述 `D:\work\renx-code\packages\core\src\agent\agent` 当前版本的执行流程、模块职责、异常边界与扩展点。
+This document explains how the stateless agent kernel in
+`D:\work\renx-code\packages\core\src\agent\agent` executes one run.
 
-适用对象：
+It focuses on:
 
-- 维护 `StatelessAgent` 的开发者
-- 需要理解 Agent 运行链路的测试编写者
-- 后续继续做架构优化、平台扩展、可观测性增强的开发者
+- the normal control flow
+- the boundary between the LLM stage and the tool stage
+- retry, timeout, and abort behavior
+- how lifecycle hooks are used for observation only
 
-本文档以当前代码实现为准，重点覆盖：
-
-- 正常执行链路
-- LLM 阶段与工具阶段的边界
-- 重试、超时、取消等异常流程
-- lifecycle hooks 的作用与扩展方式
-
-## 核心文件
+## Core Modules
 
 - `index.ts`
-  - `StatelessAgent` 门面
-  - 组装 runtime
-  - 组装 lifecycle hooks
+  - public `StatelessAgent` facade
+  - per-run runtime assembly
+  - shared adapters such as logging, timeout budget, and callback safety
 - `run-loop.ts`
-  - Agent 主循环
-  - 控制 step、重试、完成、终止
+  - owns the step loop
+  - decides retry, finish, abort, and max-step behavior
 - `llm-stream-runtime.ts`
-  - 调用 LLM stream
-  - 聚合 assistant 文本、reasoning、tool calls
+  - talks to the provider stream
+  - aggregates assistant text, reasoning, and tool calls
 - `tool-runtime.ts`
-  - 工具执行
-  - 并发控制
-  - ledger 去重
-  - write_file 特殊处理
+  - executes tool calls
+  - handles concurrency, idempotency ledger, confirmations, and tool result messages
+- `runtime-composition.ts`
+  - builds grouped runtime contracts for the loop and tool execution
 - `runtime-hooks.ts`
-  - 生命周期 hook 抽象
-  - 将观测逻辑与控制流解耦
-- `timeout-budget.ts`
-  - 总超时预算
-  - stage 级预算
-- `abort-runtime.ts`
-  - abort 传播
-  - sleep 中断
-  - timeout reason 归一化
-- `continuation.ts`
-  - continuation 增量调用策略
-- `tool-call-merge.ts`
-  - 流式 tool_call 合并
-- `write-file-session.ts`
-  - 流式 write_file 分片缓冲与补偿
+  - defines lifecycle hook contracts and composition utilities
+- `observability-hooks.ts`
+  - builds the default metrics, tracing, and logging hooks
 
-## 总体结构
+## Design Rules
 
-当前架构不是“大型插件系统”，而是“明确主流程 + 内部 hooks 扩展点”的模式。
+- `agent/agent` is a stateless execution kernel, not an application session layer.
+- Control flow stays explicit in `run-loop.ts`; it is not delegated to a plugin system.
+- Hooks are observational only. They can record metrics, traces, and logs, but they must not override retry, abort, or tool execution decisions.
+- Tool schemas are normalized once at the agent boundary so the main loop does not depend on registry details.
 
-设计原则：
+## Top-Level Flow
 
-- 主控制流必须清晰、直接、可读
-- 可观测性不直接污染主循环
-- runtime 依赖按职责分组，而不是平铺成巨大 `Deps`
-- 对外仍保持 `StatelessAgent` 作为稳定入口
-
-## 顶层执行入口
-
-入口方法：
+Entry point:
 
 - `StatelessAgent.runStream()` in `index.ts`
 
-主要职责：
+High-level steps:
 
-1. 接收 `AgentInput`
-2. 准备消息列表与 system prompt
-3. 解析可用工具
-4. 初始化 write buffer session
-5. 创建 timeout budget 与 execution abort scope
-6. 创建 trace id
-7. 触发 `onRunStart` hooks
-8. 调用 `runAgentLoop()`
-
-## 执行总流程
+1. Copy input messages and inject `systemPrompt` if needed.
+2. Resolve the tool list passed to the provider.
+3. Create per-run write buffer sessions.
+4. Create timeout budget state and the execution abort scope.
+5. Create a trace id.
+6. Build lifecycle hooks for observation.
+7. Open the run observation with `onRunStart`.
+8. Hand execution to `runAgentLoop(...)`.
 
 ```mermaid
 flowchart TD
-    A["StatelessAgent.runStream()"] --> B["构建 messages / tools / timeoutBudget / abortScope"]
-    B --> C["createLifecycleHooks().onRunStart()"]
-    C --> D["runAgentLoop(runtime, state)"]
-    D --> E["压缩上下文 compactIfNeeded"]
-    E --> F["上报 context usage"]
-    F --> G["LLM 阶段 runLLMStage()"]
-    G --> H{"是否返回 tool calls?"}
-    H -- "否" --> I["追加 assistant message"]
-    I --> J["yield done"]
-    H -- "是" --> K["工具阶段 runToolStage()"]
-    K --> L["追加 tool result message"]
-    L --> M["yield checkpoint"]
-    M --> D
+    A["StatelessAgent.runStream()"] --> B["Prepare messages, tools, timeout budget, abort scope"]
+    B --> C["Create lifecycle hooks"]
+    C --> D["Open run observation"]
+    D --> E["runAgentLoop(runtime, state)"]
+    E --> F["Maybe compact messages"]
+    F --> G["Report context usage"]
+    G --> H["Run LLM stage"]
+    H --> I{"Tool calls returned?"}
+    I -- "No" --> J["Append assistant message"]
+    J --> K["Emit done event"]
+    I -- "Yes" --> L["Run tool stage"]
+    L --> M["Append tool result message"]
+    M --> N["Emit checkpoint"]
+    N --> E
 ```
 
-## Runtime 分层
+## Runtime Assembly
 
-### 1. RunLoopRuntime
+### RunLoopRuntime
 
-定义位置：
+Built by:
 
-- `run-loop.ts`
+- `createRunLoopRuntime(...)` in `runtime-composition.ts`
 
-作用：
-
-- 把主循环所需能力按职责分组
-
-当前分组：
+Grouped responsibilities:
 
 - `limits`
 - `callbacks`
@@ -121,25 +95,20 @@ flowchart TD
 - `diagnostics`
 - `hooks`
 
-这样做的意义：
+Why this exists:
 
-- 避免 `createRunLoopDeps()` 这种单层大对象继续膨胀
-- 让主循环依赖更有语义
-- 便于后续对某个分组单独替换或测试
+- removes bulky composition logic from `StatelessAgent`
+- keeps the loop contract explicit instead of hiding it behind a service container
+- gives future refactors a stable seam for testing and further file splits
 
-### 2. ToolRuntime
+### ToolRuntime
 
-定义位置：
+Built by:
 
-- `tool-runtime.ts`
+- `createToolRuntime(...)` in `runtime-composition.ts`
 
-作用：
+Responsibilities grouped into:
 
-- 聚合工具执行侧能力
-
-当前分组：
-
-- `agentRef`
 - `execution`
 - `callbacks`
 - `diagnostics`
@@ -147,15 +116,23 @@ flowchart TD
 - `hooks`
 - `events`
 
-这比之前的平铺式 `ToolRuntimeDeps` 更适合继续扩展。
+Why this exists:
+
+- tool execution has different dependencies from the step loop
+- concurrency and idempotency can evolve without bloating the facade class
+- tool tests can target this boundary directly
 
 ## Lifecycle Hooks
 
-定义位置：
+Hook contract:
 
-- `runtime-hooks.ts`
+- defined in `runtime-hooks.ts`
 
-当前 hook 类型：
+Default implementation:
+
+- built in `observability-hooks.ts`
+
+Available lifecycle events:
 
 - `onRunStart`
 - `onLLMStageStart`
@@ -164,56 +141,25 @@ flowchart TD
 - `onRunError`
 - `onRetryScheduled`
 
-### 设计意图
+Important rule:
 
-这些 hooks 不是为了做“任意业务插件系统”，而是为了处理横切关注点：
+- hooks are append-only observation points
+- they are not a public behavior override system
+- they should never decide whether to retry, skip, or mutate the business result
 
-- metrics
-- tracing
-- structured logging
-- 后续可能加入审计、SLO、采样
+Current default hook behavior:
 
-### 运行方式
+- open and close spans
+- emit duration and retry metrics
+- write structured info, warn, and error logs
 
-每个 start hook 可以返回一个 `AgentRuntimeObservation`：
+## Step Loop Details
 
-- `spanId`
-- `startedAt`
-- `finish(context)`
-
-主流程只关心：
-
-1. 在阶段开始时拿到 observation
-2. 在阶段结束时调用 `finish()`
-
-这样控制流不需要知道具体如何打点、记日志、上报 trace。
-
-### 当前实现
-
-当前 `index.ts` 中只组装了一个 `observabilityHook`，负责：
-
-- startSpan
-- endSpan
-- emitMetric
-- logInfo
-- logWarn
-- logError
-
-如果后续需要拆分，可进一步分为：
-
-- metrics hook
-- tracing hook
-- logging hook
-
-## 主循环详解
-
-实现位置：
+Implementation:
 
 - `run-loop.ts`
 
-### Step 1. 进入循环前状态
-
-主循环维护以下关键状态：
+Main mutable run state:
 
 - `stepIndex`
 - `retryCount`
@@ -221,424 +167,104 @@ flowchart TD
 - `runErrorCode`
 - `terminalDoneEmitted`
 
-### Step 2. 循环开始前的终止判定
+Per iteration:
 
-每轮开始先检查：
+1. Check for abort, timeout conversion, and retry limit.
+2. Compact messages if needed.
+3. Emit context usage.
+4. Enter the LLM stage.
+5. If no tool calls were returned:
+   - append the assistant message
+   - emit `done`
+   - finish the run
+6. If tool calls were returned:
+   - enter the tool stage
+   - append the tool result message
+   - emit a checkpoint
+   - continue to the next step
 
-- execution abort
-- timeout budget 是否已转化为 abort reason
-- 是否达到 `maxRetryCount`
+## LLM Stage
 
-若触发：
+Implementation:
 
-- yield `error`
-- 或 yield `max retries`
-- 然后结束循环
+- `runLLMStage(...)` in `run-loop.ts`
+- `callLLMAndProcessStream(...)` in `llm-stream-runtime.ts`
 
-### Step 3. 上下文压缩
+What happens:
 
-调用：
+1. Open `onLLMStageStart` observation.
+2. Create a stage-specific abort scope from the shared timeout budget.
+3. Merge request config with tools, abort signal, and conversation cache key.
+4. Stream from the provider.
+5. Aggregate:
+   - assistant text
+   - reasoning content
+   - tool calls
+   - provider usage data
+6. Validate final output and return one structured stage result.
+7. Finish the stage observation with success or failure metadata.
 
-- `runtime.messages.compactIfNeeded()`
+## Tool Stage
 
-如果发生压缩：
+Implementation:
 
-- 触发 `callbacks.onCompaction`
-- yield `compaction` event
+- `runToolStage(...)` in `run-loop.ts`
+- `processToolCalls(...)` in `tool-runtime.ts`
 
-### Step 4. 上报上下文使用量
+What happens:
 
-调用：
+1. Open `onToolStageStart` observation.
+2. Create a tool-stage abort scope.
+3. Turn tool calls into execution plans with concurrency policy.
+4. Build execution waves.
+5. Execute each tool call:
+   - open `onToolExecutionStart`
+   - consult the ledger for idempotent replay
+   - forward chunks and confirmations
+   - normalize result output
+   - finish observation with cached and success flags
+6. Merge all tool outputs into one tool result message.
+7. Finish the stage observation.
 
-- `runtime.messages.estimateContextUsage()`
+## Abort, Timeout, and Retry
 
-然后：
+Timeout model:
 
-- 调用 `callbacks.onContextUsage`
+- `timeout-budget.ts` tracks the whole-run budget and per-stage slices
+- `abort-runtime.ts` converts timeout state into a consistent abort reason
 
-### Step 5. 执行 LLM 阶段
+Retry model:
 
-调用：
+- owned by `run-loop.ts`
+- retry decision stays outside the LLM stream runtime and tool runtime
+- backoff delay is calculated once at the loop level
 
-- `runLLMStage()`
+Error handling model:
 
-内部做的事情：
+- raw errors are normalized into agent errors
+- timeout and abort errors are detected before generic normalization
+- run-level errors trigger `onRunError`
+- scheduled retries trigger `onRetryScheduled`
 
-1. 触发 `onLLMStageStart`
-2. 创建 llm stage abort scope
-3. 合并 LLM config
-4. 调用 `runtime.stages.llm()`
-5. 在 finally 中调用 observation.finish
+Important behavior note:
 
-### Step 6. 处理 assistant 输出
+- the stream may emit an `error` event before the loop decides to retry
+- consumers must not assume every `error` event is terminal on its own
 
-LLM 返回后：
+## Why This Architecture Is Better Than The Old One
 
-- assistant message 追加到 `messages`
-- 调用 `callbacks.onMessage`
+- `StatelessAgent` is now a thin facade instead of a giant mixed implementation.
+- Runtime composition is explicit, but no longer buried inside one oversized file.
+- Observability logic is separated from control flow.
+- Tool schema resolution is centralized at one boundary.
+- New unit tests can target composition and hook behavior directly.
 
-然后分支：
+## Current Follow-Up Targets
 
-- 没有 tool calls
-  - 直接 `yield done`
-  - 结束
-- 有 tool calls
-  - 进入工具阶段
+The next likely refactor candidates are still:
 
-### Step 7. 执行工具阶段
-
-调用：
-
-- `runToolStage()`
-
-内部做的事情：
-
-1. 触发 `onToolStageStart`
-2. 创建 tool stage abort scope
-3. 调用 `runtime.stages.tools()`
-4. 在 finally 中调用 observation.finish
-
-### Step 8. 工具完成后生成 checkpoint
-
-工具阶段返回最后一条 tool result message 后：
-
-- `yield checkpoint`
-- 继续下一轮 loop
-
-## LLM 阶段详解
-
-实现位置：
-
-- `llm-stream-runtime.ts`
-
-### 输入
-
-- `messages`
-- `config`
-- `abortSignal`
-- `executionId`
-- `stepIndex`
-- `writeBufferSessions`
-
-### 主要流程
-
-1. `buildLLMRequestPlan()`
-   - 处理 continuation
-   - 计算 request messages
-   - 计算 request config
-2. `llmProvider.generateStream()`
-3. 逐 chunk 聚合：
-   - `content`
-   - `reasoning_content`
-   - `tool_calls`
-   - `usage`
-   - `responseId`
-4. `applyContinuationMetadata()`
-5. 校验 assistant 是否为空响应
-
-### 关键边界
-
-#### 1. 空白响应视为无效
-
-使用：
-
-- `hasNonEmptyText()`
-
-语义是 `trim()` 后非空。
-
-因此以下情况会视为无效响应：
-
-- 仅空格
-- 仅换行
-- 没有 tool calls 且没有有效文本/推理文本
-
-这类情况会抛出：
-
-- `AgentUpstreamRetryableError`
-
-#### 2. 流式工具调用合并
-
-通过：
-
-- `mergeToolCallsWithBuffer()`
-
-解决问题：
-
-- tool call 参数分段到达
-- write_file 参数可能非常大
-
-#### 3. write_file 特殊缓冲
-
-在合并 tool call 参数时，会将 write_file 分片缓存到：
-
-- `writeBufferSessions`
-
-目的是避免大内容工具调用在流式过程中丢失或半成品执行。
-
-## 工具阶段详解
-
-实现位置：
-
+- `run-loop.ts`
 - `tool-runtime.ts`
 
-### processToolCalls()
-
-按两种模式执行：
-
-- 串行
-- 并发波次执行
-
-是否并发由：
-
-- `maxConcurrentToolCalls`
-- `resolveToolConcurrencyPolicy()`
-- `buildExecutionWaves()`
-
-共同决定。
-
-### executeTool()
-
-单个工具执行时主要流程：
-
-1. 触发 `onToolExecutionStart`
-2. 调用 `executeToolCallWithLedger()`
-3. 实际执行 `toolExecutor.execute()`
-4. 转换为统一 tool result message
-5. 调用 `callbacks.onMessage`
-6. yield `tool_result`
-7. finally 中 observation.finish
-
-### Ledger 的作用
-
-实现位置：
-
-- `tool-execution-ledger.ts`
-
-作用：
-
-- 同一次 execution 中避免重复执行同一 toolCall
-- 支持缓存回放
-- 支持并发去重
-
-### write_file 特殊处理
-
-工具失败时，如果是 write_file：
-
-- 可能先输出协议型中间结果
-- 可能做错误增强
-- 可能触发自动 finalize
-
-相关逻辑：
-
-- `isWriteFileToolCall()`
-- `isWriteFileProtocolOutput()`
-- `enrichWriteFileToolError()`
-- `maybeAutoFinalizeWriteFileResult()`
-
-## 异常与重试流程
-
-### 主循环中的错误分类
-
-`run-loop.ts` 中错误大致分为：
-
-- timeout budget
-- abort
-- 普通 agent error
-- retryable upstream error
-
-### 处理顺序
-
-1. 先判断是否 timeout budget
-2. 再判断是否 abort
-3. 否则执行 `normalizeError()`
-4. 触发 `onRunError`
-5. yield `error` event
-6. 根据：
-   - `callbacks.onError` 返回值
-   - `normalizedError.retryable`
-     决定是否重试
-
-### 重试行为
-
-如果允许重试：
-
-1. `retryCount += 1`
-2. 触发 `onRetryScheduled`
-3. `calculateRetryDelay()`
-4. `sleep()`
-5. 进入下一轮 loop
-
-### 注意点
-
-当前设计中：
-
-- retry 前也会 `yield error`
-
-这意味着：
-
-- `error` event 不一定代表最终失败
-- 消费方必须结合后续 `done` 或新的 `progress` 事件判断完整状态
-
-这是已知设计语义，测试已覆盖。
-
-## Abort 与 Timeout 机制
-
-### 执行级 abort
-
-`runStream()` 中创建：
-
-- execution abort scope
-
-来源可能包括：
-
-- 外部传入的 `abortSignal`
-- timeout budget
-
-### 阶段级 abort
-
-每个 stage 进入时再创建：
-
-- llm stage abort scope
-- tool stage abort scope
-
-好处：
-
-- 每个阶段可以独立消费预算
-- stage 结束后能正确 release listener
-
-### timeout budget
-
-相关文件：
-
-- `timeout-budget.ts`
-- `abort-runtime.ts`
-
-职责：
-
-- 追踪总预算
-- 区分 llm / tool 阶段预算
-- 将 budget exceed 映射为 abort reason
-
-## 关键事件输出
-
-当前主要 `StreamEvent`：
-
-- `progress`
-- `chunk`
-- `reasoning_chunk`
-- `tool_call`
-- `tool_result`
-- `checkpoint`
-- `compaction`
-- `done`
-- `error`
-
-语义说明：
-
-- `progress`
-  - 阶段开始或阶段切换
-- `chunk`
-  - assistant 文本增量
-- `reasoning_chunk`
-  - reasoning 文本增量
-- `tool_call`
-  - 工具调用增量聚合结果
-- `tool_result`
-  - 工具执行完成后的统一输出
-- `checkpoint`
-  - 一轮工具调用完成后的可恢复点
-- `done`
-  - 正常结束或达到最大步数
-- `error`
-  - 可能是中间错误，也可能是终态错误
-
-## 典型执行路径示例
-
-### 路径 A：纯文本回答
-
-1. `runStream()`
-2. `runAgentLoop()`
-3. `runLLMStage()`
-4. `llm-stream-runtime.ts` 返回 assistant text
-5. 无 tool calls
-6. yield `done`
-
-### 路径 B：LLM 调工具再继续
-
-1. `runStream()`
-2. `runAgentLoop()`
-3. `runLLMStage()`
-4. assistant 返回 tool calls
-5. `runToolStage()`
-6. `processToolCalls()`
-7. `executeTool()`
-8. 写入 tool result message
-9. yield `checkpoint`
-10. 回到下一轮 `runAgentLoop()`
-11. 再次进入 `runLLMStage()`
-12. 最终 yield `done`
-
-### 路径 C：LLM 失败后重试
-
-1. `runLLMStage()` 抛错
-2. `run-loop.ts` 归一化错误
-3. 调 `onRunError`
-4. yield `error`
-5. 触发 `onRetryScheduled`
-6. sleep backoff
-7. 重进下一轮 loop
-
-## 扩展建议
-
-### 推荐扩展方式
-
-优先通过 hooks 扩展横切能力，而不是直接改主流程：
-
-- metrics 增强
-- trace attributes 增强
-- 结构化日志增强
-- 审计日志
-
-### 不推荐的方式
-
-当前阶段不建议把这里改造成通用插件总线，因为会带来：
-
-- 主流程可读性下降
-- 生命周期顺序不透明
-- 调试复杂度提升
-- 测试隔离难度提升
-
-## 维护建议
-
-### 修改主流程时优先检查
-
-- `run-loop.test.ts`
-- `index.test.ts`
-- `llm-stream-runtime.test.ts`
-- `tool-runtime.test.ts`
-- `task-run-lifecycle.test.ts`
-
-### 修改 hooks 时优先检查
-
-- `runtime-hooks.test.ts`
-- `telemetry.test.ts`
-- `logger.test.ts`
-
-### 修改 task lifecycle 时优先检查
-
-- `task-parent-abort.test.ts`
-- `task-tools-runtime-edges.test.ts`
-- `task-run-lifecycle.test.ts`
-
-## 结论
-
-当前 `agent/agent` 已经形成了比较稳定的企业级执行骨架：
-
-- `StatelessAgent` 负责门面与组装
-- `run-loop.ts` 负责主控制流
-- `llm-stream-runtime.ts` 与 `tool-runtime.ts` 各自负责阶段逻辑
-- `runtime-hooks.ts` 负责横切扩展能力
-
-这是一个“无状态 facade + 显式主循环 + 内部 hooks 扩展点”的实现。
-
-对当前项目来说，这比“继续堆大依赖包”更合理，也比“直接引入重型插件系统”更安全。
+They are now the largest runtime modules and contain the most control-flow detail.
+The current composition split makes that next step much safer.

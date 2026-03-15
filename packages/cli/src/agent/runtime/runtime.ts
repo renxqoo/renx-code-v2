@@ -11,6 +11,7 @@ import type {
   AgentToolResultEvent,
   AgentToolStreamEvent,
   AgentToolUseEvent,
+  AgentUserMessageEvent,
   AgentUsageEvent,
 } from './types';
 import type { AgentModelOption, AgentModelSwitchResult } from './model-types';
@@ -29,6 +30,7 @@ import {
   type StatelessAgentLike,
   type ToolConfirmEventLike,
 } from './source-modules';
+import { registerTaskTools, registerWorkspaceTools, resolveToolSchemas } from './tool-catalog';
 import { ToolCallBuffer } from './tool-call-buffer';
 import type { AttachmentModelCapabilities } from '../../files/attachment-capabilities';
 import { resolveAttachmentModelCapabilities } from '../../files/attachment-capabilities';
@@ -54,8 +56,19 @@ type RunAgentPromptOptions = {
   abortSignal?: AbortSignal;
 };
 
+export type AppendAgentPromptResult = {
+  accepted: boolean;
+  reason?: 'run_not_active' | 'conversation_mismatch' | 'empty_input';
+};
+
+type ActiveExecution = {
+  executionId: string;
+  conversationId: string;
+};
+
 let runtimePromise: Promise<RuntimeCore> | null = null;
 let initializing = false;
+let activeExecution: ActiveExecution | null = null;
 const readPreferredModelIdFromEnv = (): string | undefined => {
   return process.env.AGENT_MODEL?.trim() || undefined;
 };
@@ -241,6 +254,10 @@ const parseJsonObject = (raw: string): Record<string, unknown> => {
   }
 };
 
+const createExecutionId = (): string => {
+  return `exec_cli_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+};
+
 const toTextDeltaEvent = (
   payload: Record<string, unknown>,
   isReasoning: boolean
@@ -372,49 +389,7 @@ const createRuntime = async (): Promise<RuntimeCore> => {
   const taskStore = new modules.TaskStore({
     baseDir: resolveRenxTaskDir(process.env),
   });
-  toolManager.registerTool(new modules.BashTool());
-  toolManager.registerTool(
-    new modules.WriteFileTool({
-      allowedDirectories: [workspaceRoot],
-    })
-  );
-  toolManager.registerTool(
-    new modules.FileReadTool({
-      allowedDirectories: [workspaceRoot],
-    })
-  );
-  toolManager.registerTool(
-    new modules.FileEditTool({
-      allowedDirectories: [workspaceRoot],
-    })
-  );
-  toolManager.registerTool(
-    new modules.FileHistoryListTool({
-      allowedDirectories: [workspaceRoot],
-    })
-  );
-  toolManager.registerTool(
-    new modules.FileHistoryRestoreTool({
-      allowedDirectories: [workspaceRoot],
-    })
-  );
-  toolManager.registerTool(
-    new modules.GlobTool({
-      allowedDirectories: [workspaceRoot],
-    })
-  );
-  toolManager.registerTool(
-    new modules.GrepTool({
-      allowedDirectories: [workspaceRoot],
-    })
-  );
-  toolManager.registerTool(
-    new modules.SkillTool({
-      loaderOptions: {
-        workingDir: workspaceRoot,
-      },
-    })
-  );
+  registerWorkspaceTools(toolManager, modules, workspaceRoot);
 
   const agent = new modules.StatelessAgent(provider, toolManager, {
     maxRetryCount: parsePositiveInt(process.env.AGENT_MAX_RETRY_COUNT, DEFAULT_MAX_RETRY_COUNT),
@@ -437,42 +412,8 @@ const createRuntime = async (): Promise<RuntimeCore> => {
     messageStore: appStore,
   });
 
-  const collectToolSchemas = () =>
-    toolManager
-      .getTools()
-      .map((tool) => {
-        const schema = tool?.toToolSchema?.();
-        if (!schema || typeof schema !== 'object') {
-          return null;
-        }
-        return schema;
-      })
-      .filter((schema): schema is { type: string; function: { name?: string } } => Boolean(schema));
-
-  const resolveToolSchemas = (allowedTools?: string[], hiddenToolNames?: Set<string>) => {
-    const allSchemas = toolManager
-      ? collectToolSchemas().filter((schema) => {
-          const name = schema.function?.name;
-          if (typeof name !== 'string') {
-            return false;
-          }
-          return !hiddenToolNames?.has(name);
-        })
-      : [];
-
-    if (!allowedTools || allowedTools.length === 0) {
-      return allSchemas;
-    }
-
-    const allowed = new Set(allowedTools);
-    return allSchemas.filter((schema) => {
-      const name = schema.function?.name;
-      return typeof name === 'string' && allowed.has(name);
-    });
-  };
-
   const resolveSubagentToolSchemas = (allowedTools?: string[]) =>
-    resolveToolSchemas(allowedTools, undefined);
+    resolveToolSchemas(toolManager, { allowedTools });
 
   const taskRunner = new modules.RealSubagentRunnerAdapter({
     store: taskStore,
@@ -483,53 +424,17 @@ const createRuntime = async (): Promise<RuntimeCore> => {
     resolveModelId: () => modelConfig.model || modelId,
   });
 
-  toolManager.registerTool(
-    new modules.TaskCreateTool({
-      store: taskStore,
-      defaultNamespace: conversationId,
-    })
-  );
-  toolManager.registerTool(
-    new modules.TaskGetTool({
-      store: taskStore,
-      defaultNamespace: conversationId,
-    })
-  );
-  toolManager.registerTool(
-    new modules.TaskListTool({
-      store: taskStore,
-      defaultNamespace: conversationId,
-    })
-  );
-  toolManager.registerTool(
-    new modules.TaskUpdateTool({
-      store: taskStore,
-      defaultNamespace: conversationId,
-    })
-  );
-  toolManager.registerTool(
-    new modules.TaskTool({
-      store: taskStore,
-      runner: taskRunner,
-      defaultNamespace: conversationId,
-    })
-  );
-  toolManager.registerTool(
-    new modules.TaskStopTool({
-      store: taskStore,
-      runner: taskRunner,
-      defaultNamespace: conversationId,
-    })
-  );
-  toolManager.registerTool(
-    new modules.TaskOutputTool({
-      store: taskStore,
-      runner: taskRunner,
-      defaultNamespace: conversationId,
-    })
-  );
+  registerTaskTools({
+    modules,
+    manager: toolManager,
+    taskStore,
+    taskRunner,
+    defaultNamespace: conversationId,
+  });
 
-  const parentTools = resolveToolSchemas(undefined, PARENT_HIDDEN_TOOL_NAMES);
+  const parentTools = resolveToolSchemas(toolManager, {
+    hiddenToolNames: PARENT_HIDDEN_TOOL_NAMES,
+  });
 
   return {
     modules,
@@ -599,12 +504,14 @@ export const runAgentPrompt = async (
   options: RunAgentPromptOptions = {}
 ): Promise<AgentRunResult> => {
   const runtime = await getRuntime();
+  const executionId = createExecutionId();
   const startedAt = Date.now();
   const streamedState = {
     text: '',
     latestErrorMessage: undefined as string | undefined,
     stopEmitted: false,
     lastLoopStep: 0,
+    consumedUserMessageCount: 0,
   };
   const toolStreamSequenceById = new Map<string, number>();
   const toolCallsById = new Map<string, AgentToolUseEvent>();
@@ -641,9 +548,14 @@ export const runAgentPrompt = async (
 
   let result: AgentAppRunResultLike;
   try {
+    activeExecution = {
+      executionId,
+      conversationId: runtime.conversationId,
+    };
     const historyMessages = await runtime.appService.listContextMessages(runtime.conversationId);
     result = await runtime.appService.runForeground(
       {
+        executionId,
         conversationId: runtime.conversationId,
         userInput: prompt,
         historyMessages: historyMessages as AgentV4MessageLike[],
@@ -765,6 +677,21 @@ export const runAgentPrompt = async (
               safeInvoke(() => handlers.onStep?.(stepEvent));
               break;
             }
+            case 'user_message': {
+              streamedState.consumedUserMessageCount += 1;
+              if (streamedState.consumedUserMessageCount > 1) {
+                const messagePayload = asRecord(payload.message);
+                const content = messagePayload.content;
+                const text =
+                  typeof content === 'string' ? content : toJsonString(content ?? payload.message);
+                const userMessageEvent: AgentUserMessageEvent = {
+                  text,
+                  stepIndex: readNumber(payload.stepIndex) ?? 0,
+                };
+                safeInvoke(() => handlers.onUserMessage?.(userMessageEvent));
+              }
+              break;
+            }
             case 'done': {
               safeInvoke(() => handlers.onTextComplete?.(streamedState.text));
               const stopEvent: AgentStopEvent = {
@@ -786,6 +713,9 @@ export const runAgentPrompt = async (
       }
     );
   } finally {
+    if (activeExecution?.executionId === executionId) {
+      activeExecution = null;
+    }
     runtime.agent.off('tool_confirm', onToolConfirm);
   }
 
@@ -812,6 +742,29 @@ export const runAgentPrompt = async (
     durationSeconds: (Date.now() - startedAt) / 1000,
     modelLabel: runtime.modelLabel,
     usage: latestUsageEvent,
+  };
+};
+
+export const appendAgentPrompt = async (
+  prompt: MessageContent
+): Promise<AppendAgentPromptResult> => {
+  const runtime = await getRuntime();
+  if (!activeExecution) {
+    return {
+      accepted: false,
+      reason: 'run_not_active',
+    };
+  }
+
+  const result = await runtime.appService.appendUserInputToRun({
+    executionId: activeExecution.executionId,
+    conversationId: activeExecution.conversationId,
+    userInput: prompt,
+  });
+
+  return {
+    accepted: result.accepted,
+    reason: result.reason,
   };
 };
 

@@ -11,10 +11,9 @@ import { LLMProvider, Tool, ToolCall } from '../../providers';
 import { EventEmitter } from 'events';
 import { AgentError, MaxRetriesError, TimeoutBudgetExceededError } from './error';
 import { mergeAgentLoggers, type AgentLogger } from './logger';
-import { compact, estimateMessagesTokens } from './compaction';
-import { LLMTool, ToolConcurrencyPolicy } from '../tool/types';
+import { ToolConcurrencyPolicy } from '../tool/types';
 import type { BackoffConfig } from '../../providers';
-import { mergeLLMConfig as mergeLLMRequestConfig } from './message-utils';
+import { mergeLLMRequestConfig } from './llm-request-config';
 import {
   createCheckpoint,
   createDoneEvent,
@@ -52,11 +51,6 @@ import {
   safeErrorCallback as invokeSafeErrorCallback,
 } from './callback-safety';
 import { generateId } from './shared';
-import { processToolCalls as processToolCallsRuntime, type ToolRuntime } from './tool-runtime';
-import {
-  callLLMAndProcessStream as callLLMStreamRuntime,
-  type LLMStreamRuntimeDeps,
-} from './llm-stream-runtime';
 import { runAgentLoop, type RunLoopRuntime } from './run-loop';
 import {
   normalizeTimeoutBudgetError as normalizeAbortTimeoutBudgetError,
@@ -65,20 +59,27 @@ import {
   timeoutBudgetErrorFromSignal as timeoutErrorFromAbortSignal,
 } from './abort-runtime';
 import {
-  composeAgentRuntimeHooks,
   createNoopObservation,
   type AgentRuntimeLifecycleHooks,
-  type LLMStageLifecycleFinishContext,
   type RunLifecycleFinishContext,
-  type ToolExecutionLifecycleFinishContext,
-  type ToolStageLifecycleFinishContext,
 } from './runtime-hooks';
+import {
+  createLLMStreamRuntimeDeps as buildLLMStreamRuntimeDeps,
+  createRunLoopRuntime as buildRunLoopRuntime,
+  createToolRuntime as buildToolRuntime,
+  resolveLLMToolsFromManager,
+} from './runtime-composition';
+import { createObservabilityLifecycleHooks } from './observability-hooks';
+import { calculateContextUsage } from './compaction-policy';
+import type { CompactionPromptVersion } from './compaction-prompt';
+import { prepareMessagesForLlmStep } from './step-compaction';
 
 export interface AgentConfig {
   maxRetryCount?: number;
   enableCompaction?: boolean;
   compactionTriggerRatio?: number;
   compactionKeepMessagesNum?: number;
+  compactionPromptVersion?: CompactionPromptVersion;
   enableServerSideContinuation?: boolean;
   backoffConfig?: BackoffConfig;
   maxConcurrentToolCalls?: number;
@@ -100,6 +101,7 @@ interface InternalAgentConfig {
   enableCompaction: boolean;
   compactionTriggerRatio: number;
   compactionKeepMessagesNum: number;
+  compactionPromptVersion: CompactionPromptVersion;
   enableServerSideContinuation: boolean;
   backoffConfig: BackoffConfig;
   maxConcurrentToolCalls: number;
@@ -111,7 +113,7 @@ interface InternalAgentConfig {
 
 const DEFAULT_MAX_RETRY_COUNT = 20;
 const DEFAULT_COMPACTION_TRIGGER_RATIO = 0.8;
-const DEFAULT_COMPACTION_KEEP_MESSAGES = 20;
+const DEFAULT_COMPACTION_KEEP_MESSAGES = 6;
 const DEFAULT_MAX_CONCURRENT_TOOL_CALLS = 1;
 const DEFAULT_LLM_TIMEOUT_RATIO = 0.7;
 const ABORTED_MESSAGE = 'Operation aborted';
@@ -148,6 +150,7 @@ export class StatelessAgent extends EventEmitter {
       compactionTriggerRatio: config.compactionTriggerRatio ?? DEFAULT_COMPACTION_TRIGGER_RATIO,
       compactionKeepMessagesNum:
         config.compactionKeepMessagesNum ?? DEFAULT_COMPACTION_KEEP_MESSAGES,
+      compactionPromptVersion: config.compactionPromptVersion ?? 'v1',
       enableServerSideContinuation: config.enableServerSideContinuation ?? false,
       backoffConfig: config.backoffConfig ?? {},
       maxConcurrentToolCalls: Math.max(
@@ -184,60 +187,13 @@ export class StatelessAgent extends EventEmitter {
     tools?: Tool[],
     contextLimitTokens?: number
   ): Pick<AgentContextUsage, 'contextTokens' | 'contextLimitTokens' | 'contextUsagePercent'> {
-    const llmTools = tools as unknown as LLMTool[] | undefined;
-    const contextTokens = estimateMessagesTokens(messages, llmTools);
     const resolvedContextLimitTokens = this.getContextLimitTokens(contextLimitTokens);
-    return {
-      contextTokens,
-      contextLimitTokens: resolvedContextLimitTokens,
-      contextUsagePercent: (contextTokens / resolvedContextLimitTokens) * 100,
-    };
+    return calculateContextUsage(messages, tools, resolvedContextLimitTokens);
   }
 
   attachLogger(logger: AgentLogger): void {
     this.logger = mergeAgentLoggers(this.logger, logger);
     this.config.logger = this.logger;
-  }
-
-  private needsCompaction(
-    messages: Message[],
-    tools?: Tool[],
-    contextLimitTokens?: number
-  ): boolean {
-    if (!this.config.enableCompaction) {
-      return false;
-    }
-
-    const usableLimit = this.getContextLimitTokens(contextLimitTokens);
-    const threshold = usableLimit * this.config.compactionTriggerRatio;
-
-    const llmTools = tools as unknown as LLMTool[] | undefined;
-    const currentTokens = estimateMessagesTokens(messages, llmTools);
-
-    return currentTokens >= threshold;
-  }
-
-  private async compactMessagesIfNeeded(
-    messages: Message[],
-    tools?: Tool[],
-    contextLimitTokens?: number
-  ): Promise<string[]> {
-    if (!this.needsCompaction(messages, tools, contextLimitTokens)) {
-      return [];
-    }
-
-    try {
-      const result = await compact(messages, {
-        provider: this.llmProvider,
-        keepMessagesNum: this.config.compactionKeepMessagesNum,
-      });
-      messages.splice(0, messages.length, ...result.messages);
-
-      return result.removedMessageIds ?? [];
-    } catch (error) {
-      this.logError('[Agent] Compaction failed:', error);
-      return [];
-    }
   }
 
   async *runStream(
@@ -310,364 +266,112 @@ export class StatelessAgent extends EventEmitter {
   }
 
   private createRunLoopRuntime(hooks: AgentRuntimeLifecycleHooks): RunLoopRuntime {
-    /**
-     * The run loop consumes a grouped runtime instead of a flat dependency bag.
-     *
-     * Grouping by responsibility makes the contract easier to read, reduces
-     * repetitive parameter threading, and gives us a stable seam for future
-     * extensions such as alternate hooks or runtime policies without changing
-     * the loop algorithm itself.
-     */
-    return {
-      limits: {
-        maxRetryCount: this.config.maxRetryCount,
+    return buildRunLoopRuntime(
+      {
+        config: {
+          maxRetryCount: this.config.maxRetryCount,
+        },
+        callbacks: {
+          safe: this.safeCallback.bind(this),
+          safeError: this.safeErrorCallback.bind(this),
+        },
+        messages: {
+          prepareForLlmStep: (messages, tools, contextLimitTokens) =>
+            prepareMessagesForLlmStep(
+              messages,
+              {
+                provider: this.llmProvider,
+                logger: this.logger,
+                resolveContextLimitTokens: this.getContextLimitTokens.bind(this),
+                config: {
+                  enableCompaction: this.config.enableCompaction,
+                  compactionTriggerRatio: this.config.compactionTriggerRatio,
+                  compactionKeepMessagesNum: this.config.compactionKeepMessagesNum,
+                  compactionPromptVersion: this.config.compactionPromptVersion,
+                },
+              },
+              {
+                tools,
+                contextLimitTokens,
+              }
+            ),
+          mergeLLMConfig: mergeLLMRequestConfig,
+        },
+        createLLMStreamRuntimeDeps: this.createLLMStreamRuntimeDeps.bind(this),
+        createToolRuntime: this.createToolRuntime.bind(this),
+        stream: {
+          progress: this.emitProgress.bind(this),
+          checkpoint: this.yieldCheckpoint.bind(this),
+          done: this.yieldDoneEvent.bind(this),
+          error: this.yieldErrorEvent.bind(this),
+          maxRetries: this.yieldMaxRetriesError.bind(this),
+        },
+        resilience: {
+          createStageAbortScope: this.createStageAbortScope.bind(this),
+          throwIfAborted: this.throwIfAborted.bind(this),
+          normalizeTimeoutBudgetError: this.normalizeTimeoutBudgetError.bind(this),
+          timeoutBudgetErrorFromSignal: this.timeoutBudgetErrorFromSignal.bind(this),
+          isAbortError: this.isAbortError.bind(this),
+          normalizeError: this.normalizeError.bind(this),
+          calculateRetryDelay: this.calculateRetryDelay.bind(this),
+          sleep: this.sleep.bind(this),
+        },
+        diagnostics: {
+          extractErrorCode: this.extractErrorCode.bind(this),
+        },
         abortedMessage: ABORTED_MESSAGE,
       },
-      callbacks: {
-        safe: this.safeCallback.bind(this),
-        safeError: this.safeErrorCallback.bind(this),
-      },
-      messages: {
-        compactIfNeeded: this.compactMessagesIfNeeded.bind(this),
-        estimateContextUsage: this.estimateContextUsage.bind(this),
-        mergeLLMConfig: this.mergeLLMConfig.bind(this),
-      },
-      stages: {
-        llm: (messages, config, abortSignal, executionId, stepIndex, writeBufferSessions) =>
-          callLLMStreamRuntime(this.createLLMStreamRuntimeDeps(), {
-            messages,
-            config,
-            abortSignal,
-            executionId,
-            stepIndex,
-            writeBufferSessions,
-          }),
-        tools: (
-          toolCalls,
-          messages,
-          stepIndex,
-          callbacks,
-          abortSignal,
-          executionId,
-          traceId,
-          parentSpanId,
-          writeBufferSessions
-        ) =>
-          processToolCallsRuntime(this.createToolRuntime(hooks), {
-            toolCalls,
-            messages,
-            stepIndex,
-            callbacks,
-            abortSignal,
-            executionId,
-            traceId,
-            parentSpanId,
-            writeBufferSessions,
-            emitProgress: this.emitProgress.bind(this),
-          }),
-      },
-      stream: {
-        progress: this.emitProgress.bind(this),
-        checkpoint: this.yieldCheckpoint.bind(this),
-        done: this.yieldDoneEvent.bind(this),
-        error: this.yieldErrorEvent.bind(this),
-        maxRetries: this.yieldMaxRetriesError.bind(this),
-      },
-      resilience: {
-        createStageAbortScope: this.createStageAbortScope.bind(this),
-        throwIfAborted: this.throwIfAborted.bind(this),
-        normalizeTimeoutBudgetError: this.normalizeTimeoutBudgetError.bind(this),
-        timeoutBudgetErrorFromSignal: this.timeoutBudgetErrorFromSignal.bind(this),
-        isAbortError: this.isAbortError.bind(this),
-        normalizeError: this.normalizeError.bind(this),
-        calculateRetryDelay: this.calculateRetryDelay.bind(this),
-        sleep: this.sleep.bind(this),
-      },
-      diagnostics: {
-        extractErrorCode: this.extractErrorCode.bind(this),
-      },
-      hooks,
-    };
+      hooks
+    );
   }
 
-  private createLLMStreamRuntimeDeps(): LLMStreamRuntimeDeps {
-    // Keep the LLM streaming runtime narrowly scoped: it only needs the
-    // provider, abort checks and logging. Retry policy stays in the outer run
-    // loop so upstream failures and local orchestration failures share one
-    // control-flow decision point.
-    return {
+  private createLLMStreamRuntimeDeps() {
+    return buildLLMStreamRuntimeDeps({
       llmProvider: this.llmProvider,
       enableServerSideContinuation: this.config.enableServerSideContinuation,
       throwIfAborted: this.throwIfAborted.bind(this),
       logError: this.logError.bind(this),
-    };
+    });
   }
 
-  private createToolRuntime(hooks?: AgentRuntimeLifecycleHooks): ToolRuntime {
-    // Tool execution has its own runtime because it needs a different set of
-    // dependencies from the main loop: concurrency, idempotent replay,
-    // callback safety and tool-specific telemetry.
-    return {
-      agentRef: this,
-      execution: {
-        manager: this.toolExecutor,
-        ledger: this.toolExecutionLedger,
-        maxConcurrentToolCalls: this.config.maxConcurrentToolCalls,
-        resolveConcurrencyPolicy: this.config.toolConcurrencyPolicyResolver,
-      },
-      callbacks: {
-        safe: this.safeCallback.bind(this),
-      },
-      diagnostics: {
-        extractErrorCode: this.extractErrorCode.bind(this),
-        logError: this.logError.bind(this),
-      },
-      resilience: {
-        throwIfAborted: this.throwIfAborted.bind(this),
-      },
-      hooks: hooks ?? this.createLifecycleHooks(),
-      events: {
-        emit: (eventName, payload) => {
+  private createToolRuntime(hooks?: AgentRuntimeLifecycleHooks) {
+    return buildToolRuntime(
+      {
+        agentRef: this,
+        execution: {
+          manager: this.toolExecutor,
+          ledger: this.toolExecutionLedger,
+          maxConcurrentToolCalls: this.config.maxConcurrentToolCalls,
+          resolveConcurrencyPolicy: this.config.toolConcurrencyPolicyResolver,
+        },
+        callbacks: {
+          safe: this.safeCallback.bind(this),
+        },
+        diagnostics: {
+          extractErrorCode: this.extractErrorCode.bind(this),
+          logError: this.logError.bind(this),
+        },
+        resilience: {
+          throwIfAborted: this.throwIfAborted.bind(this),
+        },
+        createLifecycleHooks: this.createLifecycleHooks.bind(this),
+        emitEvent: (eventName, payload) => {
           this.emit(eventName, payload);
         },
       },
-    };
+      hooks
+    );
   }
 
   private createLifecycleHooks(): AgentRuntimeLifecycleHooks {
-    // Hooks intentionally model lifecycle boundaries instead of internal helper
-    // calls. That gives observability and future extension points a stable
-    // contract tied to business events rather than implementation details.
-    const observabilityHook: AgentRuntimeLifecycleHooks = {
-      onRunStart: async (context) => {
-        const span = await this.startSpan(
-          context.callbacks,
-          context.traceId,
-          'agent.run',
-          undefined,
-          {
-            executionId: context.executionId,
-            conversationId: context.conversationId,
-            maxSteps: context.maxSteps,
-            timeoutBudgetMs: context.timeoutBudgetMs,
-          }
-        );
-        this.logInfo('[Agent] run.start', {
-          executionId: context.executionId,
-          traceId: context.traceId,
-          spanId: span.spanId,
-        });
-        return {
-          spanId: span.spanId,
-          startedAt: span.startedAt,
-          finish: async (finishContext: RunLifecycleFinishContext) => {
-            await this.emitMetric(finishContext.callbacks, {
-              name: 'agent.run.duration_ms',
-              value: finishContext.latencyMs,
-              unit: 'ms',
-              timestamp: Date.now(),
-              tags: {
-                executionId: finishContext.executionId || '',
-                outcome: finishContext.outcome,
-              },
-            });
-            await this.emitMetric(finishContext.callbacks, {
-              name: 'agent.retry.count',
-              value: finishContext.retryCount,
-              unit: 'count',
-              timestamp: Date.now(),
-              tags: {
-                executionId: finishContext.executionId || '',
-              },
-            });
-            await this.endSpan(finishContext.callbacks, span, {
-              executionId: finishContext.executionId,
-              stepIndex: finishContext.stepIndex,
-              latencyMs: finishContext.latencyMs,
-              outcome: finishContext.outcome,
-              errorCode: finishContext.errorCode,
-              retryCount: finishContext.retryCount,
-            });
-            this.logInfo('[Agent] run.finish', {
-              executionId: finishContext.executionId,
-              traceId: finishContext.traceId,
-              spanId: span.spanId,
-              stepIndex: finishContext.stepIndex,
-              latencyMs: finishContext.latencyMs,
-              outcome: finishContext.outcome,
-              errorCode: finishContext.errorCode,
-              retryCount: finishContext.retryCount,
-            });
-          },
-        };
-      },
-      onLLMStageStart: async (context) => {
-        const span = await this.startSpan(
-          context.callbacks,
-          context.traceId,
-          'agent.llm.step',
-          context.parentSpanId,
-          {
-            executionId: context.executionId,
-            stepIndex: context.stepIndex,
-            messageCount: context.messageCount,
-          }
-        );
-        return {
-          spanId: span.spanId,
-          startedAt: span.startedAt,
-          finish: async (finishContext: LLMStageLifecycleFinishContext) => {
-            await this.emitMetric(finishContext.callbacks, {
-              name: 'agent.llm.duration_ms',
-              value: finishContext.latencyMs,
-              unit: 'ms',
-              timestamp: Date.now(),
-              tags: {
-                executionId: finishContext.executionId || '',
-                stepIndex: finishContext.stepIndex,
-                success: finishContext.success ? 'true' : 'false',
-              },
-            });
-            await this.endSpan(finishContext.callbacks, span, {
-              executionId: finishContext.executionId,
-              stepIndex: finishContext.stepIndex,
-              latencyMs: finishContext.latencyMs,
-              errorCode: finishContext.errorCode,
-            });
-            this.logInfo('[Agent] llm.step', {
-              executionId: finishContext.executionId,
-              traceId: finishContext.traceId,
-              spanId: span.spanId,
-              stepIndex: finishContext.stepIndex,
-              latencyMs: finishContext.latencyMs,
-              errorCode: finishContext.errorCode,
-              messageCount: finishContext.messageCount,
-            });
-          },
-        };
-      },
-      onToolStageStart: async (context) => {
-        const span = await this.startSpan(
-          context.callbacks,
-          context.traceId,
-          'agent.tool.stage',
-          context.parentSpanId,
-          {
-            executionId: context.executionId,
-            stepIndex: context.stepIndex,
-            toolCalls: context.toolCalls,
-          }
-        );
-        return {
-          spanId: span.spanId,
-          startedAt: span.startedAt,
-          finish: async (finishContext: ToolStageLifecycleFinishContext) => {
-            await this.emitMetric(finishContext.callbacks, {
-              name: 'agent.tool.stage.duration_ms',
-              value: finishContext.latencyMs,
-              unit: 'ms',
-              timestamp: Date.now(),
-              tags: {
-                executionId: finishContext.executionId || '',
-                stepIndex: finishContext.stepIndex,
-                success: finishContext.success ? 'true' : 'false',
-              },
-            });
-            await this.endSpan(finishContext.callbacks, span, {
-              executionId: finishContext.executionId,
-              stepIndex: finishContext.stepIndex,
-              latencyMs: finishContext.latencyMs,
-              errorCode: finishContext.errorCode,
-              toolCalls: finishContext.toolCalls,
-            });
-            this.logInfo('[Agent] tool.stage', {
-              executionId: finishContext.executionId,
-              traceId: finishContext.traceId,
-              spanId: span.spanId,
-              stepIndex: finishContext.stepIndex,
-              latencyMs: finishContext.latencyMs,
-              errorCode: finishContext.errorCode,
-              toolCalls: finishContext.toolCalls,
-            });
-          },
-        };
-      },
-      onToolExecutionStart: async (context) => {
-        const span = await this.startSpan(
-          context.callbacks,
-          context.traceId,
-          'agent.tool.execute',
-          context.parentSpanId,
-          {
-            executionId: context.executionId,
-            stepIndex: context.stepIndex,
-            toolCallId: context.toolCallId,
-            toolName: context.toolName,
-          }
-        );
-        return {
-          spanId: span.spanId,
-          startedAt: span.startedAt,
-          finish: async (finishContext: ToolExecutionLifecycleFinishContext) => {
-            await this.emitMetric(finishContext.callbacks, {
-              name: 'agent.tool.duration_ms',
-              value: finishContext.latencyMs,
-              unit: 'ms',
-              timestamp: Date.now(),
-              tags: {
-                executionId: finishContext.executionId || '',
-                stepIndex: String(finishContext.stepIndex),
-                toolCallId: finishContext.toolCallId,
-                cached: finishContext.cached ? 'true' : 'false',
-                success: finishContext.success ? 'true' : 'false',
-              },
-            });
-            await this.endSpan(finishContext.callbacks, span, {
-              executionId: finishContext.executionId,
-              stepIndex: finishContext.stepIndex,
-              toolCallId: finishContext.toolCallId,
-              toolName: finishContext.toolName,
-              latencyMs: finishContext.latencyMs,
-              cached: finishContext.cached,
-              errorCode: finishContext.errorCode,
-            });
-            this.logInfo('[Agent] tool.execute', {
-              executionId: finishContext.executionId,
-              traceId: finishContext.traceId,
-              spanId: span.spanId,
-              parentSpanId: span.parentSpanId,
-              stepIndex: finishContext.stepIndex,
-              toolCallId: finishContext.toolCallId,
-              toolName: finishContext.toolName,
-              latencyMs: finishContext.latencyMs,
-              cached: finishContext.cached,
-              errorCode: finishContext.errorCode,
-            });
-          },
-        };
-      },
-      onRunError: async (context) => {
-        this.logError('[Agent] run.error', context.error, {
-          executionId: context.executionId,
-          traceId: context.traceId,
-          stepIndex: context.stepIndex,
-          retryCount: context.retryCount,
-          errorCode: context.errorCode,
-          category: context.category,
-        });
-      },
-      onRetryScheduled: async (context) => {
-        this.logWarn('[Agent] retry.scheduled', {
-          executionId: context.executionId,
-          traceId: context.traceId,
-          stepIndex: context.stepIndex,
-          retryCount: context.retryCount,
-          errorCode: context.errorCode,
-        });
-      },
-    };
-
-    return composeAgentRuntimeHooks([observabilityHook]);
+    return createObservabilityLifecycleHooks({
+      startSpan: this.startSpan.bind(this),
+      endSpan: this.endSpan.bind(this),
+      emitMetric: this.emitMetric.bind(this),
+      logInfo: this.logInfo.bind(this),
+      logWarn: this.logWarn.bind(this),
+      logError: this.logError.bind(this),
+    });
   }
 
   private async *yieldCheckpoint(
@@ -709,62 +413,8 @@ export class StatelessAgent extends EventEmitter {
     yield createDoneEvent(stepIndex, finishReason);
   }
 
-  private mergeLLMConfig(
-    config: AgentInput['config'],
-    tools?: AgentInput['tools'],
-    abortSignal?: AbortSignal,
-    conversationId?: string
-  ): AgentInput['config'] {
-    const merged = mergeLLMRequestConfig(config, tools, abortSignal);
-    if (
-      typeof conversationId !== 'string' ||
-      conversationId.trim().length === 0 ||
-      merged?.prompt_cache_key
-    ) {
-      return merged;
-    }
-
-    // Use the conversation id as the default sticky cache routing key so
-    // repeated full replays can still hit provider-side prefix caching.
-    // This keeps the agent stateless while still improving replay efficiency
-    // for providers that support prompt-prefix caching.
-    return {
-      ...(merged || {}),
-      prompt_cache_key: conversationId,
-    };
-  }
-
   private resolveLLMTools(inputTools?: Tool[]): Tool[] | undefined {
-    // Normalize manager-defined tools into provider-compatible schemas once at
-    // the boundary so downstream runtime code only deals with plain Tool[].
-    if (typeof inputTools !== 'undefined') {
-      return inputTools;
-    }
-
-    const manager = this.toolExecutor as ToolManager & {
-      getTools?: () => Array<{ toToolSchema?: () => unknown }>;
-    };
-    if (typeof manager.getTools !== 'function') {
-      return undefined;
-    }
-
-    const schemas: Tool[] = [];
-    for (const tool of manager.getTools()) {
-      if (typeof tool.toToolSchema !== 'function') {
-        continue;
-      }
-      const schema = tool.toToolSchema();
-      schemas.push({
-        type: schema.type,
-        function: {
-          name: schema.function.name,
-          description: schema.function.description,
-          parameters: (schema.function.parameters as Record<string, unknown> | undefined) || {},
-        },
-      });
-    }
-
-    return schemas.length > 0 ? schemas : undefined;
+    return resolveLLMToolsFromManager(this.toolExecutor, inputTools);
   }
 
   private async emitMetric(

@@ -1,18 +1,10 @@
-import { createHash } from 'node:crypto';
-
 import type { AgentInput, Message } from '../types';
 import type { LLMRequestMessage } from '../../providers';
 import { processToolCallPairs } from '../utils/message';
 
 import { convertMessageToLLMMessage, shouldSendMessageToLLM } from './message-utils';
-
-type ContinuationMetadata = {
-  responseId?: string;
-  llmRequestConfigHash?: string;
-  llmRequestInputHash?: string;
-  llmRequestInputMessageCount?: number;
-  llmResponseMessageHash?: string;
-};
+import { hashValueForContinuation, normalizeContinuationConfig } from './continuation-hash';
+import { readContinuationMetadata } from './continuation-metadata';
 
 export type LLMRequestPlan = {
   requestMessages: LLMRequestMessage[];
@@ -26,101 +18,42 @@ export type LLMRequestPlan = {
   continuationDeltaMessageCount: number;
 };
 
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
+type ContinuationRequestState = {
+  llmSourceMessages: Message[];
+  llmMessages: LLMRequestMessage[];
+  requestConfigHash: string;
+  requestInputHash: string;
+  requestInputMessageCount: number;
+};
 
-function normalizeValueForHash(value: unknown): unknown {
-  if (value === undefined) {
-    return null;
-  }
-  if (
-    value === null ||
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean'
-  ) {
-    return value;
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => normalizeValueForHash(item));
-  }
-  if (typeof value === 'object') {
-    return Object.keys(value as Record<string, unknown>)
-      .sort()
-      .reduce<Record<string, unknown>>((acc, key) => {
-        const normalized = normalizeValueForHash((value as Record<string, unknown>)[key]);
-        if (normalized !== undefined) {
-          acc[key] = normalized;
-        }
-        return acc;
-      }, {});
-  }
-  return String(value);
-}
-
-function hashValueForContinuation(value: unknown): string {
-  return createHash('sha256')
-    .update(JSON.stringify(normalizeValueForHash(value)))
-    .digest('hex');
-}
-
-function normalizeContinuationConfig(config: AgentInput['config']): Record<string, unknown> {
-  if (!config) {
-    return {};
-  }
-
-  const { abortSignal, previous_response_id, ...rest } = config as AgentInput['config'] & {
-    abortSignal?: AbortSignal;
-    previous_response_id?: string;
-  };
-  void abortSignal;
-  void previous_response_id;
-
-  return normalizeValueForHash(rest) as Record<string, unknown>;
-}
-
-function readContinuationMetadata(message: Message): ContinuationMetadata | undefined {
-  if (!isPlainRecord(message.metadata)) {
-    return undefined;
-  }
-
-  const metadata = message.metadata as Record<string, unknown>;
-  const responseId =
-    typeof metadata.responseId === 'string' && metadata.responseId.trim().length > 0
-      ? metadata.responseId
-      : undefined;
-  const llmRequestConfigHash =
-    typeof metadata.llmRequestConfigHash === 'string' ? metadata.llmRequestConfigHash : undefined;
-  const llmRequestInputHash =
-    typeof metadata.llmRequestInputHash === 'string' ? metadata.llmRequestInputHash : undefined;
-  const llmRequestInputMessageCount =
-    typeof metadata.llmRequestInputMessageCount === 'number'
-      ? metadata.llmRequestInputMessageCount
-      : undefined;
-  const llmResponseMessageHash =
-    typeof metadata.llmResponseMessageHash === 'string'
-      ? metadata.llmResponseMessageHash
-      : undefined;
-
-  if (
-    !responseId ||
-    !llmRequestConfigHash ||
-    !llmRequestInputHash ||
-    typeof llmRequestInputMessageCount !== 'number' ||
-    !Number.isInteger(llmRequestInputMessageCount) ||
-    llmRequestInputMessageCount < 0 ||
-    !llmResponseMessageHash
-  ) {
-    return undefined;
-  }
+function createContinuationRequestState(
+  messages: Message[],
+  config: AgentInput['config']
+): ContinuationRequestState {
+  const llmSourceMessages = messages.filter((msg) => shouldSendMessageToLLM(msg));
+  const llmMessages = llmSourceMessages.map((msg) => convertMessageToLLMMessage(msg));
 
   return {
-    responseId,
-    llmRequestConfigHash,
-    llmRequestInputHash,
-    llmRequestInputMessageCount,
-    llmResponseMessageHash,
+    llmSourceMessages,
+    llmMessages,
+    requestConfigHash: hashValueForContinuation(normalizeContinuationConfig(config)),
+    requestInputHash: hashValueForContinuation(llmMessages),
+    requestInputMessageCount: llmMessages.length,
+  };
+}
+
+function buildFullRequestPlan(
+  state: ContinuationRequestState,
+  config: AgentInput['config']
+): LLMRequestPlan {
+  return {
+    requestMessages: state.llmMessages,
+    requestConfig: config,
+    requestConfigHash: state.requestConfigHash,
+    requestInputHash: state.requestInputHash,
+    requestInputMessageCount: state.requestInputMessageCount,
+    continuationMode: 'full',
+    continuationDeltaMessageCount: state.llmMessages.length,
   };
 }
 
@@ -129,11 +62,7 @@ export function buildLLMRequestPlan(
   config: AgentInput['config'],
   enableServerSideContinuation: boolean
 ): LLMRequestPlan {
-  const llmSourceMessages = messages.filter((msg) => shouldSendMessageToLLM(msg));
-  const llmMessages = llmSourceMessages.map((msg) => convertMessageToLLMMessage(msg));
-  const requestConfigHash = hashValueForContinuation(normalizeContinuationConfig(config));
-  const requestInputHash = hashValueForContinuation(llmMessages);
-  const requestInputMessageCount = llmMessages.length;
+  const state = createContinuationRequestState(messages, config);
 
   const explicitPreviousResponseId =
     typeof config?.previous_response_id === 'string' &&
@@ -142,19 +71,11 @@ export function buildLLMRequestPlan(
       : undefined;
 
   if (explicitPreviousResponseId || !enableServerSideContinuation) {
-    return {
-      requestMessages: llmMessages,
-      requestConfig: config,
-      requestConfigHash,
-      requestInputHash,
-      requestInputMessageCount,
-      continuationMode: 'full',
-      continuationDeltaMessageCount: llmMessages.length,
-    };
+    return buildFullRequestPlan(state, config);
   }
 
-  for (let index = llmSourceMessages.length - 1; index >= 0; index -= 1) {
-    const candidate = llmSourceMessages[index];
+  for (let index = state.llmSourceMessages.length - 1; index >= 0; index -= 1) {
+    const candidate = state.llmSourceMessages[index];
     if (candidate.role !== 'assistant') {
       continue;
     }
@@ -164,35 +85,35 @@ export function buildLLMRequestPlan(
       continue;
     }
 
-    if (metadata.llmRequestConfigHash !== requestConfigHash) {
-      break;
+    if (metadata.llmRequestConfigHash !== state.requestConfigHash) {
+      continue;
     }
 
-    const prefixMessages = llmMessages.slice(0, index);
-    const currentAssistantMessage = llmMessages[index];
+    const prefixMessages = state.llmMessages.slice(0, index);
+    const currentAssistantMessage = state.llmMessages[index];
     if (!currentAssistantMessage) {
-      break;
+      continue;
     }
 
     if (prefixMessages.length !== metadata.llmRequestInputMessageCount) {
-      break;
+      continue;
     }
 
     if (hashValueForContinuation(prefixMessages) !== metadata.llmRequestInputHash) {
-      break;
+      continue;
     }
 
     if (hashValueForContinuation(currentAssistantMessage) !== metadata.llmResponseMessageHash) {
-      break;
+      continue;
     }
 
     const continuationWindow = processToolCallPairs(
-      llmSourceMessages.slice(0, index + 1),
-      llmSourceMessages.slice(index + 1)
+      state.llmSourceMessages.slice(0, index + 1),
+      state.llmSourceMessages.slice(index + 1)
     );
     const deltaSourceMessages = continuationWindow.active;
     if (deltaSourceMessages.length === 0) {
-      break;
+      continue;
     }
 
     return {
@@ -201,9 +122,9 @@ export function buildLLMRequestPlan(
         ...(config || {}),
         previous_response_id: metadata.responseId,
       },
-      requestConfigHash,
-      requestInputHash,
-      requestInputMessageCount,
+      requestConfigHash: state.requestConfigHash,
+      requestInputHash: state.requestInputHash,
+      requestInputMessageCount: state.requestInputMessageCount,
       continuationMode: 'incremental',
       previousResponseIdUsed: metadata.responseId,
       continuationBaselineMessageCount: continuationWindow.pending.length,
@@ -211,15 +132,7 @@ export function buildLLMRequestPlan(
     };
   }
 
-  return {
-    requestMessages: llmMessages,
-    requestConfig: config,
-    requestConfigHash,
-    requestInputHash,
-    requestInputMessageCount,
-    continuationMode: 'full',
-    continuationDeltaMessageCount: llmMessages.length,
-  };
+  return buildFullRequestPlan(state, config);
 }
 
 export function applyContinuationMetadata(

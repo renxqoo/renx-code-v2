@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  convertMessageToLLMMessage,
-  mergeLLMConfig,
-  shouldSendMessageToLLM,
-} from '../message-utils';
+import { convertMessageToLLMMessage, shouldSendMessageToLLM } from '../message-utils';
+import { mergeBaseLLMConfig } from '../llm-request-config';
 import type { Message } from '../../types';
 
 const createMessage = (overrides: Partial<Message> = {}): Message => ({
@@ -366,13 +363,13 @@ describe('convertMessageToLLMMessage', () => {
 
 describe('mergeLLMConfig', () => {
   it('returns undefined when all inputs are undefined', () => {
-    const result = mergeLLMConfig(undefined, undefined, undefined);
+    const result = mergeBaseLLMConfig(undefined, undefined, undefined);
     expect(result).toBeUndefined();
   });
 
   it('returns config when only config is provided', () => {
     const config = { model: 'gpt-4', temperature: 0.7 };
-    const result = mergeLLMConfig(config, undefined, undefined);
+    const result = mergeBaseLLMConfig(config, undefined, undefined);
 
     expect(result).toEqual(config);
   });
@@ -385,7 +382,7 @@ describe('mergeLLMConfig', () => {
         function: { name: 'test', description: 'Test', parameters: {} },
       },
     ];
-    const result = mergeLLMConfig(config, tools, undefined);
+    const result = mergeBaseLLMConfig(config, tools, undefined);
 
     expect(result).toEqual({
       model: 'gpt-4',
@@ -396,7 +393,7 @@ describe('mergeLLMConfig', () => {
   it('adds abortSignal to config', () => {
     const config = { model: 'gpt-4' };
     const abortSignal = new AbortController().signal;
-    const result = mergeLLMConfig(config, undefined, abortSignal);
+    const result = mergeBaseLLMConfig(config, undefined, abortSignal);
 
     expect(result).toEqual({
       model: 'gpt-4',
@@ -413,7 +410,7 @@ describe('mergeLLMConfig', () => {
       },
     ];
     const abortSignal = new AbortController().signal;
-    const result = mergeLLMConfig(config, tools, abortSignal);
+    const result = mergeBaseLLMConfig(config, tools, abortSignal);
 
     expect(result).toEqual({
       model: 'gpt-4',
@@ -424,7 +421,7 @@ describe('mergeLLMConfig', () => {
 
   it('handles empty tools array', () => {
     const config = { model: 'gpt-4' };
-    const result = mergeLLMConfig(config, [], undefined);
+    const result = mergeBaseLLMConfig(config, [], undefined);
 
     expect(result).toEqual({ model: 'gpt-4' });
   });
@@ -436,7 +433,7 @@ describe('mergeLLMConfig', () => {
         function: { name: 'test', description: 'Test', parameters: {} },
       },
     ];
-    const result = mergeLLMConfig(null as any, tools, undefined);
+    const result = mergeBaseLLMConfig(null as any, tools, undefined);
 
     expect(result).toEqual({ tools });
   });
@@ -448,14 +445,14 @@ describe('mergeLLMConfig', () => {
         function: { name: 'test', description: 'Test', parameters: {} },
       },
     ];
-    const result = mergeLLMConfig(undefined, tools, undefined);
+    const result = mergeBaseLLMConfig(undefined, tools, undefined);
 
     expect(result).toEqual({ tools });
   });
 
   it('handles undefined config with abortSignal', () => {
     const abortSignal = new AbortController().signal;
-    const result = mergeLLMConfig(undefined, undefined, abortSignal);
+    const result = mergeBaseLLMConfig(undefined, undefined, abortSignal);
 
     expect(result).toEqual({ abortSignal });
   });
@@ -468,7 +465,7 @@ describe('mergeLLMConfig', () => {
       },
     ];
     const abortSignal = new AbortController().signal;
-    const result = mergeLLMConfig(undefined, tools, abortSignal);
+    const result = mergeBaseLLMConfig(undefined, tools, abortSignal);
 
     expect(result).toEqual({ tools, abortSignal });
   });
@@ -480,7 +477,7 @@ describe('mergeLLMConfig', () => {
       maxTokens: 1000,
       topP: 0.9,
     };
-    const result = mergeLLMConfig(config, undefined, undefined);
+    const result = mergeBaseLLMConfig(config, undefined, undefined);
 
     expect(result).toEqual(config);
   });
@@ -498,7 +495,7 @@ describe('mergeLLMConfig', () => {
     const newTools = [
       { type: 'function' as const, function: { name: 'new', description: 'New', parameters: {} } },
     ];
-    const result = mergeLLMConfig(config, newTools, undefined);
+    const result = mergeBaseLLMConfig(config, newTools, undefined);
 
     expect(result!.tools).toEqual(newTools);
   });
@@ -510,7 +507,7 @@ describe('mergeLLMConfig', () => {
       model: 'gpt-4',
       abortSignal: oldSignal,
     };
-    const result = mergeLLMConfig(config, undefined, newSignal);
+    const result = mergeBaseLLMConfig(config, undefined, newSignal);
 
     expect(result!.abortSignal).toBe(newSignal);
   });

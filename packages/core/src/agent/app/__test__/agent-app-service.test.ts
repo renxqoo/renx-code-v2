@@ -44,13 +44,32 @@ function createToolManager(): ToolManager {
   return {
     execute: vi.fn(),
     registerTool: vi.fn(),
+    registerTools: vi.fn(),
     getTools: vi.fn(() => []),
+    getToolSchemas: vi.fn(() => []),
     getConcurrencyPolicy: vi.fn(() => ({ mode: 'exclusive' as const })),
   } as unknown as ToolManager;
 }
 
 async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForRunStatus(
+  app: AgentAppService,
+  executionId: string,
+  status: 'CREATED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED',
+  timeoutMs = 1000
+): Promise<void> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const run = await app.getRun(executionId);
+    if (run?.status === status) {
+      return;
+    }
+    await delay(10);
+  }
+  throw new Error(`Timed out waiting for run ${executionId} to reach status ${status}`);
 }
 
 function extractJsonStringFieldPrefix(raw: string, fieldName: string): string {
@@ -993,5 +1012,200 @@ describe('AgentAppService', () => {
         (event) => (event.data as { message?: string }).message === '[Agent] run.error'
       )
     ).toBe(true);
+  });
+
+  it('accepts runtime user input and consumes it on the next safe boundary', async () => {
+    const provider = createProvider();
+    const manager = createToolManager();
+    let releaseFirstTurn!: () => void;
+    const firstTurnGate = new Promise<void>((resolve) => {
+      releaseFirstTurn = resolve;
+    });
+
+    provider.generateStream = vi
+      .fn()
+      .mockImplementationOnce(() =>
+        (async function* () {
+          yield {
+            index: 0,
+            choices: [{ index: 0, delta: { content: 'first response' } }],
+          } as Chunk;
+          await firstTurnGate;
+          yield {
+            index: 0,
+            choices: [{ index: 0, delta: { finish_reason: 'stop' } as unknown as ChunkDelta }],
+          } as Chunk;
+        })()
+      )
+      .mockReturnValueOnce(
+        toStream([
+          {
+            index: 0,
+            choices: [{ index: 0, delta: { content: 'follow-up response' } }],
+          },
+          {
+            index: 0,
+            choices: [{ index: 0, delta: { finish_reason: 'stop' } as unknown as ChunkDelta }],
+          },
+        ])
+      );
+
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'renx-app-service-runtime-input-'));
+    store = new SqliteAgentAppStore(path.join(tempDir, 'agent.db'));
+    const agent = new StatelessAgent(provider, manager, {
+      maxRetryCount: 1,
+      backoffConfig: { initialDelayMs: 1, maxDelayMs: 1, base: 2, jitter: false },
+    });
+    const app = new AgentAppService({
+      agent,
+      executionStore: store,
+      eventStore: store,
+      messageStore: store,
+    });
+
+    const runPromise = app.runForeground({
+      conversationId: 'conv_runtime_input',
+      executionId: 'exec_runtime_input',
+      userInput: 'start',
+      maxSteps: 4,
+    });
+
+    await waitForRunStatus(app, 'exec_runtime_input', 'RUNNING');
+
+    const appended = await app.appendUserInputToRun({
+      executionId: 'exec_runtime_input',
+      conversationId: 'conv_runtime_input',
+      userInput: 'continue with this',
+    });
+    expect(appended).toMatchObject({
+      accepted: true,
+      message: expect.objectContaining({
+        role: 'user',
+        type: 'user',
+        content: 'continue with this',
+      }),
+    });
+
+    releaseFirstTurn();
+    const result = await runPromise;
+
+    expect(provider.generateStream).toHaveBeenCalledTimes(2);
+    expect(result.finishReason).toBe('stop');
+    expect(
+      result.messages.filter((message) => message.role === 'user').map((message) => message.content)
+    ).toEqual(['start', 'continue with this']);
+    expect(
+      result.events
+        .filter((event) => event.eventType === 'user_message')
+        .map((event) => {
+          const payload = event.data as { message?: { content?: string } };
+          return payload.message?.content;
+        })
+    ).toEqual(['start', 'continue with this']);
+  });
+
+  it('rejects runtime user input when the run is not active', async () => {
+    const provider = createProvider();
+    const manager = createToolManager();
+    provider.generateStream = vi.fn().mockReturnValue(
+      toStream([
+        {
+          index: 0,
+          choices: [{ index: 0, delta: { content: 'done' } }],
+        },
+        {
+          index: 0,
+          choices: [{ index: 0, delta: { finish_reason: 'stop' } as unknown as ChunkDelta }],
+        },
+      ])
+    );
+
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'renx-app-service-runtime-inactive-'));
+    store = new SqliteAgentAppStore(path.join(tempDir, 'agent.db'));
+    const agent = new StatelessAgent(provider, manager, {
+      maxRetryCount: 1,
+      backoffConfig: { initialDelayMs: 1, maxDelayMs: 1, base: 2, jitter: false },
+    });
+    const app = new AgentAppService({
+      agent,
+      executionStore: store,
+      eventStore: store,
+      messageStore: store,
+    });
+
+    await app.runForeground({
+      conversationId: 'conv_runtime_inactive',
+      executionId: 'exec_runtime_inactive',
+      userInput: 'start',
+    });
+
+    await expect(
+      app.appendUserInputToRun({
+        executionId: 'exec_runtime_inactive',
+        conversationId: 'conv_runtime_inactive',
+        userInput: 'late input',
+      })
+    ).resolves.toEqual({
+      accepted: false,
+      reason: 'run_not_active',
+    });
+  });
+
+  it('rejects runtime user input when conversation id mismatches the active run', async () => {
+    const provider = createProvider();
+    const manager = createToolManager();
+    let releaseFirstTurn!: () => void;
+    const firstTurnGate = new Promise<void>((resolve) => {
+      releaseFirstTurn = resolve;
+    });
+
+    provider.generateStream = vi.fn().mockImplementationOnce(() =>
+      (async function* () {
+        yield {
+          index: 0,
+          choices: [{ index: 0, delta: { content: 'waiting' } }],
+        } as Chunk;
+        await firstTurnGate;
+        yield {
+          index: 0,
+          choices: [{ index: 0, delta: { finish_reason: 'stop' } as unknown as ChunkDelta }],
+        } as Chunk;
+      })()
+    );
+
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'renx-app-service-runtime-mismatch-'));
+    store = new SqliteAgentAppStore(path.join(tempDir, 'agent.db'));
+    const agent = new StatelessAgent(provider, manager, {
+      maxRetryCount: 1,
+      backoffConfig: { initialDelayMs: 1, maxDelayMs: 1, base: 2, jitter: false },
+    });
+    const app = new AgentAppService({
+      agent,
+      executionStore: store,
+      eventStore: store,
+      messageStore: store,
+    });
+
+    const runPromise = app.runForeground({
+      conversationId: 'conv_runtime_match',
+      executionId: 'exec_runtime_match',
+      userInput: 'start',
+    });
+
+    await waitForRunStatus(app, 'exec_runtime_match', 'RUNNING');
+
+    await expect(
+      app.appendUserInputToRun({
+        executionId: 'exec_runtime_match',
+        conversationId: 'conv_other',
+        userInput: 'wrong conversation',
+      })
+    ).resolves.toEqual({
+      accepted: false,
+      reason: 'conversation_mismatch',
+    });
+
+    releaseFirstTurn();
+    await runPromise;
   });
 });

@@ -18,6 +18,7 @@ import type {
   EventStorePort,
   ExecutionStorePort,
   MessageProjectionStorePort,
+  PendingInputStorePort,
   RunLogStorePort,
 } from './ports';
 
@@ -76,12 +77,25 @@ export interface RunForegroundResult {
   run: RunRecord;
 }
 
+export interface AppendUserInputRequest {
+  executionId: string;
+  conversationId: string;
+  userInput: MessageContent;
+}
+
+export interface AppendUserInputResult {
+  accepted: boolean;
+  reason?: 'run_not_active' | 'conversation_mismatch' | 'empty_input';
+  message?: Message;
+}
+
 export interface AgentAppServiceDeps {
   agent: StatelessAgent;
   executionStore: ExecutionStorePort;
   eventStore: EventStorePort;
   messageStore?: MessageProjectionStorePort;
   runLogStore?: RunLogStorePort;
+  pendingInputStore?: PendingInputStorePort;
 }
 
 interface RunObservabilityContext {
@@ -92,11 +106,56 @@ interface RunObservabilityContext {
   appendEvent: (eventType: CliEventEnvelope['eventType'], data: unknown) => Promise<void>;
 }
 
+interface ActiveRunRegistration {
+  conversationId: string;
+  acceptingInput: boolean;
+  inMemoryPendingMessages: Message[];
+  mutationChain: Promise<void>;
+}
+
 export class AgentAppService {
   private readonly observabilityScope = new AsyncLocalStorage<RunObservabilityContext>();
+  private readonly activeRuns = new Map<string, ActiveRunRegistration>();
 
   constructor(private readonly deps: AgentAppServiceDeps) {
     this.deps.agent.attachLogger(this.createScopedLogger());
+  }
+
+  async appendUserInputToRun(request: AppendUserInputRequest): Promise<AppendUserInputResult> {
+    const activeRun = this.activeRuns.get(request.executionId);
+    if (!activeRun) {
+      return { accepted: false, reason: 'run_not_active' };
+    }
+
+    return this.withActiveRunMutation(activeRun, async () => {
+      if (!activeRun.acceptingInput) {
+        return { accepted: false, reason: 'run_not_active' };
+      }
+      if (activeRun.conversationId !== request.conversationId) {
+        return { accepted: false, reason: 'conversation_mismatch' };
+      }
+      if (isEmptyMessageContent(request.userInput)) {
+        return { accepted: false, reason: 'empty_input' };
+      }
+
+      const message = createUserMessage(request.userInput);
+      const pendingInputStore = resolvePendingInputStore(this.deps);
+      if (pendingInputStore) {
+        await pendingInputStore.enqueuePendingInput({
+          executionId: request.executionId,
+          conversationId: request.conversationId,
+          message,
+          createdAt: Date.now(),
+        });
+      } else {
+        activeRun.inMemoryPendingMessages.push(message);
+      }
+
+      return {
+        accepted: true,
+        message,
+      };
+    });
   }
 
   async runForeground(
@@ -170,6 +229,7 @@ export class AgentAppService {
       startedAt: Date.now(),
       updatedAt: Date.now(),
     });
+    const activeRun = this.activateRun(executionId, request.conversationId);
 
     let toolEventQueue: Promise<void> = Promise.resolve();
     let observabilityQueue: Promise<void> = Promise.resolve();
@@ -191,160 +251,172 @@ export class AgentAppService {
       });
     };
 
-    this.deps.agent.on('tool_chunk', toolChunkListener);
+    try {
+      this.deps.agent.on('tool_chunk', toolChunkListener);
 
-    const agentCallbacks: AgentCallbacks = {
-      onContextUsage: async (contextUsage) => {
-        latestContextUsage = {
-          stepIndex: contextUsage.stepIndex,
-          contextTokens: contextUsage.contextTokens,
-          contextLimitTokens: contextUsage.contextLimitTokens,
-          contextUsagePercent: contextUsage.contextUsagePercent,
-        };
-        await callbacks?.onContextUsage?.(contextUsage);
-      },
-      onMessage: async (message) => {
-        // 添加模型信息到消息的 metadata 中
-        if (request.modelLabel && message.role === 'assistant') {
-          message.metadata = {
-            ...message.metadata,
-            modelLabel: request.modelLabel,
+      const agentCallbacks: AgentCallbacks = {
+        onContextUsage: async (contextUsage) => {
+          latestContextUsage = {
+            stepIndex: contextUsage.stepIndex,
+            contextTokens: contextUsage.contextTokens,
+            contextLimitTokens: contextUsage.contextLimitTokens,
+            contextUsagePercent: contextUsage.contextUsagePercent,
           };
-        }
-        emittedMessages.push(message);
-        await appendAndProject('assistant_message', {
-          message,
-          stepIndex: currentStepIndex,
-        });
-        const usage = readUsage(message.usage);
-        if (message.role === 'assistant' && usage) {
-          usageSequence += 1;
-          cumulativeUsage.prompt_tokens += usage.prompt_tokens;
-          cumulativeUsage.completion_tokens += usage.completion_tokens;
-          cumulativeUsage.total_tokens += usage.total_tokens;
-          const usageStepIndex = latestContextUsage?.stepIndex ?? currentStepIndex;
-
-          const usagePayload: RunForegroundUsage = {
-            sequence: usageSequence,
-            stepIndex: usageStepIndex,
-            messageId: message.messageId,
-            usage,
-            cumulativeUsage: { ...cumulativeUsage },
-            contextTokens: latestContextUsage?.contextTokens,
-            contextLimitTokens: latestContextUsage?.contextLimitTokens,
-            contextUsagePercent: latestContextUsage?.contextUsagePercent,
-          };
-          await callbacks?.onUsage?.(usagePayload);
-        }
-        await callbacks?.onMessage?.(message);
-      },
-      onCheckpoint: async (checkpoint) => {
-        await callbacks?.onCheckpoint?.(checkpoint);
-      },
-      onProgress: callbacks?.onProgress,
-      onCompaction: callbacks?.onCompaction,
-      onMetric: async (metric) => {
-        enqueueObservabilityTask(async () => {
-          await appendAndProject('metric', metric);
-        });
-        await callbacks?.onMetric?.(metric);
-      },
-      onTrace: async (event) => {
-        enqueueObservabilityTask(async () => {
-          await appendAndProject('trace', event);
-        });
-        await callbacks?.onTrace?.(event);
-      },
-      onToolPolicy: callbacks?.onToolPolicy,
-      onError: callbacks?.onError,
-    };
-
-    await this.observabilityScope.run(
-      {
-        executionId,
-        conversationId: request.conversationId,
-        getStepIndex: () => currentStepIndex,
-        enqueue: enqueueObservabilityTask,
-        appendEvent: async (eventType, data) => {
-          await appendAndProject(eventType, data);
+          await callbacks?.onContextUsage?.(contextUsage);
         },
-      },
-      async () => {
-        try {
-          for await (const event of this.deps.agent.runStream(
-            {
-              executionId,
-              conversationId: request.conversationId,
-              messages: inputMessages,
-              systemPrompt: request.systemPrompt,
-              tools: request.tools,
-              config: request.config,
-              maxSteps: request.maxSteps,
-              abortSignal: request.abortSignal,
-              timeoutBudgetMs: request.timeoutBudgetMs,
-              llmTimeoutRatio: request.llmTimeoutRatio,
-              contextLimitTokens: request.contextLimitTokens,
-            },
-            agentCallbacks
-          )) {
-            const envelope = await appendAndProject(event.type, event.data);
+        onMessage: async (message) => {
+          // 添加模型信息到消息的 metadata 中
+          if (request.modelLabel && message.role === 'assistant') {
+            message.metadata = {
+              ...message.metadata,
+              modelLabel: request.modelLabel,
+            };
+          }
+          emittedMessages.push(message);
+          await appendAndProject('assistant_message', {
+            message,
+            stepIndex: currentStepIndex,
+          });
+          const usage = readUsage(message.usage);
+          if (message.role === 'assistant' && usage) {
+            usageSequence += 1;
+            cumulativeUsage.prompt_tokens += usage.prompt_tokens;
+            cumulativeUsage.completion_tokens += usage.completion_tokens;
+            cumulativeUsage.total_tokens += usage.total_tokens;
+            const usageStepIndex = latestContextUsage?.stepIndex ?? currentStepIndex;
 
-            if (event.type === 'progress' || event.type === 'checkpoint') {
-              const stepIndex = readStepIndex(event.data);
-              if (stepIndex > currentStepIndex) {
-                currentStepIndex = stepIndex;
-              }
-              await this.deps.executionStore.patch(executionId, {
-                stepIndex: currentStepIndex,
-                updatedAt: Date.now(),
-                ...(event.type === 'checkpoint' ? { lastCheckpointSeq: envelope.seq } : {}),
-              });
-            }
+            const usagePayload: RunForegroundUsage = {
+              sequence: usageSequence,
+              stepIndex: usageStepIndex,
+              messageId: message.messageId,
+              usage,
+              cumulativeUsage: { ...cumulativeUsage },
+              contextTokens: latestContextUsage?.contextTokens,
+              contextLimitTokens: latestContextUsage?.contextLimitTokens,
+              contextUsagePercent: latestContextUsage?.contextUsagePercent,
+            };
+            await callbacks?.onUsage?.(usagePayload);
+          }
+          await callbacks?.onMessage?.(message);
+        },
+        onCheckpoint: async (checkpoint) => {
+          await callbacks?.onCheckpoint?.(checkpoint);
+        },
+        onProgress: callbacks?.onProgress,
+        onCompaction: callbacks?.onCompaction,
+        onMetric: async (metric) => {
+          enqueueObservabilityTask(async () => {
+            await appendAndProject('metric', metric);
+          });
+          await callbacks?.onMetric?.(metric);
+        },
+        onTrace: async (event) => {
+          enqueueObservabilityTask(async () => {
+            await appendAndProject('trace', event);
+          });
+          await callbacks?.onTrace?.(event);
+        },
+        onToolPolicy: callbacks?.onToolPolicy,
+        onError: callbacks?.onError,
+      };
 
-            if (event.type === 'compaction') {
-              const contextStore = resolveContextStore(this.deps.messageStore);
-              if (contextStore) {
-                const compaction = extractCompactionInfo(event.data, currentStepIndex);
-                if (compaction.removedMessageIds.length > 0) {
-                  await contextStore.applyCompaction({
-                    conversationId: request.conversationId,
-                    executionId,
-                    stepIndex: compaction.stepIndex,
-                    removedMessageIds: compaction.removedMessageIds,
-                    createdAt: envelope.createdAt,
-                  });
+      await this.observabilityScope.run(
+        {
+          executionId,
+          conversationId: request.conversationId,
+          getStepIndex: () => currentStepIndex,
+          enqueue: enqueueObservabilityTask,
+          appendEvent: async (eventType, data) => {
+            await appendAndProject(eventType, data);
+          },
+        },
+        async () => {
+          try {
+            for await (const event of this.deps.agent.runStream(
+              {
+                executionId,
+                conversationId: request.conversationId,
+                messages: inputMessages,
+                systemPrompt: request.systemPrompt,
+                tools: request.tools,
+                config: request.config,
+                maxSteps: request.maxSteps,
+                abortSignal: request.abortSignal,
+                timeoutBudgetMs: request.timeoutBudgetMs,
+                llmTimeoutRatio: request.llmTimeoutRatio,
+                contextLimitTokens: request.contextLimitTokens,
+                pendingInput: this.createPendingInputAdapter(executionId, activeRun),
+              },
+              agentCallbacks
+            )) {
+              const envelope = await appendAndProject(event.type, event.data);
+
+              if (event.type === 'user_message') {
+                const payload = extractStreamMessagePayload(event.data);
+                if (payload) {
+                  emittedMessages.push(payload.message);
                 }
               }
-            }
 
-            if (event.type === 'done') {
-              terminalEventSeen = true;
-              const doneData = event.data as {
-                finishReason?: 'stop' | 'max_steps';
-                steps?: number;
-              };
-              finishReason = doneData.finishReason ?? 'stop';
-              if (typeof doneData.steps === 'number' && doneData.steps > 0) {
-                steps = doneData.steps;
-                currentStepIndex = Math.max(currentStepIndex, doneData.steps);
+              if (event.type === 'progress' || event.type === 'checkpoint') {
+                const stepIndex = readStepIndex(event.data);
+                if (stepIndex > currentStepIndex) {
+                  currentStepIndex = stepIndex;
+                }
+                await this.deps.executionStore.patch(executionId, {
+                  stepIndex: currentStepIndex,
+                  updatedAt: Date.now(),
+                  ...(event.type === 'checkpoint' ? { lastCheckpointSeq: envelope.seq } : {}),
+                });
+              }
+
+              if (event.type === 'compaction') {
+                const contextStore = resolveContextStore(this.deps.messageStore);
+                if (contextStore) {
+                  const compaction = extractCompactionInfo(event.data, currentStepIndex);
+                  if (compaction.removedMessageIds.length > 0) {
+                    await contextStore.applyCompaction({
+                      conversationId: request.conversationId,
+                      executionId,
+                      stepIndex: compaction.stepIndex,
+                      removedMessageIds: compaction.removedMessageIds,
+                      createdAt: envelope.createdAt,
+                    });
+                  }
+                }
+              }
+
+              if (event.type === 'done') {
+                terminalEventSeen = true;
+                const doneData = event.data as {
+                  finishReason?: 'stop' | 'max_steps';
+                  steps?: number;
+                };
+                finishReason = doneData.finishReason ?? 'stop';
+                if (typeof doneData.steps === 'number' && doneData.steps > 0) {
+                  steps = doneData.steps;
+                  currentStepIndex = Math.max(currentStepIndex, doneData.steps);
+                }
+              }
+
+              if (event.type === 'error') {
+                terminalEventSeen = true;
+                finishReason = 'error';
+                latestErrorPayload = extractErrorPayload(event.data);
               }
             }
-
-            if (event.type === 'error') {
-              terminalEventSeen = true;
-              finishReason = 'error';
-              latestErrorPayload = extractErrorPayload(event.data);
-            }
+          } catch (error) {
+            streamFailure = error;
+          } finally {
+            this.deps.agent.off('tool_chunk', toolChunkListener);
+            await toolEventQueue;
+            await observabilityQueue;
           }
-        } catch (error) {
-          streamFailure = error;
-        } finally {
-          this.deps.agent.off('tool_chunk', toolChunkListener);
-          await toolEventQueue;
-          await observabilityQueue;
         }
-      }
-    );
+      );
+    } finally {
+      await this.deactivateRun(executionId);
+    }
 
     if (toolStreamFailure && !streamFailure) {
       streamFailure = toolStreamFailure;
@@ -477,6 +549,77 @@ export class AgentAppService {
       await runLogStore.appendRunLog(payload);
       await scope.appendEvent('run_log', payload);
     });
+  }
+
+  private activateRun(executionId: string, conversationId: string): ActiveRunRegistration {
+    const activeRun: ActiveRunRegistration = {
+      conversationId,
+      acceptingInput: true,
+      inMemoryPendingMessages: [],
+      mutationChain: Promise.resolve(),
+    };
+    this.activeRuns.set(executionId, activeRun);
+    return activeRun;
+  }
+
+  private async deactivateRun(executionId: string): Promise<void> {
+    const activeRun = this.activeRuns.get(executionId);
+    if (!activeRun) {
+      return;
+    }
+
+    await this.withActiveRunMutation(activeRun, async () => {
+      activeRun.acceptingInput = false;
+    });
+    this.activeRuns.delete(executionId);
+  }
+
+  private createPendingInputAdapter(executionId: string, activeRun: ActiveRunRegistration) {
+    const pendingInputStore = resolvePendingInputStore(this.deps);
+    return {
+      takePendingMessages: async () => {
+        return this.withActiveRunMutation(activeRun, async () => {
+          if (pendingInputStore) {
+            return pendingInputStore.takePendingInputs(executionId);
+          }
+          if (activeRun.inMemoryPendingMessages.length === 0) {
+            return [];
+          }
+          const drained = [...activeRun.inMemoryPendingMessages];
+          activeRun.inMemoryPendingMessages.length = 0;
+          return drained;
+        });
+      },
+      hasPendingMessages: async () => {
+        return this.withActiveRunMutation(activeRun, async () => {
+          if (pendingInputStore) {
+            return pendingInputStore.hasPendingInputs(executionId);
+          }
+          return activeRun.inMemoryPendingMessages.length > 0;
+        });
+      },
+    };
+  }
+
+  private async withActiveRunMutation<T>(
+    activeRun: ActiveRunRegistration,
+    operation: () => Promise<T>
+  ): Promise<T> {
+    const previous = activeRun.mutationChain;
+    let release!: () => void;
+    const next = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    activeRun.mutationChain = previous.then(
+      () => next,
+      () => next
+    );
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+    }
   }
 }
 
@@ -665,6 +808,16 @@ function normalizeUnknownError(error: unknown): ErrorEventPayload {
   };
 }
 
+function resolvePendingInputStore(deps: AgentAppServiceDeps): PendingInputStorePort | undefined {
+  if (deps.pendingInputStore) {
+    return deps.pendingInputStore;
+  }
+  if (isPendingInputStorePort(deps.executionStore)) {
+    return deps.executionStore;
+  }
+  return undefined;
+}
+
 function createUserMessage(content: MessageContent): Message {
   return {
     messageId: createId('msg_usr_'),
@@ -681,6 +834,17 @@ function createId(prefix: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+function isMessage(value: unknown): value is Message {
+  return (
+    isRecord(value) &&
+    typeof value.messageId === 'string' &&
+    typeof value.role === 'string' &&
+    typeof value.type === 'string' &&
+    typeof value.timestamp === 'number' &&
+    'content' in value
+  );
 }
 
 function readString(value: unknown): string | undefined {
@@ -713,6 +877,28 @@ function readUsage(value: unknown): Usage | undefined {
   };
 }
 
+function isEmptyMessageContent(content: MessageContent): boolean {
+  if (typeof content === 'string') {
+    return content.trim().length === 0;
+  }
+  return content.length === 0;
+}
+
+function extractStreamMessagePayload(
+  payload: unknown
+): { message: Message; stepIndex?: number } | undefined {
+  if (isMessage(payload)) {
+    return { message: payload };
+  }
+  if (!isRecord(payload) || !isMessage(payload.message)) {
+    return undefined;
+  }
+  return {
+    message: payload.message,
+    stepIndex: readNumber(payload.stepIndex),
+  };
+}
+
 function resolveContextStore(
   store?: MessageProjectionStorePort
 ): ContextProjectionStorePort | undefined {
@@ -725,6 +911,15 @@ function resolveContextStore(
     return store as ContextProjectionStorePort;
   }
   return undefined;
+}
+
+function isPendingInputStorePort(value: unknown): value is PendingInputStorePort {
+  return (
+    isRecord(value) &&
+    typeof value.enqueuePendingInput === 'function' &&
+    typeof value.takePendingInputs === 'function' &&
+    typeof value.hasPendingInputs === 'function'
+  );
 }
 
 function extractCompactionInfo(

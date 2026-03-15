@@ -18,7 +18,7 @@ export function contentToText(content: MessageContent | undefined): string {
     .join('\n');
 }
 
-export function stringifyContentPart(part: InputContentPart): string {
+function stringifyContentPart(part: InputContentPart): string {
   switch (part.type) {
     case 'text':
       return part.text || '';
@@ -35,54 +35,17 @@ export function stringifyContentPart(part: InputContentPart): string {
   }
 }
 
-export function getAssistantToolCalls(message: Message): ToolCallLike[] {
+function getAssistantToolCalls(message: Message): ToolCallLike[] {
   if (message.role !== 'assistant') return [];
   const rawToolCalls = message.tool_calls;
   if (!Array.isArray(rawToolCalls)) return [];
   return rawToolCalls.map((call) => ({ id: call.id }));
 }
 
-export function getToolCallId(message: Message): string | undefined {
+function getToolCallId(message: Message): string | undefined {
   if (message.role !== 'tool') return undefined;
   const toolCallId = message.tool_call_id;
   return typeof toolCallId === 'string' ? toolCallId : undefined;
-}
-
-export function isSummaryMessage(message: Message): boolean {
-  const text = contentToText(message.content);
-  return text.startsWith('[Conversation Summary]') || text.startsWith('[对话摘要]');
-}
-
-export function splitMessages(
-  messages: Message[],
-  keepMessagesNum: number
-): {
-  systemMessage: Message | undefined;
-  pending: Message[];
-  active: Message[];
-} {
-  const systemMessage = messages.find((m) => m.role === 'system');
-  const nonSystemMessages = messages.filter((m) => m.role !== 'system');
-
-  let lastUserIndex = -1;
-  for (let i = nonSystemMessages.length - 1; i >= 0; i--) {
-    if (nonSystemMessages[i].role === 'user') {
-      lastUserIndex = i;
-      break;
-    }
-  }
-
-  let splitPoint = nonSystemMessages.length - keepMessagesNum;
-  if (lastUserIndex !== -1 && lastUserIndex < splitPoint) {
-    splitPoint = lastUserIndex;
-  }
-  splitPoint = Math.max(0, splitPoint);
-
-  return {
-    systemMessage,
-    pending: nonSystemMessages.slice(0, splitPoint),
-    active: nonSystemMessages.slice(splitPoint),
-  };
 }
 
 export function processToolCallPairs(
@@ -156,16 +119,4 @@ export function processToolCallPairs(
   }
 
   return { pending: newPending, active: newActive };
-}
-
-export function rebuildMessages(
-  systemMessage: Message | undefined,
-  summaryMessage: Message | null,
-  active: Message[]
-): Message[] {
-  const messages: Message[] = [];
-  if (systemMessage) messages.push(systemMessage);
-  if (summaryMessage) messages.push(summaryMessage);
-  messages.push(...active);
-  return messages;
 }

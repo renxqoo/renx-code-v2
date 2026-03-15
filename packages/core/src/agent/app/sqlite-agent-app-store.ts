@@ -14,6 +14,7 @@ import type {
   EventStorePort,
   ExecutionStorePort,
   MessageProjectionStorePort,
+  PendingInputStorePort,
   RunLogStorePort,
 } from './ports';
 import { AgentAppSqliteClient } from './sqlite-client';
@@ -89,6 +90,15 @@ interface RunLogRow {
   error_json: string | null;
   context_json: string | null;
   data_json: string | null;
+  created_at_ms: number;
+}
+
+interface PendingInputRow {
+  id: number;
+  execution_id: string;
+  conversation_id: string;
+  message_id: string;
+  payload_json: string;
   created_at_ms: number;
 }
 
@@ -253,6 +263,23 @@ const APP_MIGRATIONS = [
         ON run_logs(execution_id, level, created_at_ms ASC, id ASC);
     `,
   },
+  {
+    version: 4,
+    sql: `
+      CREATE TABLE IF NOT EXISTS pending_run_inputs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        execution_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at_ms INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_pending_run_inputs_execution
+        ON pending_run_inputs(execution_id, id ASC);
+      CREATE INDEX IF NOT EXISTS idx_pending_run_inputs_conversation
+        ON pending_run_inputs(conversation_id, id ASC);
+    `,
+  },
 ];
 
 export class SqliteAgentAppStore
@@ -261,7 +288,8 @@ export class SqliteAgentAppStore
     EventStorePort,
     MessageProjectionStorePort,
     ContextProjectionStorePort,
-    RunLogStorePort
+    RunLogStorePort,
+    PendingInputStorePort
 {
   private readonly client: AgentAppSqliteClient;
   private prepared = false;
@@ -795,6 +823,93 @@ export class SqliteAgentAppStore
     }));
   }
 
+  async enqueuePendingInput(input: {
+    executionId: string;
+    conversationId: string;
+    message: Message;
+    createdAt: number;
+  }): Promise<void> {
+    await this.prepare();
+    await this.withMutationLock(async () => {
+      await this.client.run(
+        `
+          INSERT INTO pending_run_inputs (
+            execution_id,
+            conversation_id,
+            message_id,
+            payload_json,
+            created_at_ms
+          ) VALUES (?, ?, ?, ?, ?)
+        `,
+        [
+          input.executionId,
+          input.conversationId,
+          input.message.messageId,
+          JSON.stringify(input.message),
+          input.createdAt,
+        ]
+      );
+    });
+  }
+
+  async takePendingInputs(executionId: string): Promise<Message[]> {
+    await this.prepare();
+    return this.withMutationLock(async () => {
+      return this.client.transaction(async () => {
+        const rows = await this.client.all<PendingInputRow>(
+          `
+            SELECT
+              id,
+              execution_id,
+              conversation_id,
+              message_id,
+              payload_json,
+              created_at_ms
+            FROM pending_run_inputs
+            WHERE execution_id = ?
+            ORDER BY id ASC
+          `,
+          [executionId]
+        );
+        if (rows.length === 0) {
+          return [];
+        }
+
+        const ids = rows.map((row) => row.id);
+        for (const idsChunk of chunkNumbers(ids, 200)) {
+          const placeholders = idsChunk.map(() => '?').join(', ');
+          await this.client.run(
+            `
+              DELETE FROM pending_run_inputs
+              WHERE id IN (${placeholders})
+            `,
+            idsChunk
+          );
+        }
+
+        return rows.flatMap((row) => {
+          const parsed = parseJsonOrDefault<unknown>(row.payload_json, null);
+          return isMessage(parsed) ? [parsed] : [];
+        });
+      });
+    });
+  }
+
+  async hasPendingInputs(executionId: string): Promise<boolean> {
+    await this.prepare();
+    const row = await this.client.get<{ has_row: number }>(
+      `
+        SELECT 1 AS has_row
+        FROM pending_run_inputs
+        WHERE execution_id = ?
+        ORDER BY id ASC
+        LIMIT 1
+      `,
+      [executionId]
+    );
+    return row?.has_row === 1;
+  }
+
   async appendRunLog(record: RunLogRecord): Promise<void> {
     await this.prepare();
     await this.withMutationLock(async () => {
@@ -1021,6 +1136,14 @@ function mapMessageRow(row: MessageRow): Message {
 
 function chunkStrings(items: string[], chunkSize: number): string[][] {
   const chunks: string[][] = [];
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize));
+  }
+  return chunks;
+}
+
+function chunkNumbers(items: number[], chunkSize: number): number[][] {
+  const chunks: number[][] = [];
   for (let index = 0; index < items.length; index += chunkSize) {
     chunks.push(items.slice(index, index + chunkSize));
   }

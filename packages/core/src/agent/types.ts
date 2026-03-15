@@ -49,6 +49,12 @@ export interface AgentInput {
   timeoutBudgetMs?: number;
   llmTimeoutRatio?: number;
   contextLimitTokens?: number;
+  pendingInput?: PendingInputAdapter;
+}
+
+export interface PendingInputAdapter {
+  takePendingMessages(): Promise<Message[]>;
+  hasPendingMessages?(): Promise<boolean>;
 }
 
 export interface AgentOutput {
@@ -170,6 +176,7 @@ export interface StreamEvent {
   type:
     | 'chunk'
     | 'reasoning_chunk'
+    | 'user_message'
     | 'tool_call'
     | 'tool_result'
     | 'tool_stream'

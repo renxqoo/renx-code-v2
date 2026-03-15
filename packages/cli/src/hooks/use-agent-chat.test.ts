@@ -6,6 +6,7 @@ vi.mock('../commands/slash-commands', () => ({
 }));
 
 vi.mock('../agent/runtime/runtime', () => ({
+  appendAgentPrompt: vi.fn(),
   getAgentModelAttachmentCapabilities: vi.fn(),
   getAgentModelLabel: vi.fn(),
   runAgentPrompt: vi.fn(),
@@ -22,6 +23,7 @@ describe('useAgentChat', () => {
   const mockGetAgentModelLabel = runtime.getAgentModelLabel as unknown as ReturnType<typeof vi.fn>;
   const mockGetAgentModelAttachmentCapabilities =
     runtime.getAgentModelAttachmentCapabilities as unknown as ReturnType<typeof vi.fn>;
+  const mockAppendAgentPrompt = runtime.appendAgentPrompt as unknown as ReturnType<typeof vi.fn>;
   const mockRunAgentPrompt = runtime.runAgentPrompt as unknown as ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -32,6 +34,7 @@ describe('useAgentChat', () => {
       audio: false,
       video: false,
     });
+    mockAppendAgentPrompt.mockResolvedValue({ accepted: true });
     mockRunAgentPrompt.mockResolvedValue({ success: true });
   });
 
@@ -84,5 +87,95 @@ describe('useAgentChat', () => {
     });
 
     expect(result.current.inputValue).toBe('');
+  });
+
+  it('queues follow-up input during an active run and switches subsequent stream output to the new turn', async () => {
+    let capturedHandlers: Record<string, unknown> | undefined;
+    let resolveRun!: (value: {
+      text: string;
+      completionReason: string;
+      durationSeconds: number;
+      modelLabel: string;
+    }) => void;
+    mockRunAgentPrompt.mockImplementation(
+      async (_prompt: unknown, handlers: Record<string, unknown>) => {
+        capturedHandlers = handlers;
+        return new Promise((resolve) => {
+          resolveRun = resolve;
+        });
+      }
+    );
+
+    const { result } = renderHook(() => useAgentChat());
+
+    await waitFor(() => {
+      expect(result.current.modelLabel).toBe('glm-5');
+    });
+
+    act(() => {
+      result.current.setInputValue('first input');
+    });
+    act(() => {
+      result.current.submitInput();
+    });
+
+    await waitFor(() => {
+      expect(result.current.isThinking).toBe(true);
+    });
+
+    act(() => {
+      result.current.setInputValue('follow up');
+    });
+    act(() => {
+      result.current.submitInput();
+    });
+
+    await waitFor(() => {
+      expect(mockAppendAgentPrompt).toHaveBeenCalledWith('follow up');
+    });
+    await waitFor(() => {
+      expect(result.current.turns).toHaveLength(2);
+    });
+
+    act(() => {
+      (
+        capturedHandlers?.onUserMessage as
+          | ((event: { text: string; stepIndex: number }) => void)
+          | undefined
+      )?.({
+        text: 'follow up',
+        stepIndex: 2,
+      });
+    });
+    act(() => {
+      (capturedHandlers?.onTextDelta as ((event: { text: string }) => void) | undefined)?.({
+        text: 'stream after follow up',
+      });
+    });
+    act(() => {
+      (capturedHandlers?.onStop as ((event: { reason: string }) => void) | undefined)?.({
+        reason: 'stop',
+      });
+    });
+
+    act(() => {
+      resolveRun({
+        text: 'stream after follow up',
+        completionReason: 'stop',
+        durationSeconds: 1,
+        modelLabel: 'glm-5',
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.isThinking).toBe(false);
+    });
+    expect(result.current.turns).toHaveLength(2);
+    expect(result.current.turns[1]?.prompt).toContain('follow up');
+    expect(
+      result.current.turns[1]?.reply?.segments.some((segment) =>
+        segment.content.includes('stream after follow up')
+      )
+    ).toBe(true);
   });
 });

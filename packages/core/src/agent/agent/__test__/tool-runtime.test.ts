@@ -28,7 +28,9 @@ function createToolManager() {
   return {
     execute: vi.fn(),
     registerTool: vi.fn(),
+    registerTools: vi.fn(),
     getTools: vi.fn(() => []),
+    getToolSchemas: vi.fn(() => []),
     getConcurrencyPolicy: vi.fn(() => ({ mode: 'exclusive' as const })),
   } as unknown as ToolManager;
 }
@@ -329,6 +331,69 @@ describe('tool-runtime', () => {
       type: 'tool_result',
       data: { content: 'Operation aborted', tool_call_id: 'call_abort_confirm' },
     });
+  });
+
+  it('executeTool auto-finalizes write_file buffered responses before returning the final tool result', async () => {
+    const { runtime, manager } = createToolRuntime();
+    manager.execute = vi
+      .fn()
+      .mockImplementationOnce(async (toolCall: ToolCall) => {
+        expect(toolCall.id).toBe('call_write_file');
+        return {
+          success: false,
+          output: JSON.stringify({
+            ok: false,
+            code: 'WRITE_FILE_PARTIAL_BUFFERED',
+            nextAction: 'finalize',
+            buffer: {
+              bufferId: 'buffer_1',
+              path: 'D:\\tmp\\out.txt',
+            },
+            nextArgs: {
+              mode: 'finalize',
+              bufferId: 'buffer_1',
+              path: 'D:\\tmp\\out.txt',
+            },
+          }),
+        };
+      })
+      .mockImplementationOnce(async (toolCall: ToolCall) => {
+        expect(toolCall.id).toBe('call_write_file__finalize');
+        expect(JSON.parse(toolCall.function.arguments)).toEqual({
+          mode: 'finalize',
+          bufferId: 'buffer_1',
+          path: 'D:\\tmp\\out.txt',
+        });
+        return {
+          success: true,
+          output: 'file committed',
+        };
+      });
+
+    const events = await collectEvents(
+      executeTool(runtime, {
+        toolCall: {
+          id: 'call_write_file',
+          type: 'function',
+          index: 0,
+          function: {
+            name: 'write_file',
+            arguments: '{"path":"D:\\\\tmp\\\\out.txt","content":"abc"}',
+          },
+        },
+        stepIndex: 1,
+        callbacks: createCallbacks(),
+      })
+    );
+
+    expect(events[0]).toMatchObject({
+      type: 'tool_result',
+      data: {
+        content: 'file committed',
+        tool_call_id: 'call_write_file',
+      },
+    });
+    expect(manager.execute).toHaveBeenCalledTimes(2);
   });
 
   it('processToolCalls executes a single tool and appends the result message', async () => {

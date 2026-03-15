@@ -7,6 +7,7 @@ describe('runtime module exports', () => {
     const runtimeModule = await import('./runtime');
 
     expect(typeof runtimeModule.runAgentPrompt).toBe('function');
+    expect(typeof runtimeModule.appendAgentPrompt).toBe('function');
     expect(typeof runtimeModule.getAgentModelLabel).toBe('function');
     expect(typeof runtimeModule.getAgentModelId).toBe('function');
     expect(typeof runtimeModule.listAgentModels).toBe('function');

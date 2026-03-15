@@ -111,7 +111,9 @@ function createToolManager() {
   return {
     execute: vi.fn(),
     registerTool: vi.fn(),
+    registerTools: vi.fn(),
     getTools: vi.fn(() => []),
+    getToolSchemas: vi.fn(() => []),
     getConcurrencyPolicy: vi.fn(() => ({ mode: 'exclusive' as const })),
   } as unknown as ToolManager;
 }
@@ -1577,6 +1579,7 @@ describe('StatelessAgent', () => {
   it('calls compact when needsCompaction is true and uses compacted messages for llm', async () => {
     const provider = createProvider();
     const manager = createToolManager();
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
     provider.generateStream = vi.fn().mockReturnValue(
       toStream([
         {
@@ -1600,20 +1603,36 @@ describe('StatelessAgent', () => {
           timestamp: 1,
         },
       ],
-      summaryMessage: null,
       removedMessageIds: ['u1'],
+      diagnostics: {
+        outcome: 'applied',
+        reason: 'summary_created',
+        promptVersion: 'v1',
+        pendingMessageCount: 1,
+        activeMessageCount: 0,
+        previousSummaryPresent: false,
+        trimmedPendingMessageCount: 0,
+        estimatedInputTokens: 10,
+        inputTokenBudget: 100,
+        summaryMaxTokens: 100,
+      },
     });
 
     const onCompaction = vi.fn();
     const agent = new StatelessAgent(provider, manager, {
       enableCompaction: true,
       compactionTriggerRatio: 0,
+      logger,
     });
     const events = await collectEvents(
       agent.runStream(createInput(), { onMessage: vi.fn(), onCheckpoint: vi.fn(), onCompaction })
     );
 
     expect(compactSpy).toHaveBeenCalledOnce();
+    expect(compactSpy.mock.calls[0]?.[1]).toMatchObject({
+      keepMessagesNum: 6,
+      promptVersion: 'v1',
+    });
     const firstCallArgs = (provider.generateStream as unknown as { mock: { calls: unknown[][] } })
       .mock.calls[0];
     const llmMessages = firstCallArgs?.[0] as Array<{ content: string }>;
@@ -1626,6 +1645,73 @@ describe('StatelessAgent', () => {
       removedMessageIds: ['u1'],
       messageCountBefore: 1,
       messageCountAfter: 1,
+    });
+    expect(logger.info).toHaveBeenCalledWith(
+      '[Agent] compaction.applied',
+      expect.objectContaining({
+        reason: 'summary_created',
+        promptVersion: 'v1',
+        removedMessageCount: 1,
+      }),
+      undefined
+    );
+    compactSpy.mockRestore();
+  });
+
+  it('passes compaction prompt version through agent config', async () => {
+    const provider = createProvider();
+    const manager = createToolManager();
+    provider.generateStream = vi.fn().mockReturnValue(
+      toStream([
+        {
+          index: 0,
+          choices: [{ index: 0, delta: { content: 'ok' } }],
+        },
+        {
+          index: 0,
+          choices: [{ index: 0, delta: { finish_reason: 'stop' } as unknown as ChunkDelta }],
+        },
+      ])
+    );
+
+    const compactSpy = vi.spyOn(compactionModule, 'compact').mockResolvedValue({
+      messages: [
+        {
+          messageId: 'cmp_1',
+          type: 'summary',
+          role: 'user',
+          content: 'compacted input',
+          timestamp: 1,
+        },
+      ],
+      removedMessageIds: ['u1'],
+      diagnostics: {
+        outcome: 'applied',
+        reason: 'summary_created',
+        promptVersion: 'v2',
+        pendingMessageCount: 1,
+        activeMessageCount: 0,
+        previousSummaryPresent: false,
+        trimmedPendingMessageCount: 0,
+        estimatedInputTokens: 10,
+        inputTokenBudget: 100,
+        summaryMaxTokens: 100,
+      },
+    });
+
+    const agent = new StatelessAgent(provider, manager, {
+      enableCompaction: true,
+      compactionTriggerRatio: 0,
+      compactionPromptVersion: 'v2',
+    });
+
+    await collectEvents(
+      agent.runStream(createInput(), { onMessage: vi.fn(), onCheckpoint: vi.fn() })
+    );
+
+    expect(compactSpy).toHaveBeenCalledOnce();
+    expect(compactSpy.mock.calls[0]?.[1]).toMatchObject({
+      promptVersion: 'v2',
     });
     compactSpy.mockRestore();
   });
@@ -1646,9 +1732,22 @@ describe('StatelessAgent', () => {
       ])
     );
 
-    const compactSpy = vi
-      .spyOn(compactionModule, 'compact')
-      .mockRejectedValue(new Error('compact failed'));
+    const compactSpy = vi.spyOn(compactionModule, 'compact').mockRejectedValue(
+      new compactionModule.CompactionError(
+        'Compaction summary generation returned invalid response',
+        'invalid_response',
+        {
+          promptVersion: 'v1',
+          pendingMessageCount: 2,
+          activeMessageCount: 1,
+          previousSummaryPresent: false,
+          trimmedPendingMessageCount: 0,
+          estimatedInputTokens: 100,
+          inputTokenBudget: 200,
+          summaryMaxTokens: 100,
+        }
+      )
+    );
     const logger = { error: vi.fn() };
 
     const agent = new StatelessAgent(provider, manager, {
@@ -1665,7 +1764,18 @@ describe('StatelessAgent', () => {
       type: 'done',
       data: { finishReason: 'stop', steps: 1 },
     });
-    expect(logger.error).toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      '[Agent] compaction.failed',
+      expect.objectContaining({
+        name: 'CompactionError',
+        reason: 'invalid_response',
+      }),
+      expect.objectContaining({
+        reason: 'invalid_response',
+        promptVersion: 'v1',
+        pendingMessageCount: 2,
+      })
+    );
     compactSpy.mockRestore();
   });
 

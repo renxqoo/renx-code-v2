@@ -11,6 +11,7 @@ vi.mock('./source-modules', () => ({
 }));
 
 import {
+  appendAgentPrompt,
   disposeAgentRuntime,
   getAgentModelId,
   getAgentModelLabel,
@@ -31,7 +32,19 @@ const buildMockModules = (
       this.tools.push(tool);
     });
 
+    registerTools = vi.fn((tools: Iterable<unknown>) => {
+      for (const tool of tools) {
+        this.tools.push(tool);
+      }
+    });
+
     getTools = vi.fn(() => this.tools);
+
+    getToolSchemas = vi.fn(() =>
+      this.tools
+        .map((tool) => (tool as { toToolSchema?: () => unknown }).toToolSchema?.())
+        .filter(Boolean)
+    );
   }
 
   const createNamedTool = (name: string) =>
@@ -53,6 +66,8 @@ const buildMockModules = (
 
   class FakeAppService {
     static lastRequest: unknown;
+    static appendResult = { accepted: true };
+    static appendRequests: unknown[] = [];
 
     async listContextMessages() {
       return [];
@@ -66,15 +81,30 @@ const buildMockModules = (
         messages: [
           {
             messageId: 'msg_assistant',
-            role: 'assistant',
-            type: 'assistant-text',
+            role: 'assistant' as const,
+            type: 'assistant-text' as const,
             content: 'done',
+            timestamp: Date.now(),
           },
         ],
+        events: [],
         finishReason: 'stop' as const,
         steps: 1,
-        run: {},
+        run: {
+          executionId: 'exec_runtime',
+          runId: 'exec_runtime',
+          conversationId: 'conv_runtime',
+          status: 'COMPLETED' as const,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          stepIndex: 1,
+        },
       };
+    }
+
+    async appendUserInputToRun(request: unknown) {
+      FakeAppService.appendRequests.push(request);
+      return FakeAppService.appendResult;
     }
   }
 
@@ -345,5 +375,92 @@ describe('runtime', () => {
       prompt_cache_key: expect.stringMatching(/^cache-opentui-/),
       prompt_cache_retention: '24h',
     });
+  });
+
+  it('returns run_not_active when appending without an active run', async () => {
+    await expect(appendAgentPrompt('Follow up')).resolves.toEqual({
+      accepted: false,
+      reason: 'run_not_active',
+    });
+  });
+
+  it('forwards runtime follow-up input to the active app run', async () => {
+    let releaseRun!: () => void;
+    const runGate = new Promise<void>((resolve) => {
+      releaseRun = resolve;
+    });
+    const modules = buildMockModules({
+      AgentAppService: class FakeAppServiceWithDelayedRun {
+        static appendRequests: unknown[] = [];
+
+        async listContextMessages() {
+          return [];
+        }
+
+        async runForeground(request: unknown) {
+          await runGate;
+          return {
+            executionId: (request as { executionId?: string }).executionId ?? 'exec_runtime',
+            conversationId: 'conv_runtime',
+            messages: [
+              {
+                messageId: 'msg_assistant',
+                role: 'assistant' as const,
+                type: 'assistant-text' as const,
+                content: 'done',
+                timestamp: Date.now(),
+              },
+            ],
+            events: [],
+            finishReason: 'stop' as const,
+            steps: 1,
+            run: {
+              executionId: (request as { executionId?: string }).executionId ?? 'exec_runtime',
+              runId: (request as { executionId?: string }).executionId ?? 'exec_runtime',
+              conversationId: 'conv_runtime',
+              status: 'COMPLETED' as const,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              stepIndex: 1,
+            },
+          };
+        }
+
+        async appendUserInputToRun(request: unknown) {
+          FakeAppServiceWithDelayedRun.appendRequests.push(request);
+          return {
+            accepted: true,
+          };
+        }
+      },
+    });
+    const appServiceClass = modules.AgentAppService as {
+      appendRequests?: Array<{
+        executionId?: string;
+        conversationId?: string;
+        userInput?: unknown;
+      }>;
+    };
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    const runPromise = runAgentPrompt('Test prompt', {});
+    await Promise.resolve();
+
+    await expect(appendAgentPrompt('Follow up prompt')).resolves.toEqual({
+      accepted: true,
+      reason: undefined,
+    });
+
+    expect(appServiceClass.appendRequests).toHaveLength(1);
+    expect(appServiceClass.appendRequests?.[0]).toMatchObject({
+      conversationId: expect.stringMatching(/^opentui-/),
+      userInput: 'Follow up prompt',
+    });
+    expect(appServiceClass.appendRequests?.[0]?.executionId).toMatch(/^exec_cli_/);
+
+    releaseRun();
+    await runPromise;
   });
 });

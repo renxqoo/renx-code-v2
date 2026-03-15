@@ -36,7 +36,9 @@ describe('runAgentPrompt error handling', () => {
 
     class FakeToolManager {
       registerTool = vi.fn();
+      registerTools = vi.fn();
       getTools = vi.fn(() => []);
+      getToolSchemas = vi.fn(() => []);
     }
 
     class FakeTool {

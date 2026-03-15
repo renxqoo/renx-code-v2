@@ -55,6 +55,17 @@ export interface RunLogStorePort {
   listRunLogs(executionId: string, opts?: ListRunLogsOptions): Promise<RunLogRecord[]>;
 }
 
+export interface PendingInputStorePort {
+  enqueuePendingInput(input: {
+    executionId: string;
+    conversationId: string;
+    message: Message;
+    createdAt: number;
+  }): Promise<void>;
+  takePendingInputs(executionId: string): Promise<Message[]>;
+  hasPendingInputs(executionId: string): Promise<boolean>;
+}
+
 export interface ContextProviderPort {
   load(
     conversationId: string

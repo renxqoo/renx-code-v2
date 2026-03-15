@@ -86,7 +86,9 @@ const normalizeConfirmationMode = (raw?: string): ToolConfirmationMode => {
 export interface ToolManager {
   execute(toolCall: ToolCall, options?: ToolExecutionContext): Promise<ToolResult>;
   registerTool(tool: BaseTool): void;
+  registerTools(tools: Iterable<BaseTool>): void;
   getTools(): BaseTool[];
+  getToolSchemas(): LLMTool[];
   getConcurrencyPolicy?(toolCall: ToolCall): ToolConcurrencyPolicy;
 }
 
@@ -241,12 +243,22 @@ export class DefaultToolManager implements ToolManager {
     this.tools.set(tool.name, tool);
   }
 
-  toToolsSchema(): LLMTool[] {
+  getTools(): BaseTool[] {
+    return Array.from(this.tools.values());
+  }
+
+  registerTools(tools: Iterable<BaseTool>): void {
+    for (const tool of tools) {
+      this.registerTool(tool);
+    }
+  }
+
+  getToolSchemas(): LLMTool[] {
     return this.getTools().map((tool) => tool.toToolSchema());
   }
 
-  getTools(): BaseTool[] {
-    return Array.from(this.tools.values());
+  toToolsSchema(): LLMTool[] {
+    return this.getToolSchemas();
   }
 
   getConcurrencyPolicy(toolCall: ToolCall): ToolConcurrencyPolicy {

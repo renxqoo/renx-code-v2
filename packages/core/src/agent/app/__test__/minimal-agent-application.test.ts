@@ -36,7 +36,9 @@ function createToolManager() {
   return {
     execute: vi.fn(),
     registerTool: vi.fn(),
+    registerTools: vi.fn(),
     getTools: vi.fn(() => []),
+    getToolSchemas: vi.fn(() => []),
     getConcurrencyPolicy: vi.fn(() => ({ mode: 'exclusive' as const })),
   } as unknown as ToolManager;
 }

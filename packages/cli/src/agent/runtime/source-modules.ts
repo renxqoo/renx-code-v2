@@ -67,6 +67,7 @@ export type AgentV4MessageLike = AgentMessage;
 export type CliEventEnvelopeLike = AgentCliEvent;
 export type AgentAppRunResultLike = AgentRunResult;
 type AgentAppRunRequestLike = {
+  executionId?: string;
   conversationId: string;
   userInput: MessageContent;
   historyMessages?: AgentV4MessageLike[];
@@ -86,12 +87,25 @@ type AgentAppRunCallbacksLike = {
   onUsage?: (usage: AgentAppUsageLike) => void | Promise<void>;
   onError?: (error: unknown) => void | Promise<void>;
 };
+type AgentAppAppendUserInputRequestLike = {
+  executionId: string;
+  conversationId: string;
+  userInput: MessageContent;
+};
+type AgentAppAppendUserInputResultLike = {
+  accepted: boolean;
+  reason?: 'run_not_active' | 'conversation_mismatch' | 'empty_input';
+  message?: AgentV4MessageLike;
+};
 
 export type AgentAppServiceLike = {
   runForeground: (
     request: AgentAppRunRequestLike,
     callbacks?: AgentAppRunCallbacksLike
   ) => Promise<AgentAppRunResultLike>;
+  appendUserInputToRun: (
+    request: AgentAppAppendUserInputRequestLike
+  ) => Promise<AgentAppAppendUserInputResultLike>;
   listContextMessages: (conversationId: string) => Promise<AgentV4MessageLike[]>;
 };
 type AgentLoggerLike = AgentLoggerApi;
@@ -101,7 +115,9 @@ export type StatelessAgentLike = {
 };
 export type ToolManagerLike = {
   registerTool: (tool: unknown) => void;
+  registerTools: (tools: Iterable<unknown>) => void;
   getTools: () => Array<{ name?: string; toToolSchema?: () => unknown }>;
+  getToolSchemas: () => Array<{ type: string; function: { name?: string } }>;
 };
 export type AgentAppStoreLike = {
   close: () => Promise<void>;

@@ -1,289 +1,475 @@
-﻿/**
- * 涓婁笅鏂囧帇缂╂ā鍧? *
- * 浣跨敤 LLM 鐢熸垚鎽樿鏉ュ帇缂╁璇濆巻鍙诧紝鍑忓皯 token 娑堣€? */
+/**
+ * Conversation compaction entrypoint.
+ *
+ * This file is intentionally kept as the public facade for compaction:
+ * callers import one stable module, while the actual responsibilities are
+ * pushed into smaller helpers for selection, prompting, and summary parsing.
+ */
 
 import { getEncoding } from 'js-tiktoken';
-import type { LLMProvider, LLMResponse } from '../../providers';
+import type { LLMGenerateOptions, LLMProvider, LLMResponse } from '../../providers';
+import type { LLMRequestMessage } from '../../providers';
 import type { Message } from '../types';
+import { contentToText } from '../utils/message';
+import type { LLMTool } from '../tool/types';
 import type { AgentLogger } from './logger';
+import { resolveCompactionSystemPrompt, type CompactionPromptVersion } from './compaction-prompt';
+import { selectCompactionWindow } from './compaction-selection';
 import {
-  contentToText,
-  splitMessages,
-  processToolCallPairs,
-  rebuildMessages,
-} from '../utils/message';
-import { LLMTool } from '../tool/types';
+  buildCompactionRequestMessages,
+  createSummaryMessage,
+  extractSummaryContent,
+} from './compaction-summary';
 
-// =============================================================================
-// 绫诲瀷瀹氫箟
-// =============================================================================
-
-/**
- * 鍘嬬缉閫夐」
- */
 export interface CompactOptions {
-  /** LLM Provider锛堢敤浜庣敓鎴愭憳瑕侊級 */
   provider: LLMProvider;
-  /** 淇濈暀鏈€杩戞秷鎭暟 */
   keepMessagesNum: number;
-  /** 鏃ュ織鍣紙鍙€夛級 */
+  promptVersion?: CompactionPromptVersion;
   logger?: AgentLogger;
-  /** 鎽樿璇█锛堥粯璁?'English'锛?*/
-  language?: string;
 }
 
-/**
- * 鍘嬬缉缁撴灉
- */
+export type CompactSuccessReason = 'no_pending_messages' | 'summary_created';
+export type CompactionFailureReason =
+  | 'request_oversized'
+  | 'invalid_response'
+  | 'empty_summary'
+  | 'provider_error';
+
+export interface CompactionDiagnostics {
+  promptVersion: CompactionPromptVersion;
+  pendingMessageCount: number;
+  activeMessageCount: number;
+  previousSummaryPresent: boolean;
+  trimmedPendingMessageCount: number;
+  estimatedInputTokens: number | null;
+  inputTokenBudget: number | null;
+  summaryMaxTokens: number;
+}
+
 export interface CompactResult {
-  /** 鍘嬬缉鍚庣殑娑堟伅鍒楄〃 */
   messages: Message[];
-  /** 鎽樿娑堟伅 */
-  summaryMessage: Message | null;
-  /** 琚涪寮冪殑娑堟伅 ID 鍒楄〃 */
   removedMessageIds: string[];
+  diagnostics: CompactionDiagnostics & {
+    outcome: 'skipped' | 'applied';
+    reason: CompactSuccessReason;
+  };
 }
 
-// =============================================================================
-// Token 浼扮畻宸ュ叿鍑芥暟
-// =============================================================================
+export class CompactionError extends Error {
+  readonly reason: CompactionFailureReason;
+  readonly diagnostics: CompactionDiagnostics;
 
-// 浣跨敤 cl100k_base 缂栫爜锛圙PT-3.5/GPT-4 浣跨敤鐨勭紪鐮侊級
+  constructor(
+    message: string,
+    reason: CompactionFailureReason,
+    diagnostics: CompactionDiagnostics,
+    options?: ErrorOptions
+  ) {
+    super(message, options);
+    this.name = 'CompactionError';
+    this.reason = reason;
+    this.diagnostics = diagnostics;
+  }
+}
+
 const encoder = getEncoding('cl100k_base');
+const SUMMARY_MAX_TOKENS = 4096;
+const MESSAGE_OVERHEAD_TOKENS = 3;
+const ASSISTANT_PRIMING_TOKENS = 3;
+const LOW_DETAIL_IMAGE_TOKENS = 85;
+const HIGH_DETAIL_IMAGE_TOKENS = 765;
+const MIN_INPUT_BUDGET_TOKENS = 1;
+
+type TokenCountableMessage = Pick<
+  LLMRequestMessage,
+  'role' | 'content' | 'tool_calls' | 'tool_call_id'
+> & {
+  name?: string;
+};
 
 /**
- * 浼扮畻鏂囨湰 Token 鏁帮紙浣跨敤 js-tiktoken 绮剧‘璁＄畻锛? *
- * 浣跨敤 OpenAI 鐨?cl100k_base 缂栫爜杩涜绮剧‘ Token 璁＄畻銆? * 鐩告瘮鍚彂寮忕畻娉曪紝杩欒兘鎻愪緵鍑嗙‘鐨?Token 璁℃暟锛岄伩鍏嶄笂涓嬫枃婧㈠嚭銆? *
- * @param text 瑕佷及绠楃殑鏂囨湰
- * @returns 瀹為檯 token 鏁? */
+ * Estimate token usage with the same tokenizer family used by GPT-4 style
+ * models. We keep a conservative heuristic fallback so context estimation
+ * still works even if tokenizer initialization or encoding fails.
+ */
 export function estimateTokens(text: string): number {
-  if (!text) return 0;
+  if (!text) {
+    return 0;
+  }
+
   try {
     return encoder.encode(text).length;
   } catch (error) {
-    // 闄嶇骇绛栫暐锛氬鏋滅紪鐮佸け璐ワ紝浣跨敤淇濆畧鐨勫惎鍙戝紡浼扮畻
-    // 姹夊瓧 x2锛屽叾浠?x1.3
     console.warn('[TokenEstimation] Failed to encode text, using heuristic fallback', error);
-    const chineseMatch = text.match(/[\u4e00-\u9fa5]/g);
-    const chineseCount = chineseMatch ? chineseMatch.length : 0;
+
+    let chineseCount = 0;
+    for (const char of text) {
+      if (char >= '\u4e00' && char <= '\u9fa5') {
+        chineseCount += 1;
+      }
+    }
+
     const otherCount = text.length - chineseCount;
     return Math.ceil(chineseCount * 2 + otherCount * 0.4);
   }
 }
 
 /**
- * 浼扮畻娑堟伅鍒楄〃鐨?Token 鏁? *
- * 閬靛惊 OpenAI 鑱婂ぉ鏍煎紡鐨勮璐硅鍒欙細
- * - 姣忔潯娑堟伅鏈?3 tokens 鐨勫浐瀹氬紑閿€ (<|start|>{role}<|end|>)
- * - name 瀛楁棰濆 1 token
- * - role 鍜?content 璁″叆 token
- * - 鍥炲寮曞璇?3 tokens
+ * Estimate chat payload cost using OpenAI-style message accounting.
+ *
+ * This is used only for compaction/context decisions, so the implementation
+ * stays explicit and slightly conservative instead of chasing every provider's
+ * private accounting rule.
  */
 export function estimateMessagesTokens(messages: Message[], tools?: LLMTool[]): number {
-  let total = 0;
+  return estimateMessageCollectionTokens(messages, tools);
+}
 
-  for (const m of messages) {
-    // Per-message protocol overhead.
-    total += 3;
+function estimateRequestMessagesTokens(messages: LLMRequestMessage[]): number {
+  return estimateMessageCollectionTokens(messages);
+}
 
-    if (m.role) {
-      total += estimateTokens(m.role);
-    }
+function estimateMessageCollectionTokens(
+  messages: TokenCountableMessage[],
+  tools?: LLMTool[]
+): number {
+  let total = ASSISTANT_PRIMING_TOKENS;
 
-    const name = (m as unknown as Record<string, unknown>).name as string | undefined;
+  for (const message of messages) {
+    total += MESSAGE_OVERHEAD_TOKENS;
+    total += estimateTokens(message.role);
+
+    const name = (message as Message & { name?: string }).name;
     if (name) {
-      // Name field has an additional overhead token.
       total += estimateTokens(name) + 1;
     }
 
-    if (typeof m.content === 'string') {
-      total += estimateTokens(m.content);
-    } else if (Array.isArray(m.content)) {
-      for (const part of m.content) {
-        if (part.type === 'text' && part.text) {
-          total += estimateTokens(part.text);
-          continue;
-        }
-
-        if (part.type === 'image_url') {
-          const detail = part.image_url.detail || 'auto';
-          if (detail === 'low') {
-            total += 85;
-          } else {
-            // Conservative estimate for high/auto detail images.
-            total += 765;
-          }
-        }
-      }
-    }
-
-    const toolCalls = m.tool_calls as unknown[];
-    if (Array.isArray(toolCalls) && toolCalls.length > 0) {
-      total += estimateTokens(JSON.stringify(toolCalls));
-    }
-
-    const toolCallId = m.tool_call_id as string | undefined;
-    if (toolCallId) {
-      total += estimateTokens(toolCallId);
-    }
+    total += estimateMessageContentTokens(message);
+    total += estimateToolCallTokens(message);
   }
 
   if (tools && tools.length > 0) {
     total += estimateTokens(JSON.stringify(tools));
   }
 
-  // Assistant priming tokens.
-  total += 3;
   return total;
 }
 
-// =============================================================================
-// 鍐呴儴杈呭姪鍑芥暟
-// =============================================================================
-
-function isSummaryMessage(message: Message): boolean {
-  const text = contentToText(message.content);
-  return text.startsWith('[Conversation Summary]') || text.startsWith('[瀵硅瘽鎽樿]');
-}
-
-function buildSummaryPrompt(): string {
-  return `You are an expert AI conversation compressor. Compress the conversation history into a structured memory summary with the following sections: 1. Primary Request and Intent 2. Key Technical Concepts 3. Files and Code Sections (preserve exact file paths) 4. Errors and Fixes (include exact error messages) 5. Problem Solving Process 6. Important User Instructions and Constraints 7. Pending Tasks 8. Current Work State Requirements: - Preserve critical technical details - Keep exact file paths and commands - Remove redundant or conversational text - Maintain task continuity for future steps - Keep the summary concise but information-dense`;
-}
-
-// =============================================================================
-// 鏍稿績鍘嬬缉鍑芥暟
-// =============================================================================
-
-/**
- * 鍘嬬缉瀵硅瘽鍘嗗彶
- *
- * @param messages 鍘熷娑堟伅鍒楄〃
- * @param options 鍘嬬缉閫夐」
- * @returns 鍘嬬缉缁撴灉
- */
 export async function compact(
   messages: Message[],
   options: CompactOptions
 ): Promise<CompactResult> {
-  const { provider, keepMessagesNum, logger } = options;
-  // 鍒嗙娑堟伅鍖哄煙
-  const { systemMessage, pending, active } = splitMessages(messages, keepMessagesNum);
-  // 澶勭悊宸ュ叿璋冪敤閰嶅
-  const { pending: finalPending, active: finalActive } = processToolCallPairs(pending, active);
-  // 鏀堕泦琚涪寮冪殑娑堟伅 ID
-  const removedMessageIds = collectRemovedMessageIds(messages, new Set(finalActive), systemMessage);
-  // 鐢熸垚鎽樿
-  const summaryContent = await generateSummary({
+  const { provider, keepMessagesNum, logger, promptVersion = 'v1' } = options;
+  const selection = selectCompactionWindow(messages, keepMessagesNum);
+  const baseDiagnostics: CompactionDiagnostics = {
+    promptVersion,
+    pendingMessageCount: selection.pendingMessages.length,
+    activeMessageCount: selection.activeMessages.length,
+    previousSummaryPresent: selection.previousSummary.length > 0,
+    trimmedPendingMessageCount: 0,
+    estimatedInputTokens: null,
+    inputTokenBudget: null,
+    summaryMaxTokens: resolveSummaryMaxTokens(provider),
+  };
+
+  if (selection.pendingMessages.length === 0) {
+    logger?.info?.('[Compaction] Skipped. no pending messages to summarize');
+    return {
+      messages,
+      removedMessageIds: [],
+      diagnostics: {
+        ...baseDiagnostics,
+        outcome: 'skipped',
+        reason: 'no_pending_messages',
+      },
+    };
+  }
+
+  const summaryResult = await generateSummary({
     provider,
-    pendingMessages: finalPending,
-    sourceMessages: messages,
+    pendingMessages: selection.pendingMessages,
+    previousSummary: selection.previousSummary,
+    promptVersion,
+    activeMessageCount: selection.activeMessages.length,
+    systemPrompt: resolveCompactionSystemPrompt(promptVersion),
     logger,
   });
-  const summaryMessage = summaryContent
-    ? {
-        messageId: crypto.randomUUID(),
-        role: 'assistant' as const,
-        type: 'summary' as const,
-        content: `[Conversation Summary]\n${summaryContent}`,
-        timestamp: Date.now(),
-      }
-    : null;
-  // 閲嶇粍娑堟伅
-  const newMessages = rebuildMessages(systemMessage, summaryMessage, finalActive);
-  logger?.info?.(`[Compaction] Completed. messages=${messages.length}->${newMessages.length}`);
-  return { messages: newMessages, summaryMessage, removedMessageIds };
+  const summaryContent = summaryResult.summaryContent;
+  const summaryMessage = createSummaryMessage(summaryContent);
+  const compactedMessages = [
+    ...(selection.systemMessage ? [selection.systemMessage] : []),
+    summaryMessage,
+    ...selection.activeMessages,
+  ];
+  const removedMessageIds = collectRemovedMessageIds(
+    messages,
+    new Set(selection.activeMessages),
+    selection.systemMessage
+  );
+
+  logger?.info?.(
+    `[Compaction] Completed. pending=${selection.pendingMessages.length} messages=${messages.length}->${compactedMessages.length}`
+  );
+
+  return {
+    messages: compactedMessages,
+    removedMessageIds,
+    diagnostics: {
+      ...summaryResult.diagnostics,
+      outcome: 'applied',
+      reason: 'summary_created',
+    },
+  };
 }
 
-/**
- * 鏀堕泦琚涪寮冪殑娑堟伅 ID
- */
-function collectRemovedMessageIds(
-  allMessages: Message[],
-  keptMessages: Set<Message>,
-  systemMessage?: Message
-): string[] {
-  const removedIds: string[] = [];
-  for (const msg of allMessages) {
-    // 璺宠繃 system 娑堟伅
-    if (msg === systemMessage) continue;
-    // 濡傛灉娑堟伅涓嶅湪淇濈暀闆嗗悎涓紝鏀堕泦鍏?ID
-    if (!keptMessages.has(msg)) {
-      if (msg.messageId) {
-        removedIds.push(msg.messageId);
-      }
+function estimateMessageContentTokens(message: TokenCountableMessage): number {
+  if (typeof message.content === 'string') {
+    return estimateTokens(message.content);
+  }
+
+  if (!Array.isArray(message.content)) {
+    return 0;
+  }
+
+  let total = 0;
+
+  for (const part of message.content) {
+    if (part.type === 'text' && part.text) {
+      total += estimateTokens(part.text);
+      continue;
+    }
+
+    if (part.type === 'image_url') {
+      total += part.image_url.detail === 'low' ? LOW_DETAIL_IMAGE_TOKENS : HIGH_DETAIL_IMAGE_TOKENS;
     }
   }
-  return removedIds;
+
+  return total;
 }
 
-// =============================================================================
-// 鍐呴儴瀹炵幇
-// =============================================================================
+function estimateToolCallTokens(message: TokenCountableMessage): number {
+  let total = 0;
+
+  if (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
+    total += estimateTokens(JSON.stringify(message.tool_calls));
+  }
+
+  if (typeof message.tool_call_id === 'string' && message.tool_call_id.length > 0) {
+    total += estimateTokens(message.tool_call_id);
+  }
+
+  return total;
+}
+
+function collectRemovedMessageIds(
+  allMessages: Message[],
+  keptActiveMessages: Set<Message>,
+  systemMessage?: Message
+): string[] {
+  return allMessages.flatMap((message) => {
+    if (message === systemMessage || keptActiveMessages.has(message) || !message.messageId) {
+      return [];
+    }
+
+    return [message.messageId];
+  });
+}
 
 async function generateSummary(input: {
   provider: LLMProvider;
   pendingMessages: Message[];
-  sourceMessages: Message[];
+  previousSummary: string;
+  promptVersion: CompactionPromptVersion;
+  activeMessageCount: number;
+  systemPrompt: string;
   logger?: AgentLogger;
-}): Promise<string> {
-  const { provider, pendingMessages, sourceMessages, logger } = input;
-
-  if (pendingMessages.length === 0) {
-    return '';
+}): Promise<{
+  summaryContent: string;
+  diagnostics: CompactionDiagnostics;
+}> {
+  const {
+    provider,
+    pendingMessages,
+    previousSummary,
+    promptVersion,
+    activeMessageCount,
+    systemPrompt,
+    logger,
+  } = input;
+  const summaryMaxTokens = resolveSummaryMaxTokens(provider);
+  const inputTokenBudget = resolveCompactionInputTokenBudget(provider, summaryMaxTokens);
+  const preparedRequest = prepareCompactionRequest({
+    pendingMessages,
+    previousSummary,
+    promptVersion,
+    systemPrompt,
+    inputTokenBudget,
+  });
+  const requestMessages = preparedRequest.requestMessages;
+  const diagnostics: CompactionDiagnostics = {
+    promptVersion,
+    pendingMessageCount: pendingMessages.length,
+    activeMessageCount,
+    previousSummaryPresent: previousSummary.length > 0,
+    trimmedPendingMessageCount: preparedRequest.trimmedPendingCount,
+    estimatedInputTokens: preparedRequest.estimatedInputTokens,
+    inputTokenBudget,
+    summaryMaxTokens,
+  };
+  if (preparedRequest.trimmedPendingCount > 0) {
+    logger?.warn?.('[Compaction] Trimmed oldest pending messages before summary generation', {
+      ...diagnostics,
+      pendingAfterTrim: preparedRequest.pendingMessages.length,
+    });
   }
-
-  let previousSummary = '';
-  if (isSummaryMessage(pendingMessages[0])) {
-    previousSummary = contentToText(pendingMessages[0].content);
+  if (inputTokenBudget !== null && preparedRequest.estimatedInputTokens > inputTokenBudget) {
+    logger?.warn?.('[Compaction] Request exceeds estimated input budget after trimming', {
+      ...diagnostics,
+      pendingAfterTrim: preparedRequest.pendingMessages.length,
+    });
+    throw new CompactionError(
+      'Compaction request exceeds estimated input budget after trimming',
+      'request_oversized',
+      diagnostics
+    );
   }
-
-  const summaryPrompt = buildSummaryPrompt();
-  const previousSummaryBlock = previousSummary
-    ? `\n<previous_summary>\n${previousSummary}\n</previous_summary>\n`
-    : '';
-
-  const compactionMessage = `<compaction-message>
-   ${sourceMessages.map((m) => `${m.role}: ${contentToText(m.content)}`).join('\n')}
-  </compaction-message>`;
-
-  const requestMessages = [
-    { role: 'system' as const, content: summaryPrompt },
-    { role: 'user' as const, content: `${compactionMessage}\n${previousSummaryBlock}` },
-  ];
-
-  const options: { max_tokens: number; model?: string; abortSignal?: AbortSignal } = {
-    max_tokens: 1024,
+  const requestOptions: Pick<LLMGenerateOptions, 'max_tokens' | 'model' | 'abortSignal'> = {
+    max_tokens: summaryMaxTokens,
   };
 
   const configuredModel = provider.config?.model;
-  if (typeof configuredModel === 'string' && configuredModel.trim().length > 0) {
-    options.model = configuredModel;
+  if (typeof configuredModel === 'string') {
+    const normalizedModel = configuredModel.trim();
+    if (normalizedModel.length > 0) {
+      requestOptions.model = normalizedModel;
+    }
   }
 
-  // 璁剧疆瓒呮椂
   const timeoutMs = provider.getTimeTimeout();
   if (timeoutMs && Number.isFinite(timeoutMs) && timeoutMs > 0) {
     try {
-      options.abortSignal = AbortSignal.timeout(timeoutMs);
+      requestOptions.abortSignal = AbortSignal.timeout(timeoutMs);
     } catch {
-      // ignore
+      // AbortSignal.timeout is not available in every runtime.
     }
   }
 
   try {
-    const response = await provider.generate(requestMessages, options);
-
+    const response = await provider.generate(requestMessages, requestOptions);
     if (!response || typeof response !== 'object' || !('choices' in response)) {
       logger?.warn?.('[Compaction] Summary generation returned invalid response');
-      return '';
+      throw new CompactionError(
+        'Compaction summary generation returned invalid response',
+        'invalid_response',
+        diagnostics
+      );
     }
 
-    const choice = (response as LLMResponse).choices?.[0];
+    const firstChoice = (response as LLMResponse).choices?.[0];
+    const rawContent = contentToText(firstChoice?.message?.content || '');
+    const normalizedSummary = extractSummaryContent(rawContent, promptVersion);
 
-    const content = contentToText(choice?.message?.content || '').trim();
-    return content || '';
+    if (!normalizedSummary) {
+      logger?.warn?.('[Compaction] Summary generation returned empty summary content');
+      throw new CompactionError(
+        'Compaction summary generation returned empty summary content',
+        'empty_summary',
+        diagnostics
+      );
+    }
+
+    return {
+      summaryContent: normalizedSummary,
+      diagnostics,
+    };
   } catch (error) {
     logger?.warn?.('[Compaction] Summary generation failed:', { error: String(error) });
-    return '';
+    if (error instanceof CompactionError) {
+      throw error;
+    }
+    throw new CompactionError(
+      'Compaction summary generation failed',
+      'provider_error',
+      diagnostics,
+      {
+        cause: error instanceof Error ? error : undefined,
+      }
+    );
   }
+}
+
+function resolveSummaryMaxTokens(provider: LLMProvider): number {
+  const providerMaxOutputTokens = provider.getMaxOutputTokens();
+  if (!Number.isFinite(providerMaxOutputTokens) || providerMaxOutputTokens <= 0) {
+    return SUMMARY_MAX_TOKENS;
+  }
+
+  return Math.min(SUMMARY_MAX_TOKENS, providerMaxOutputTokens);
+}
+
+function resolveCompactionInputTokenBudget(
+  provider: LLMProvider,
+  summaryMaxTokens: number
+): number | null {
+  const maxTokens = provider.getLLMMaxTokens();
+  if (!Number.isFinite(maxTokens) || maxTokens <= 0) {
+    return null;
+  }
+
+  return Math.max(MIN_INPUT_BUDGET_TOKENS, maxTokens - summaryMaxTokens);
+}
+
+function prepareCompactionRequest(input: {
+  pendingMessages: Message[];
+  previousSummary: string;
+  promptVersion: CompactionPromptVersion;
+  systemPrompt: string;
+  inputTokenBudget: number | null;
+}): {
+  requestMessages: LLMRequestMessage[];
+  pendingMessages: Message[];
+  trimmedPendingCount: number;
+  estimatedInputTokens: number;
+} {
+  const { previousSummary, promptVersion, systemPrompt, inputTokenBudget } = input;
+  let pendingMessages = input.pendingMessages;
+  let requestMessages = buildCompactionRequestMessages({
+    pendingMessages,
+    previousSummary,
+    promptVersion,
+    systemPrompt,
+  });
+  let estimatedInputTokens = estimateRequestMessagesTokens(requestMessages);
+  let trimmedPendingCount = 0;
+
+  if (inputTokenBudget === null) {
+    return {
+      requestMessages,
+      pendingMessages,
+      trimmedPendingCount,
+      estimatedInputTokens,
+    };
+  }
+
+  // Drop oldest pending messages first so the most recent raw context remains
+  // available to the summarizer. This mirrors the runtime preference for
+  // preserving the newest conversation suffix when the request must shrink.
+  while (estimatedInputTokens > inputTokenBudget && pendingMessages.length > 1) {
+    pendingMessages = pendingMessages.slice(1);
+    trimmedPendingCount += 1;
+    requestMessages = buildCompactionRequestMessages({
+      pendingMessages,
+      previousSummary,
+      promptVersion,
+      systemPrompt,
+    });
+    estimatedInputTokens = estimateRequestMessagesTokens(requestMessages);
+  }
+
+  return {
+    requestMessages,
+    pendingMessages,
+    trimmedPendingCount,
+    estimatedInputTokens,
+  };
 }

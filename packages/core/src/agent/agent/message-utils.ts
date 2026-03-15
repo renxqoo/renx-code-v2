@@ -1,5 +1,5 @@
 import type { LLMRequestMessage, MessageContent, ToolCall } from '../../providers';
-import type { AgentInput, Message } from '../types';
+import type { Message } from '../types';
 
 function hasNonEmptyTextContent(content: MessageContent | undefined): boolean {
   if (typeof content === 'string') {
@@ -74,28 +74,4 @@ function sanitizeToolCallArguments(argumentsText: unknown): string {
   } catch {
     return '{}';
   }
-}
-
-export function mergeLLMConfig(
-  config: AgentInput['config'],
-  tools?: AgentInput['tools'],
-  abortSignal?: AbortSignal
-): AgentInput['config'] {
-  if (!config && !tools && !abortSignal) {
-    return undefined;
-  }
-
-  const merged: NonNullable<AgentInput['config']> = {
-    ...(config || {}),
-  };
-
-  if (tools && tools.length > 0) {
-    merged.tools = tools;
-  }
-
-  if (abortSignal) {
-    merged.abortSignal = abortSignal;
-  }
-
-  return merged;
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { resolveSlashCommand } from '../commands/slash-commands';
 import {
+  appendAgentPrompt,
   getAgentModelAttachmentCapabilities,
   getAgentModelLabel,
   runAgentPrompt,
@@ -10,6 +11,7 @@ import type {
   AgentContextUsageEvent,
   AgentToolConfirmDecision,
   AgentToolConfirmEvent,
+  AgentUserMessageEvent,
   AgentUsageEvent,
 } from '../agent/runtime/types';
 import { requestExit } from '../runtime/exit';
@@ -154,6 +156,7 @@ export const useAgentChat = (): UseAgentChatResult => {
   const activeTurnIdRef = useRef<number | null>(null);
   const activeAbortControllerRef = useRef<AbortController | null>(null);
   const activeRunPromiseRef = useRef<Promise<void> | null>(null);
+  const pendingFollowUpTurnIdsRef = useRef<number[]>([]);
   const pendingToolConfirmResolverRef = useRef<
     ((decision: AgentToolConfirmDecision) => void) | null
   >(null);
@@ -196,6 +199,7 @@ export const useAgentChat = (): UseAgentChatResult => {
       }
       activeAbortControllerRef.current?.abort();
       const resolver = pendingToolConfirmResolverRef.current;
+      pendingFollowUpTurnIdsRef.current = [];
       pendingToolConfirmResolverRef.current = null;
       resolver?.({
         approved: false,
@@ -304,6 +308,18 @@ export const useAgentChat = (): UseAgentChatResult => {
     [modelLabel]
   );
 
+  const startStreamingReplyForTurn = useCallback(
+    (turnId: number) => {
+      setTurns((prev) =>
+        patchTurn(prev, turnId, (turn) => ({
+          ...turn,
+          reply: turn.reply ?? createStreamingReply(modelLabel),
+        }))
+      );
+    },
+    [modelLabel]
+  );
+
   const setImmediateReply = useCallback(
     (
       turnId: number,
@@ -357,11 +373,51 @@ export const useAgentChat = (): UseAgentChatResult => {
   const submitInput = useCallback(() => {
     const text = inputValue.trim();
     const attachedFiles = selectedFiles;
-    if ((text.length === 0 && attachedFiles.length === 0) || isThinking) {
+    if (text.length === 0 && attachedFiles.length === 0) {
       return;
     }
 
     setInputValue('');
+
+    if (isThinking) {
+      if (text.startsWith('/') && attachedFiles.length === 0) {
+        return;
+      }
+
+      setSelectedFiles([]);
+      const currentRequestId = requestIdRef.current;
+      const isCurrentRequest = () => currentRequestId === requestIdRef.current;
+      const activeTurnId = activeTurnIdRef.current;
+
+      void buildPromptContent(text, attachedFiles, attachmentCapabilities)
+        .then((promptContent) => appendAgentPrompt(promptContent))
+        .then((result) => {
+          if (!isCurrentRequest()) {
+            return;
+          }
+          if (!result.accepted) {
+            if (activeTurnId !== null) {
+              appendEventLine(activeTurnId, `[input] follow-up rejected: ${result.reason}`);
+            }
+            return;
+          }
+
+          const queuedTurnId = addTurn(text, false, attachedFiles);
+          pendingFollowUpTurnIdsRef.current.push(queuedTurnId);
+          if (activeTurnId !== null) {
+            appendEventLine(activeTurnId, `[input] queued follow-up`);
+          }
+        })
+        .catch((error) => {
+          if (!isCurrentRequest()) {
+            return;
+          }
+          if (activeTurnId !== null) {
+            appendEventLine(activeTurnId, `[error] ${extractErrorMessage(error)}`);
+          }
+        });
+      return;
+    }
 
     if (attachedFiles.length === 0 && text.startsWith('/') && runCommand(text)) {
       return;
@@ -381,16 +437,19 @@ export const useAgentChat = (): UseAgentChatResult => {
       }
 
       const turnId = addTurn(text, true, attachedFiles);
+      let streamTurnId = turnId;
       activeTurnIdRef.current = turnId;
       const currentRequestId = ++requestIdRef.current;
       const isCurrentRequest = () => currentRequestId === requestIdRef.current;
+      const getCurrentTurnId = () => streamTurnId;
       const abortController = new AbortController();
       activeAbortControllerRef.current = abortController;
+      pendingFollowUpTurnIdsRef.current = [];
 
       setIsThinking(true);
 
       const baseHandlers = buildAgentEventHandlers({
-        turnId,
+        getTurnId: getCurrentTurnId,
         isCurrentRequest,
         appendSegment,
         appendEventLine,
@@ -457,6 +516,18 @@ export const useAgentChat = (): UseAgentChatResult => {
             setContextUsagePercent(normalized);
           }
         },
+        onUserMessage: (event: AgentUserMessageEvent) => {
+          if (!isCurrentRequest()) {
+            return;
+          }
+
+          const nextTurnId =
+            pendingFollowUpTurnIdsRef.current.shift() ?? addTurn(event.text, false);
+          setTurns((prev) => setReplyStatus(prev, streamTurnId, 'done'));
+          streamTurnId = nextTurnId;
+          activeTurnIdRef.current = nextTurnId;
+          startStreamingReplyForTurn(nextTurnId);
+        },
       };
 
       const runPromise = buildPromptContent(text, attachedFiles, attachmentCapabilities)
@@ -479,7 +550,7 @@ export const useAgentChat = (): UseAgentChatResult => {
           }
           const replyUsage = toReplyUsage(result.usage);
           setTurns((prev) => {
-            const withFallbackText = patchTurn(prev, turnId, (turn) => {
+            const withFallbackText = patchTurn(prev, getCurrentTurnId(), (turn) => {
               if (!turn.reply || !result.text) {
                 return turn;
               }
@@ -506,7 +577,7 @@ export const useAgentChat = (): UseAgentChatResult => {
 
             return setReplyStatus(
               withFallbackText,
-              turnId,
+              getCurrentTurnId(),
               resolveReplyStatus(result.completionReason),
               {
                 durationSeconds: result.durationSeconds,
@@ -522,16 +593,17 @@ export const useAgentChat = (): UseAgentChatResult => {
           if (!isCurrentRequest()) {
             return;
           }
-          appendEventLine(turnId, `[error] ${extractErrorMessage(error)}`);
-          setTurns((prev) => setReplyStatus(prev, turnId, 'error'));
+          appendEventLine(getCurrentTurnId(), `[error] ${extractErrorMessage(error)}`);
+          setTurns((prev) => setReplyStatus(prev, getCurrentTurnId(), 'error'));
         })
         .finally(() => {
           if (activeAbortControllerRef.current === abortController) {
             activeAbortControllerRef.current = null;
           }
-          if (activeTurnIdRef.current === turnId) {
+          if (activeTurnIdRef.current === getCurrentTurnId()) {
             activeTurnIdRef.current = null;
           }
+          pendingFollowUpTurnIdsRef.current = [];
           if (!isCurrentRequest()) {
             return;
           }
@@ -552,9 +624,11 @@ export const useAgentChat = (): UseAgentChatResult => {
     appendSegment,
     attachmentCapabilities,
     inputValue,
+    addTurn,
     isThinking,
     runCommand,
     selectedFiles,
+    startStreamingReplyForTurn,
   ]);
 
   const clearInput = useCallback(() => {
