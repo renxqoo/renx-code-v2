@@ -179,7 +179,7 @@ const createMarkdownSyntax = (theme: OpenCodeTheme, platform: MarkdownThemePlatf
 
 const createSubtleMarkdownSyntax = (theme: OpenCodeTheme, platform: MarkdownThemePlatform) =>
   SyntaxStyle.fromTheme(
-    getSyntaxRules(theme, { platform }).map(rule => {
+    getSyntaxRules(theme, { platform }).map((rule) => {
       if (!rule.style.foreground) {
         return rule;
       }

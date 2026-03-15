@@ -1,7 +1,7 @@
 import type { PromptFileSelection } from './types';
 
 const formatSelectedFiles = (files: PromptFileSelection[]) => {
-  return files.map(file => `@${file.relativePath}`).join(' ');
+  return files.map((file) => `@${file.relativePath}`).join(' ');
 };
 
 export const buildPromptDisplay = (prompt: string, files: PromptFileSelection[]): string => {

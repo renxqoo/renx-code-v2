@@ -23,6 +23,7 @@
 - `130`：用户中断（SIGINT）。
 
 终态映射建议：
+
 - `done.stop` -> `COMPLETED` + `0`
 - `done.max_steps` -> `COMPLETED` + `0`（提示可 `resume`）
 - `error.AGENT_ABORTED` -> `CANCELLED` + `130`
@@ -33,6 +34,7 @@
 ## 4. 可观测输出字段
 
 推荐统一打印：
+
 - `executionId`
 - `stepIndex`
 - `eventType`
@@ -48,6 +50,7 @@
 - `run-list --cursor <token>`：分页读取下一页；无下一页时返回空 `next_cursor`。
 
 建议错误码：
+
 - 参数错误：`2`
 - 资源不存在（例如 execution 不存在）：`2`
 - 查询成功（含空列表）：`0`

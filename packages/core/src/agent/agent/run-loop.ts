@@ -40,10 +40,7 @@ export type RunLoopRuntime = {
     abortedMessage: string;
   };
   callbacks: {
-    safe: <T>(
-      callback: ((arg: T) => void | Promise<void>) | undefined,
-      arg: T
-    ) => Promise<void>;
+    safe: <T>(callback: ((arg: T) => void | Promise<void>) | undefined, arg: T) => Promise<void>;
     safeError: (
       callback:
         | ((error: Error) => ErrorDecision | void | Promise<ErrorDecision | void>)
@@ -107,10 +104,7 @@ export type RunLoopRuntime = {
       lastMessage: Message | undefined,
       callbacks?: AgentCallbacks
     ) => AsyncGenerator<StreamEvent, void, unknown>;
-    done: (
-      stepIndex: number,
-      finishReason?: 'stop' | 'max_steps'
-    ) => Generator<StreamEvent>;
+    done: (stepIndex: number, finishReason?: 'stop' | 'max_steps') => Generator<StreamEvent>;
     error: (error: AgentError) => Generator<StreamEvent>;
     maxRetries: () => Generator<StreamEvent>;
   };
@@ -302,9 +296,7 @@ export async function* runAgentLoop(
         } else {
           runOutcome = 'aborted';
           runErrorCode = 'AGENT_ABORTED';
-          yield* runtime.stream.error(
-            new AgentAbortedError(runtime.limits.abortedMessage)
-          );
+          yield* runtime.stream.error(new AgentAbortedError(runtime.limits.abortedMessage));
         }
         break;
       }
@@ -413,9 +405,7 @@ export async function* runAgentLoop(
         if (runtime.resilience.isAbortError(error) || state.input.abortSignal?.aborted) {
           runOutcome = 'aborted';
           runErrorCode = 'AGENT_ABORTED';
-          yield* runtime.stream.error(
-            new AgentAbortedError(runtime.limits.abortedMessage)
-          );
+          yield* runtime.stream.error(new AgentAbortedError(runtime.limits.abortedMessage));
           break;
         }
 
@@ -453,10 +443,7 @@ export async function* runAgentLoop(
           errorCode: normalizedError.errorCode,
         });
         if (retryCount < runtime.limits.maxRetryCount) {
-          const retryDelay = runtime.resilience.calculateRetryDelay(
-            retryCount,
-            error as Error
-          );
+          const retryDelay = runtime.resilience.calculateRetryDelay(retryCount, error as Error);
           try {
             await runtime.resilience.sleep(retryDelay, state.abortSignal);
           } catch (sleepError) {
@@ -470,15 +457,10 @@ export async function* runAgentLoop(
               yield* runtime.stream.error(sleepTimeoutError);
               break;
             }
-            if (
-              runtime.resilience.isAbortError(sleepError) ||
-              state.input.abortSignal?.aborted
-            ) {
+            if (runtime.resilience.isAbortError(sleepError) || state.input.abortSignal?.aborted) {
               runOutcome = 'aborted';
               runErrorCode = 'AGENT_ABORTED';
-              yield* runtime.stream.error(
-                new AgentAbortedError(runtime.limits.abortedMessage)
-              );
+              yield* runtime.stream.error(new AgentAbortedError(runtime.limits.abortedMessage));
               break;
             }
             throw sleepError;

@@ -123,22 +123,30 @@ export interface RetryScheduledLifecycleContext {
 export interface AgentRuntimeLifecycleHooks {
   onRunStart?(
     context: RunLifecycleStartContext
-  ): Promise<AgentRuntimeObservation<RunLifecycleFinishContext> | void> | AgentRuntimeObservation<RunLifecycleFinishContext> | void;
+  ):
+    | Promise<AgentRuntimeObservation<RunLifecycleFinishContext> | void>
+    | AgentRuntimeObservation<RunLifecycleFinishContext>
+    | void;
   onLLMStageStart?(
     context: LLMStageLifecycleStartContext
-  ): Promise<AgentRuntimeObservation<LLMStageLifecycleFinishContext> | void> | AgentRuntimeObservation<LLMStageLifecycleFinishContext> | void;
+  ):
+    | Promise<AgentRuntimeObservation<LLMStageLifecycleFinishContext> | void>
+    | AgentRuntimeObservation<LLMStageLifecycleFinishContext>
+    | void;
   onToolStageStart?(
     context: ToolStageLifecycleStartContext
-  ): Promise<AgentRuntimeObservation<ToolStageLifecycleFinishContext> | void> | AgentRuntimeObservation<ToolStageLifecycleFinishContext> | void;
+  ):
+    | Promise<AgentRuntimeObservation<ToolStageLifecycleFinishContext> | void>
+    | AgentRuntimeObservation<ToolStageLifecycleFinishContext>
+    | void;
   onToolExecutionStart?(
     context: ToolExecutionLifecycleStartContext
-  ): Promise<AgentRuntimeObservation<ToolExecutionLifecycleFinishContext> | void> | AgentRuntimeObservation<ToolExecutionLifecycleFinishContext> | void;
-  onRunError?(
-    context: RunErrorLifecycleContext
-  ): Promise<void> | void;
-  onRetryScheduled?(
-    context: RetryScheduledLifecycleContext
-  ): Promise<void> | void;
+  ):
+    | Promise<AgentRuntimeObservation<ToolExecutionLifecycleFinishContext> | void>
+    | AgentRuntimeObservation<ToolExecutionLifecycleFinishContext>
+    | void;
+  onRunError?(context: RunErrorLifecycleContext): Promise<void> | void;
+  onRetryScheduled?(context: RetryScheduledLifecycleContext): Promise<void> | void;
 }
 
 export function createNoopObservation<TFinishContext>(

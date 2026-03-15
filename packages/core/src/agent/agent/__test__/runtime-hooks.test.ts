@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import {
-  composeAgentRuntimeHooks,
-  createNoopObservation,
-} from '../runtime-hooks';
+import { composeAgentRuntimeHooks, createNoopObservation } from '../runtime-hooks';
 
 describe('runtime-hooks', () => {
   it('composes lifecycle observations and uses the first available span id', async () => {

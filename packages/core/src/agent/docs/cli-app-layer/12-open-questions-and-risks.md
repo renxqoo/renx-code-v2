@@ -22,9 +22,11 @@
 ## 3. 决策记录建议
 
 已决策：
+
 - Phase 1 本地存储统一 SQLite，JSONL 仅历史兼容。
 
 后续每个关键决策都新增 ADR 文档：
+
 - `adr/ADR-001-storage-choice.md`
 - `adr/ADR-002-execution-id-policy.md`
 - `adr/ADR-003-event-schema-versioning.md`

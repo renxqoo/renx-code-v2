@@ -320,7 +320,7 @@ describe('runtime', () => {
     await runAgentPrompt('Test prompt', {});
 
     const toolNames =
-      appServiceClass.lastRequest?.tools?.map(tool => tool.function?.name).filter(Boolean) || [];
+      appServiceClass.lastRequest?.tools?.map((tool) => tool.function?.name).filter(Boolean) || [];
 
     expect(toolNames).toContain('file_read');
     expect(toolNames).toContain('file_edit');

@@ -128,15 +128,15 @@ export const useAgentChat = (): UseAgentChatResult => {
   >(null);
 
   const removeSelectedFile = useCallback((absolutePath: string) => {
-    setSelectedFiles(current => current.filter(file => file.absolutePath !== absolutePath));
+    setSelectedFiles((current) => current.filter((file) => file.absolutePath !== absolutePath));
   }, []);
 
   const appendSelectedFiles = useCallback((files: PromptFileSelection[]) => {
     if (files.length === 0) {
       return;
     }
-    setSelectedFiles(current => {
-      const seen = new Set(current.map(file => file.absolutePath));
+    setSelectedFiles((current) => {
+      const seen = new Set(current.map((file) => file.absolutePath));
       const next = [...current];
       for (const file of files) {
         if (seen.has(file.absolutePath)) {
@@ -168,14 +168,14 @@ export const useAgentChat = (): UseAgentChatResult => {
   useEffect(() => {
     let disposed = false;
     void getAgentModelLabel()
-      .then(label => {
+      .then((label) => {
         if (!disposed) {
           setModelLabel(label);
         }
       })
       .catch(() => {});
     void getAgentModelAttachmentCapabilities()
-      .then(capabilities => {
+      .then((capabilities) => {
         if (!disposed) {
           setAttachmentCapabilities(capabilities);
         }
@@ -206,8 +206,8 @@ export const useAgentChat = (): UseAgentChatResult => {
 
   const appendSegment = useCallback(
     (turnId: number, segmentId: string, type: ReplySegmentType, chunk: string, data?: unknown) => {
-      setTurns(prev =>
-        patchTurn(prev, turnId, turn => {
+      setTurns((prev) =>
+        patchTurn(prev, turnId, (turn) => {
           if (!turn.reply) {
             return turn;
           }
@@ -227,8 +227,8 @@ export const useAgentChat = (): UseAgentChatResult => {
   );
 
   const appendEventLine = useCallback((turnId: number, text: string) => {
-    setTurns(prev =>
-      patchTurn(prev, turnId, turn => {
+    setTurns((prev) =>
+      patchTurn(prev, turnId, (turn) => {
         if (!turn.reply) {
           return turn;
         }
@@ -262,7 +262,7 @@ export const useAgentChat = (): UseAgentChatResult => {
     }
 
     appendEventLine(activeTurnId, '[stop] aborted by user');
-    setTurns(prev =>
+    setTurns((prev) =>
       setReplyStatus(prev, activeTurnId, 'done', {
         completionReason: 'cancelled',
         completionMessage: 'Stopped by user.',
@@ -289,12 +289,12 @@ export const useAgentChat = (): UseAgentChatResult => {
     (prompt: string, withStreamingReply = false, files: PromptFileSelection[] = []): number => {
       const turnId = turnIdRef.current++;
       const displayPrompt = buildPromptDisplay(prompt, files);
-      setTurns(prev => [
+      setTurns((prev) => [
         ...prev,
         {
           id: turnId,
           prompt: displayPrompt,
-          files: files.map(file => file.relativePath),
+          files: files.map((file) => file.relativePath),
           createdAtMs: Date.now(),
           reply: withStreamingReply ? createStreamingReply(modelLabel) : undefined,
         },
@@ -309,8 +309,8 @@ export const useAgentChat = (): UseAgentChatResult => {
       turnId: number,
       segments: Array<{ id: string; type: 'thinking' | 'text'; content: string }>
     ) => {
-      setTurns(prev =>
-        patchTurn(prev, turnId, turn => ({
+      setTurns((prev) =>
+        patchTurn(prev, turnId, (turn) => ({
           ...turn,
           reply: {
             ...createStreamingReply(modelLabel),
@@ -372,7 +372,7 @@ export const useAgentChat = (): UseAgentChatResult => {
     void (async () => {
       const previousRun = activeRunPromiseRef.current;
       if (previousRun) {
-        await previousRun.catch(error => {
+        await previousRun.catch((error) => {
           console.debug(
             'Previous run failed:',
             error instanceof Error ? error.message : String(error)
@@ -413,7 +413,7 @@ export const useAgentChat = (): UseAgentChatResult => {
             pendingToolConfirmResolverRef.current = null;
           }
 
-          return new Promise<AgentToolConfirmDecision>(resolve => {
+          return new Promise<AgentToolConfirmDecision>((resolve) => {
             pendingToolConfirmResolverRef.current = resolve;
             setPendingToolConfirm({
               ...event,
@@ -433,8 +433,8 @@ export const useAgentChat = (): UseAgentChatResult => {
           if (!replyUsage) {
             return;
           }
-          setTurns(prev =>
-            patchTurn(prev, turnId, turn => {
+          setTurns((prev) =>
+            patchTurn(prev, turnId, (turn) => {
               if (!turn.reply) {
                 return turn;
               }
@@ -460,12 +460,12 @@ export const useAgentChat = (): UseAgentChatResult => {
       };
 
       const runPromise = buildPromptContent(text, attachedFiles, attachmentCapabilities)
-        .then(promptContent =>
+        .then((promptContent) =>
           runAgentPrompt(promptContent, handlers, {
             abortSignal: abortController.signal,
           })
         )
-        .then(result => {
+        .then((result) => {
           if (!isCurrentRequest()) {
             return;
           }
@@ -478,14 +478,14 @@ export const useAgentChat = (): UseAgentChatResult => {
             }
           }
           const replyUsage = toReplyUsage(result.usage);
-          setTurns(prev => {
-            const withFallbackText = patchTurn(prev, turnId, turn => {
+          setTurns((prev) => {
+            const withFallbackText = patchTurn(prev, turnId, (turn) => {
               if (!turn.reply || !result.text) {
                 return turn;
               }
 
               const hasAssistantText = turn.reply.segments.some(
-                segment =>
+                (segment) =>
                   (segment.type === 'text' || segment.type === 'thinking') &&
                   segment.content.trim().length > 0
               );
@@ -518,12 +518,12 @@ export const useAgentChat = (): UseAgentChatResult => {
             );
           });
         })
-        .catch(error => {
+        .catch((error) => {
           if (!isCurrentRequest()) {
             return;
           }
           appendEventLine(turnId, `[error] ${extractErrorMessage(error)}`);
-          setTurns(prev => setReplyStatus(prev, turnId, 'error'));
+          setTurns((prev) => setReplyStatus(prev, turnId, 'error'));
         })
         .finally(() => {
           if (activeAbortControllerRef.current === abortController) {
@@ -565,14 +565,14 @@ export const useAgentChat = (): UseAgentChatResult => {
   const setModelLabelDisplay = useCallback((label: string) => {
     setModelLabel(label);
     void getAgentModelAttachmentCapabilities()
-      .then(capabilities => {
+      .then((capabilities) => {
         setAttachmentCapabilities(capabilities);
       })
       .catch(() => {});
   }, []);
 
   const setToolConfirmSelection = useCallback((selection: 'approve' | 'deny') => {
-    setPendingToolConfirm(current =>
+    setPendingToolConfirm((current) =>
       current ? { ...current, selectedAction: selection } : current
     );
   }, []);

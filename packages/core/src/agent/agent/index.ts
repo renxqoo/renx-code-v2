@@ -9,18 +9,12 @@ import {
 import { ToolManager } from '../tool/tool-manager';
 import { LLMProvider, Tool, ToolCall } from '../../providers';
 import { EventEmitter } from 'events';
-import {
-  AgentError,
-  MaxRetriesError,
-  TimeoutBudgetExceededError,
-} from './error';
+import { AgentError, MaxRetriesError, TimeoutBudgetExceededError } from './error';
 import { mergeAgentLoggers, type AgentLogger } from './logger';
 import { compact, estimateMessagesTokens } from './compaction';
 import { LLMTool, ToolConcurrencyPolicy } from '../tool/types';
 import type { BackoffConfig } from '../../providers';
-import {
-  mergeLLMConfig as mergeLLMRequestConfig,
-} from './message-utils';
+import { mergeLLMConfig as mergeLLMRequestConfig } from './message-utils';
 import {
   createCheckpoint,
   createDoneEvent,
@@ -40,13 +34,8 @@ import {
   type TimeoutBudgetState,
   type TimeoutStage,
 } from './timeout-budget';
-import {
-  type WriteBufferRuntime,
-} from './write-file-session';
-import {
-  NoopToolExecutionLedger,
-  type ToolExecutionLedger,
-} from './tool-execution-ledger';
+import { type WriteBufferRuntime } from './write-file-session';
+import { NoopToolExecutionLedger, type ToolExecutionLedger } from './tool-execution-ledger';
 import {
   emitMetric as pushMetric,
   emitTrace as pushTrace,
@@ -63,10 +52,7 @@ import {
   safeErrorCallback as invokeSafeErrorCallback,
 } from './callback-safety';
 import { generateId } from './shared';
-import {
-  processToolCalls as processToolCallsRuntime,
-  type ToolRuntime,
-} from './tool-runtime';
+import { processToolCalls as processToolCallsRuntime, type ToolRuntime } from './tool-runtime';
 import {
   callLLMAndProcessStream as callLLMStreamRuntime,
   type LLMStreamRuntimeDeps,
@@ -454,12 +440,18 @@ export class StatelessAgent extends EventEmitter {
     // contract tied to business events rather than implementation details.
     const observabilityHook: AgentRuntimeLifecycleHooks = {
       onRunStart: async (context) => {
-        const span = await this.startSpan(context.callbacks, context.traceId, 'agent.run', undefined, {
-          executionId: context.executionId,
-          conversationId: context.conversationId,
-          maxSteps: context.maxSteps,
-          timeoutBudgetMs: context.timeoutBudgetMs,
-        });
+        const span = await this.startSpan(
+          context.callbacks,
+          context.traceId,
+          'agent.run',
+          undefined,
+          {
+            executionId: context.executionId,
+            conversationId: context.conversationId,
+            maxSteps: context.maxSteps,
+            timeoutBudgetMs: context.timeoutBudgetMs,
+          }
+        );
         this.logInfo('[Agent] run.start', {
           executionId: context.executionId,
           traceId: context.traceId,
@@ -899,5 +891,4 @@ export class StatelessAgent extends EventEmitter {
   private logWarn(message: string, context?: Record<string, unknown>, data?: unknown): void {
     writeWarnLog(this.logger, message, context, data);
   }
-
 }

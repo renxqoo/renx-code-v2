@@ -197,7 +197,7 @@ const loadSourceModules = async (): Promise<SourceModules> => {
 };
 
 export const getSourceModules = async () => {
-  modulesPromise ??= loadSourceModules().catch(error => {
+  modulesPromise ??= loadSourceModules().catch((error) => {
     modulesPromise = null;
     throw error;
   });

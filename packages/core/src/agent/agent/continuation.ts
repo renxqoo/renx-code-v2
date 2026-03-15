@@ -4,10 +4,7 @@ import type { AgentInput, Message } from '../types';
 import type { LLMRequestMessage } from '../../providers';
 import { processToolCallPairs } from '../utils/message';
 
-import {
-  convertMessageToLLMMessage,
-  shouldSendMessageToLLM,
-} from './message-utils';
+import { convertMessageToLLMMessage, shouldSendMessageToLLM } from './message-utils';
 
 type ContinuationMetadata = {
   responseId?: string;
@@ -46,7 +43,7 @@ function normalizeValueForHash(value: unknown): unknown {
     return value;
   }
   if (Array.isArray(value)) {
-    return value.map(item => normalizeValueForHash(item));
+    return value.map((item) => normalizeValueForHash(item));
   }
   if (typeof value === 'object') {
     return Object.keys(value as Record<string, unknown>)
@@ -132,8 +129,8 @@ export function buildLLMRequestPlan(
   config: AgentInput['config'],
   enableServerSideContinuation: boolean
 ): LLMRequestPlan {
-  const llmSourceMessages = messages.filter(msg => shouldSendMessageToLLM(msg));
-  const llmMessages = llmSourceMessages.map(msg => convertMessageToLLMMessage(msg));
+  const llmSourceMessages = messages.filter((msg) => shouldSendMessageToLLM(msg));
+  const llmMessages = llmSourceMessages.map((msg) => convertMessageToLLMMessage(msg));
   const requestConfigHash = hashValueForContinuation(normalizeContinuationConfig(config));
   const requestInputHash = hashValueForContinuation(llmMessages);
   const requestInputMessageCount = llmMessages.length;
@@ -199,7 +196,7 @@ export function buildLLMRequestPlan(
     }
 
     return {
-      requestMessages: deltaSourceMessages.map(msg => convertMessageToLLMMessage(msg)),
+      requestMessages: deltaSourceMessages.map((msg) => convertMessageToLLMMessage(msg)),
       requestConfig: {
         ...(config || {}),
         previous_response_id: metadata.responseId,

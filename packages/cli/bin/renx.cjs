@@ -1,25 +1,23 @@
 #!/usr/bin/env node
 
-const childProcess = require("node:child_process");
-const fs = require("node:fs");
-const path = require("node:path");
+const childProcess = require('node:child_process');
+const fs = require('node:fs');
+const path = require('node:path');
 
-const packageRoot = path.resolve(__dirname, "..");
-const binaryName = process.platform === "win32" ? "renx.exe" : "renx";
-const packageJson = JSON.parse(
-  fs.readFileSync(path.join(packageRoot, "package.json"), "utf8")
-);
+const packageRoot = path.resolve(__dirname, '..');
+const binaryName = process.platform === 'win32' ? 'renx.exe' : 'renx';
+const packageJson = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
 const cliArgs = process.argv.slice(2);
 
-if (cliArgs.includes("-v") || cliArgs.includes("--version")) {
-  console.log(packageJson.version || "0.0.0");
+if (cliArgs.includes('-v') || cliArgs.includes('--version')) {
+  console.log(packageJson.version || '0.0.0');
   process.exit(0);
 }
 
 function run(target, args, env = process.env) {
   const result = childProcess.spawnSync(target, args, {
     cwd: process.cwd(),
-    stdio: "inherit",
+    stdio: 'inherit',
     env,
   });
 
@@ -28,7 +26,7 @@ function run(target, args, env = process.env) {
     process.exit(1);
   }
 
-  process.exit(typeof result.status === "number" ? result.status : 0);
+  process.exit(typeof result.status === 'number' ? result.status : 0);
 }
 
 function resolveBunExecutable() {
@@ -36,14 +34,11 @@ function resolveBunExecutable() {
     return process.env.RENX_BUN_PATH;
   }
 
-  const candidates =
-    process.platform === "win32"
-      ? ["bun.exe", "bun.cmd", "bun"]
-      : ["bun"];
+  const candidates = process.platform === 'win32' ? ['bun.exe', 'bun.cmd', 'bun'] : ['bun'];
 
   for (const candidate of candidates) {
-    const probe = childProcess.spawnSync(candidate, ["--version"], {
-      stdio: "ignore",
+    const probe = childProcess.spawnSync(candidate, ['--version'], {
+      stdio: 'ignore',
     });
 
     if (!probe.error && probe.status === 0) {
@@ -56,31 +51,31 @@ function resolveBunExecutable() {
 
 function hasAgentSourceRoot(root) {
   return (
-    fs.existsSync(path.join(root, "packages", "core", "src", "providers", "index.ts")) &&
-    fs.existsSync(path.join(root, "packages", "core", "src", "config", "index.ts")) &&
-    fs.existsSync(path.join(root, "packages", "core", "src", "agent", "app", "index.ts"))
+    fs.existsSync(path.join(root, 'packages', 'core', 'src', 'providers', 'index.ts')) &&
+    fs.existsSync(path.join(root, 'packages', 'core', 'src', 'config', 'index.ts')) &&
+    fs.existsSync(path.join(root, 'packages', 'core', 'src', 'agent', 'app', 'index.ts'))
   );
 }
 
 const binaryCandidates = [
   process.env.RENX_BIN_PATH,
   path.join(__dirname, binaryName),
-  path.join(packageRoot, "release", "publish", "bin", binaryName),
+  path.join(packageRoot, 'release', 'publish', 'bin', binaryName),
 ].filter(Boolean);
 
 for (const candidate of binaryCandidates) {
   if (fs.existsSync(candidate)) {
     run(candidate, cliArgs, {
       ...process.env,
-      RENX_VERSION: process.env.RENX_VERSION || packageJson.version || "0.0.0",
+      RENX_VERSION: process.env.RENX_VERSION || packageJson.version || '0.0.0',
     });
   }
 }
 
-const sourceEntry = path.join(packageRoot, "src", "index.tsx");
+const sourceEntry = path.join(packageRoot, 'src', 'index.tsx');
 if (fs.existsSync(sourceEntry)) {
-  const packagedRepoRoot = path.join(packageRoot, "vendor", "agent-root");
-  const localRepoRoot = path.resolve(packageRoot, "..", "..");
+  const packagedRepoRoot = path.join(packageRoot, 'vendor', 'agent-root');
+  const localRepoRoot = path.resolve(packageRoot, '..', '..');
   const resolvedRepoRoot =
     process.env.AGENT_REPO_ROOT ||
     (hasAgentSourceRoot(packagedRepoRoot)
@@ -91,9 +86,9 @@ if (fs.existsSync(sourceEntry)) {
   const bunExecutable = resolveBunExecutable();
 
   if (bunExecutable) {
-    run(bunExecutable, ["run", sourceEntry, ...cliArgs], {
+    run(bunExecutable, ['run', sourceEntry, ...cliArgs], {
       ...process.env,
-      RENX_VERSION: process.env.RENX_VERSION || packageJson.version || "0.0.0",
+      RENX_VERSION: process.env.RENX_VERSION || packageJson.version || '0.0.0',
       AGENT_WORKDIR: process.env.AGENT_WORKDIR || process.cwd(),
       ...(resolvedRepoRoot ? { AGENT_REPO_ROOT: resolvedRepoRoot } : {}),
     });
@@ -101,5 +96,5 @@ if (fs.existsSync(sourceEntry)) {
 }
 
 console.error(`Could not find Renx executable: expected ${binaryName} next to ${__filename}.`);
-console.error("Run `npm run release:prepare` to build a local binary, or set RENX_BIN_PATH.");
+console.error('Run `npm run release:prepare` to build a local binary, or set RENX_BIN_PATH.');
 process.exit(1);

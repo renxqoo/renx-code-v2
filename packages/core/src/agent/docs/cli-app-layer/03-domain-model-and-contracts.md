@@ -3,6 +3,7 @@
 ## 1. 核心实体
 
 ### RunRecord
+
 - `executionId: string`
 - `runId: string`（持久化层别名，默认与 `executionId` 一致）
 - `conversationId: string`
@@ -17,12 +18,14 @@
 - `errorMessage?: string`
 
 ### RunRequest
+
 - `conversationId: string`
 - `userInput: string`
 - `executionId?: string`
 - `maxSteps?: number`
 
 ### ExecutionStepRecord
+
 - `executionId: string`
 - `stepIndex: number`
 - `status: pending | executing | completed | failed | skipped`
@@ -32,6 +35,7 @@
 - `completedAt?: number`
 
 ### ConversationRecord
+
 - `conversationId: string`
 - `title?: string`
 - `status: active | archived`
@@ -40,6 +44,7 @@
 - `updatedAt: number`
 
 ### CliEvent（内核 `StreamEvent` + 应用层扩展）
+
 - `user_message`（应用层扩展）
 - `assistant_message`（应用层扩展）
 - `chunk`
@@ -54,6 +59,7 @@
 - `error`
 
 ### CliEventEnvelope
+
 - `conversationId: string`
 - `executionId: string`
 - `seq: number`（会话内单调递增）

@@ -3,10 +3,7 @@ import type { ToolCall } from '../../providers';
 import type { ToolResult } from '../tool/base-tool';
 
 import { hasNonEmptyText } from './shared';
-import {
-  createToolResultMessage,
-  type ToolExecutionLedgerRecord,
-} from './tool-execution-ledger';
+import { createToolResultMessage, type ToolExecutionLedgerRecord } from './tool-execution-ledger';
 
 export function resolveToolResultSummary(
   toolCall: ToolCall,

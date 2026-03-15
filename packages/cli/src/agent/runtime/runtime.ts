@@ -1,8 +1,4 @@
-import {
-  buildSystemPrompt,
-  resolveRenxDatabasePath,
-  resolveRenxTaskDir,
-} from '@renx-code/core';
+import { buildSystemPrompt, resolveRenxDatabasePath, resolveRenxTaskDir } from '@renx-code/core';
 import type {
   AgentContextUsageEvent,
   AgentEventHandlers,
@@ -92,9 +88,7 @@ const parsePositiveInt = (raw: string | undefined, fallback: number): number => 
   return value;
 };
 
-const resolvePromptCacheConfig = (
-  conversationId: string
-): Record<string, unknown> | undefined => {
+const resolvePromptCacheConfig = (conversationId: string): Record<string, unknown> | undefined => {
   const rawPromptCacheKey = process.env.AGENT_PROMPT_CACHE_KEY?.trim();
   const promptCacheRetention = process.env.AGENT_PROMPT_CACHE_RETENTION?.trim();
   const promptCacheKey = rawPromptCacheKey?.replace(/\{conversationId\}/g, conversationId);
@@ -446,7 +440,7 @@ const createRuntime = async (): Promise<RuntimeCore> => {
   const collectToolSchemas = () =>
     toolManager
       .getTools()
-      .map(tool => {
+      .map((tool) => {
         const schema = tool?.toToolSchema?.();
         if (!schema || typeof schema !== 'object') {
           return null;
@@ -457,7 +451,7 @@ const createRuntime = async (): Promise<RuntimeCore> => {
 
   const resolveToolSchemas = (allowedTools?: string[], hiddenToolNames?: Set<string>) => {
     const allSchemas = toolManager
-      ? collectToolSchemas().filter(schema => {
+      ? collectToolSchemas().filter((schema) => {
           const name = schema.function?.name;
           if (typeof name !== 'string') {
             return false;
@@ -471,7 +465,7 @@ const createRuntime = async (): Promise<RuntimeCore> => {
     }
 
     const allowed = new Set(allowedTools);
-    return allSchemas.filter(schema => {
+    return allSchemas.filter((schema) => {
       const name = schema.function?.name;
       return typeof name === 'string' && allowed.has(name);
     });
@@ -564,7 +558,7 @@ const getRuntime = async (): Promise<RuntimeCore> => {
   if (initializing) {
     // 等待初始化完成
     while (initializing) {
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
     // 初始化完成后，runtimePromise应该已经设置
     if (runtimePromise) {
@@ -631,10 +625,10 @@ export const runAgentPrompt = async (
     safeInvoke(() => handlers.onToolConfirm?.(toolConfirmEvent));
 
     void resolveToolConfirmDecision(toolConfirmEvent, handlers)
-      .then(decision => {
+      .then((decision) => {
         event.resolve(decision);
       })
-      .catch(error => {
+      .catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         event.resolve({
           approved: false,
@@ -667,19 +661,19 @@ export const runAgentPrompt = async (
             streamedState.latestErrorMessage = message;
           }
         },
-        onContextUsage: usage => {
+        onContextUsage: (usage) => {
           const contextUsageEvent = toContextUsageEventFromApp(usage);
           if (!contextUsageEvent) {
             return;
           }
           safeInvoke(() => handlers.onContextUsage?.(contextUsageEvent));
         },
-        onUsage: usage => {
+        onUsage: (usage) => {
           const usageEvent = toUsageEventFromApp(usage);
           latestUsageEvent = usageEvent;
           safeInvoke(() => handlers.onUsage?.(usageEvent));
         },
-        onEvent: async envelope => {
+        onEvent: async (envelope) => {
           const payload = asRecord(envelope.data);
           switch (envelope.eventType) {
             case 'chunk': {
@@ -699,7 +693,7 @@ export const runAgentPrompt = async (
             }
             case 'tool_stream': {
               const toolStreamEvent = toToolStreamEvent(envelope, toolStreamSequenceById);
-              toolCallBuffer.ensureEmitted(toolStreamEvent.toolCallId, toolCall => {
+              toolCallBuffer.ensureEmitted(toolStreamEvent.toolCallId, (toolCall) => {
                 safeInvoke(() => handlers.onToolUse?.(toolCall));
               });
               safeInvoke(() => handlers.onToolStream?.(toolStreamEvent));
@@ -716,7 +710,7 @@ export const runAgentPrompt = async (
                   }
                   toolCallBuffer.register(
                     toolCall,
-                    event => {
+                    (event) => {
                       safeInvoke(() => handlers.onToolUse?.(event));
                     },
                     currentAction === 'tool'
@@ -730,7 +724,7 @@ export const runAgentPrompt = async (
                 }
                 toolCallBuffer.register(
                   toolCall,
-                  event => {
+                  (event) => {
                     safeInvoke(() => handlers.onToolUse?.(event));
                   },
                   currentAction === 'tool'
@@ -740,7 +734,7 @@ export const runAgentPrompt = async (
             }
             case 'tool_result': {
               const toolCallId = readString(payload.tool_call_id) ?? readString(payload.toolCallId);
-              toolCallBuffer.ensureEmitted(toolCallId, toolCall => {
+              toolCallBuffer.ensureEmitted(toolCallId, (toolCall) => {
                 safeInvoke(() => handlers.onToolUse?.(toolCall));
               });
               const toolResultEvent = toToolResultEvent(payload, toolCallsById);
@@ -754,7 +748,7 @@ export const runAgentPrompt = async (
               safeInvoke(() => handlers.onStep?.(stepEvent));
 
               if (nextAction === 'tool') {
-                toolCallBuffer.flush(toolCall => {
+                toolCallBuffer.flush((toolCall) => {
                   safeInvoke(() => handlers.onToolUse?.(toolCall));
                 });
               }
@@ -861,7 +855,7 @@ export const listAgentModels = async (): Promise<AgentModelOption[]> => {
   const currentModelId = await getAgentModelId();
 
   return modules.ProviderRegistry.getModelIds()
-    .map(id => {
+    .map((id) => {
       const config = modules.ProviderRegistry.getModelConfig(id);
       return {
         id,

@@ -15,11 +15,7 @@ import { DefaultToolManager } from '../../tool/tool-manager';
 import { BashTool } from '../../tool/bash';
 import { WriteFileTool } from '../../tool/write-file';
 import type { Chunk, LLMProvider, ToolCall } from '../../../providers';
-import {
-  LLMAuthError,
-  LLMBadRequestError,
-  LLMRetryableError,
-} from '../../../providers';
+import { LLMAuthError, LLMBadRequestError, LLMRetryableError } from '../../../providers';
 import { AgentError } from '../error';
 import * as compactionModule from '../compaction';
 import { InMemoryToolExecutionLedger } from '../tool-execution-ledger';
@@ -2490,5 +2486,4 @@ describe('StatelessAgent', () => {
       )
     ).rejects.toThrow('sleep crash');
   });
-
 });

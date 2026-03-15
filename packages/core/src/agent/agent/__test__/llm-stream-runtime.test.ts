@@ -2,10 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { Chunk, LLMProvider } from '../../../providers';
 import type { Message, StreamEvent } from '../../types';
-import {
-  callLLMAndProcessStream,
-  type LLMStreamRuntimeDeps,
-} from '../llm-stream-runtime';
+import { callLLMAndProcessStream, type LLMStreamRuntimeDeps } from '../llm-stream-runtime';
 
 type ChunkDelta = NonNullable<NonNullable<Chunk['choices']>[number]>['delta'];
 type TestDelta = Partial<ChunkDelta> & { finish_reason?: string };
@@ -132,7 +129,7 @@ describe('llm-stream-runtime', () => {
       })
     );
 
-    expect(events.map(event => event.type)).toEqual([
+    expect(events.map((event) => event.type)).toEqual([
       'chunk',
       'reasoning_chunk',
       'tool_call',

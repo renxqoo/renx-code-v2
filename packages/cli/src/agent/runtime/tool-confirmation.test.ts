@@ -24,9 +24,9 @@ const TOOL_CONFIRM_EVENT: AgentToolConfirmEvent = {
 describe('resolveToolConfirmDecision', () => {
   it('asks the UI callback when registered', async () => {
     const calls: AgentToolConfirmEvent[] = [];
-    const onToolConfirmRequest: NonNullable<
-      AgentEventHandlers['onToolConfirmRequest']
-    > = async event => {
+    const onToolConfirmRequest: NonNullable<AgentEventHandlers['onToolConfirmRequest']> = async (
+      event
+    ) => {
       calls.push(event);
       return {
         approved: false,

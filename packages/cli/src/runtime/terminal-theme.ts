@@ -119,7 +119,7 @@ export const probeTerminalColors = async (timeoutMs = 1000): Promise<TerminalCol
     return { mode: 'dark', rawBackgroundColor: null, rawForegroundColor: null };
   }
 
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     const stdin = process.stdin;
     const previousRawMode = Boolean(stdin.isRaw);
     let timer: NodeJS.Timeout | null = null;

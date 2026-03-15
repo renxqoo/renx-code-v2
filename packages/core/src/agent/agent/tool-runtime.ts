@@ -41,10 +41,7 @@ export type ToolRuntime = {
     resolveConcurrencyPolicy?: (toolCall: ToolCall) => ToolConcurrencyPolicy;
   };
   callbacks: {
-    safe: <T>(
-      callback: ((arg: T) => void | Promise<void>) | undefined,
-      arg: T
-    ) => Promise<void>;
+    safe: <T>(callback: ((arg: T) => void | Promise<void>) | undefined, arg: T) => Promise<void>;
   };
   diagnostics: {
     extractErrorCode: (error: unknown) => string | undefined;
@@ -324,11 +321,7 @@ export async function* executeTool(
 
         if (toolExecResult.success) {
           toolOutput = toolExecResult.output || '';
-          await cleanupWriteFileBufferIfNeeded(
-            toolCall,
-            writeBufferSessions,
-            writeFileSessionKey
-          );
+          await cleanupWriteFileBufferIfNeeded(toolCall, writeBufferSessions, writeFileSessionKey);
         } else {
           if (isWriteFileToolCall(toolCall)) {
             // write_file failures are special because the model may stream a
@@ -337,9 +330,7 @@ export async function* executeTool(
             // generic error string.
             if (isWriteFileProtocolOutput(toolExecResult.output)) {
               toolOutput = toolExecResult.output;
-            } else if (
-              shouldEnrichWriteFileFailure(toolExecResult.error, toolExecResult.output)
-            ) {
+            } else if (shouldEnrichWriteFileFailure(toolExecResult.error, toolExecResult.output)) {
               const errorContent =
                 toolExecResult.error?.message ||
                 toolExecResult.output ||
@@ -387,14 +378,11 @@ export async function* executeTool(
             }
           } else {
             toolOutput =
-              toolExecResult.error?.message ||
-              toolExecResult.output ||
-              new UnknownError().message;
+              toolExecResult.error?.message || toolExecResult.output || new UnknownError().message;
           }
 
           errorCode =
-            runtime.diagnostics.extractErrorCode(toolExecResult.error) ||
-            'TOOL_EXECUTION_FAILED';
+            runtime.diagnostics.extractErrorCode(toolExecResult.error) || 'TOOL_EXECUTION_FAILED';
         }
 
         return {
@@ -425,10 +413,8 @@ export async function* executeTool(
     // Rebuild a normal tool-result message from the ledger record so callers
     // do not need to care whether the result came from fresh execution or
     // replay.
-    const replayResult = createToolResultMessageFromLedger(
-      toolCall.id,
-      ledgerResult.record,
-      () => generateId('msg_')
+    const replayResult = createToolResultMessageFromLedger(toolCall.id, ledgerResult.record, () =>
+      generateId('msg_')
     );
     await runtime.callbacks.safe(callbacks?.onMessage, replayResult);
 

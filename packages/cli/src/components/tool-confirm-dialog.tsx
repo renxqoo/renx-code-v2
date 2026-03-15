@@ -113,7 +113,7 @@ export const ToolConfirmDialog = ({
           {content.allowedDirectories.length > 0 ? (
             <box paddingLeft={1} flexDirection="column">
               <text fg={uiTheme.muted}>Allowed directories</text>
-              {content.allowedDirectories.map(directory => (
+              {content.allowedDirectories.map((directory) => (
                 <text key={directory} fg={uiTheme.text} wrapMode="word">
                   {directory}
                 </text>

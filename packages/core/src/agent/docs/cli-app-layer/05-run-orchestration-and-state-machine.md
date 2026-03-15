@@ -32,6 +32,7 @@
 - `onError`：记录错误决策，不直接替代终态收敛逻辑
 
 说明：
+
 - `progress` 以 `runStream` 事件为准，不依赖 `callbacks.onProgress`。
 - 终态收敛遵循“`events` 先写，`runs` 后更新”。
 

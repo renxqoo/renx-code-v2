@@ -95,7 +95,7 @@ export const buildAgentEventHandlers = ({
   };
 
   return {
-    onTextDelta: event => {
+    onTextDelta: (event) => {
       if (!isCurrentRequest() || !event.text) {
         return;
       }
@@ -108,7 +108,7 @@ export const buildAgentEventHandlers = ({
       breakTextDeltaContinuation();
       logEvent('[text-complete]');
     },
-    onToolStream: event => {
+    onToolStream: (event) => {
       if (!isCurrentRequest()) {
         return;
       }
@@ -128,13 +128,13 @@ export const buildAgentEventHandlers = ({
         logEvent(mapped.note);
       }
     },
-    onToolConfirm: event => {
+    onToolConfirm: (event) => {
       if (!isCurrentRequest()) {
         return;
       }
       logEvent(formatToolConfirmEvent(event));
     },
-    onToolUse: event => {
+    onToolUse: (event) => {
       if (!isCurrentRequest()) {
         return;
       }
@@ -156,7 +156,7 @@ export const buildAgentEventHandlers = ({
       );
       logEvent(formatToolUseEvent(event));
     },
-    onToolResult: event => {
+    onToolResult: (event) => {
       if (!isCurrentRequest()) {
         return;
       }
@@ -173,19 +173,19 @@ export const buildAgentEventHandlers = ({
       );
       logEvent(formatToolResultEvent(event));
     },
-    onStep: event => {
+    onStep: (event) => {
       if (!isCurrentRequest()) {
         return;
       }
       logEvent(formatStepEvent(event));
     },
-    onLoop: event => {
+    onLoop: (event) => {
       if (!isCurrentRequest()) {
         return;
       }
       logEvent(formatLoopEvent(event));
     },
-    onStop: event => {
+    onStop: (event) => {
       if (!isCurrentRequest()) {
         return;
       }

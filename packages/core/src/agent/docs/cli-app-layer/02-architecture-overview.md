@@ -13,6 +13,7 @@
 仅允许：`CLI -> App -> Port -> Adapter`，以及 `App -> Kernel`。
 
 禁止：
+
 - CLI 直接依赖 Kernel 内部模块。
 - Adapter 直接调用 Kernel。
 - Kernel 反向依赖 App/Adapter。

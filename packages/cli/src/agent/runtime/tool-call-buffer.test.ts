@@ -16,22 +16,22 @@ describe('ToolCallBuffer', () => {
     const buffer = new ToolCallBuffer();
     const emitted: AgentToolUseEvent[] = [];
 
-    buffer.register(createFileReadToolUseEvent('call_1', '/tmp/a.ts'), event =>
+    buffer.register(createFileReadToolUseEvent('call_1', '/tmp/a.ts'), (event) =>
       emitted.push(event)
     );
-    buffer.register(createFileReadToolUseEvent('call_1', '/tmp/a.ts'), event =>
+    buffer.register(createFileReadToolUseEvent('call_1', '/tmp/a.ts'), (event) =>
       emitted.push(event)
     );
-    buffer.register(createFileReadToolUseEvent('call_2', '/tmp/b.ts'), event =>
+    buffer.register(createFileReadToolUseEvent('call_2', '/tmp/b.ts'), (event) =>
       emitted.push(event)
     );
-    buffer.register(createFileReadToolUseEvent('call_3', '/tmp/c.ts'), event =>
+    buffer.register(createFileReadToolUseEvent('call_3', '/tmp/c.ts'), (event) =>
       emitted.push(event)
     );
 
     expect(emitted).toEqual([]);
 
-    buffer.flush(event => emitted.push(event));
+    buffer.flush((event) => emitted.push(event));
 
     expect(emitted).toEqual([
       createFileReadToolUseEvent('call_1', '/tmp/a.ts'),
@@ -44,18 +44,18 @@ describe('ToolCallBuffer', () => {
     const buffer = new ToolCallBuffer();
     const emitted: AgentToolUseEvent[] = [];
 
-    buffer.register(createFileReadToolUseEvent('call_1', '/tmp/a.ts'), event =>
+    buffer.register(createFileReadToolUseEvent('call_1', '/tmp/a.ts'), (event) =>
       emitted.push(event)
     );
-    buffer.register(createFileReadToolUseEvent('call_2', '/tmp/b.ts'), event =>
+    buffer.register(createFileReadToolUseEvent('call_2', '/tmp/b.ts'), (event) =>
       emitted.push(event)
     );
 
-    buffer.ensureEmitted('call_2', event => emitted.push(event));
+    buffer.ensureEmitted('call_2', (event) => emitted.push(event));
 
     expect(emitted).toEqual([createFileReadToolUseEvent('call_2', '/tmp/b.ts')]);
 
-    buffer.flush(event => emitted.push(event));
+    buffer.flush((event) => emitted.push(event));
 
     expect(emitted).toEqual([
       createFileReadToolUseEvent('call_2', '/tmp/b.ts'),

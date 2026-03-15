@@ -9,7 +9,7 @@ type ClipboardCommand = {
 type ClipboardRenderer = Pick<CliRenderer, 'copyToClipboardOSC52'>;
 
 const runClipboardCommand = (text: string, candidate: ClipboardCommand): Promise<boolean> => {
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     let settled = false;
     const finish = (success: boolean) => {
       if (settled) {
@@ -28,7 +28,7 @@ const runClipboardCommand = (text: string, candidate: ClipboardCommand): Promise
       child.once('error', () => {
         finish(false);
       });
-      child.once('close', code => {
+      child.once('close', (code) => {
         finish(code === 0);
       });
       child.stdin.on('error', () => {

@@ -248,7 +248,9 @@ describe('run-loop', () => {
       },
     });
 
-    const events = await collectEvents(runAgentLoop(runtime, createState(undefined, controller.signal)));
+    const events = await collectEvents(
+      runAgentLoop(runtime, createState(undefined, controller.signal))
+    );
 
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({

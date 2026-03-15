@@ -3,12 +3,14 @@
 ## 1. 错误模型
 
 沿用 `agent-v4` 错误契约：
+
 - `errorCode`
 - `category`
 - `retryable`
 - `httpStatus`
 
 应用层新增：
+
 - `executionId`
 - `stage`（bootstrap/run/callback/persist）
 
@@ -21,6 +23,7 @@
 ## 3. 日志规范
 
 每条日志最小字段：
+
 - `executionId`
 - `conversationId`
 - `stepIndex`
@@ -29,6 +32,7 @@
 - `errorCode`
 
 落库建议：
+
 - 业务事实进入 `events`（真相源）。
 - 运维技术日志进入 `run_logs`（可选，默认 `warn/error`）。
 

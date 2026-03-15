@@ -287,9 +287,9 @@ describe('task-parent-abort cascade', () => {
 
     const state = await store.getState('n3b');
     expect(state.tasks.t_active.status).toBe('cancelled');
-    expect(
-      state.tasks.t_active.history.some((entry) => entry.actor === 'task-parent-abort')
-    ).toBe(true);
+    expect(state.tasks.t_active.history.some((entry) => entry.actor === 'task-parent-abort')).toBe(
+      true
+    );
   });
 
   it('emits stderr chunk when cancel throws non-Error value', async () => {

@@ -537,34 +537,32 @@ describe('AgentAppService', () => {
       content: '# Repro\n\n' + 'a'.repeat(64),
     }).slice(0, -6);
     const expectedBufferedContent = extractJsonStringFieldPrefix(truncatedDirectArgs, 'content');
-    provider.generateStream = vi
-      .fn()
-      .mockReturnValueOnce(
-        toStream([
-          {
-            index: 0,
-            choices: [
-              {
-                index: 0,
-                delta: {
-                  tool_calls: [
-                    {
-                      id: directToolCallId,
-                      type: 'function',
-                      index: 0,
-                      function: {
-                        name: 'write_file',
-                        arguments: truncatedDirectArgs,
-                      },
+    provider.generateStream = vi.fn().mockReturnValueOnce(
+      toStream([
+        {
+          index: 0,
+          choices: [
+            {
+              index: 0,
+              delta: {
+                tool_calls: [
+                  {
+                    id: directToolCallId,
+                    type: 'function',
+                    index: 0,
+                    function: {
+                      name: 'write_file',
+                      arguments: truncatedDirectArgs,
                     },
-                  ],
-                  finish_reason: 'tool_calls',
-                } as unknown as ChunkDelta,
-              },
-            ],
-          },
-        ])
-      );
+                  },
+                ],
+                finish_reason: 'tool_calls',
+              } as unknown as ChunkDelta,
+            },
+          ],
+        },
+      ])
+    );
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'renx-app-service-resume-'));
     store = new SqliteAgentAppStore(path.join(tempDir, 'agent.db'));

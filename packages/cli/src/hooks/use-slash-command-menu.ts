@@ -94,7 +94,7 @@ export const useSlashCommandMenu = ({
       if (!visible || options.length === 0) {
         return;
       }
-      setSelectedIndex(current => {
+      setSelectedIndex((current) => {
         const total = options.length;
         const next = (current + step + total) % total;
         return next;

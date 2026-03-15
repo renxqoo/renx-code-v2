@@ -132,13 +132,13 @@ describe('slash-commands', () => {
       expect(result.length).toBeGreaterThan(0);
       expect(
         result.every(
-          cmd => cmd.name.includes('h') || cmd.aliases?.some(alias => alias.includes('h'))
+          (cmd) => cmd.name.includes('h') || cmd.aliases?.some((alias) => alias.includes('h'))
         )
       ).toBe(true);
 
       const result2 = filterSlashCommands('he');
       const helpCommands = result2.filter(
-        cmd => cmd.name.startsWith('he') || cmd.aliases?.some(alias => alias.startsWith('he'))
+        (cmd) => cmd.name.startsWith('he') || cmd.aliases?.some((alias) => alias.startsWith('he'))
       );
       expect(helpCommands.length).toBeGreaterThan(0);
     });
@@ -146,15 +146,15 @@ describe('slash-commands', () => {
     it('should filter commands by name substring', () => {
       const result = filterSlashCommands('elp'); // part of "help"
       expect(result.length).toBeGreaterThan(0);
-      expect(result.some(cmd => cmd.name === 'help')).toBe(true);
+      expect(result.some((cmd) => cmd.name === 'help')).toBe(true);
     });
 
     it('should filter commands by alias', () => {
       const result = filterSlashCommands('q'); // alias for exit
-      expect(result.some(cmd => cmd.name === 'exit')).toBe(true);
+      expect(result.some((cmd) => cmd.name === 'exit')).toBe(true);
 
       const result2 = filterSlashCommands('commands'); // alias for help
-      expect(result2.some(cmd => cmd.name === 'help')).toBe(true);
+      expect(result2.some((cmd) => cmd.name === 'help')).toBe(true);
     });
 
     it('should be case insensitive', () => {
@@ -169,7 +169,7 @@ describe('slash-commands', () => {
 
     it('should handle queries with spaces', () => {
       const result = filterSlashCommands('  help  ');
-      expect(result.some(cmd => cmd.name === 'help')).toBe(true);
+      expect(result.some((cmd) => cmd.name === 'help')).toBe(true);
     });
 
     it('should return empty array for non-matching query', () => {
@@ -180,7 +180,7 @@ describe('slash-commands', () => {
 
   describe('SLASH_COMMANDS', () => {
     it('should have required fields for all commands', () => {
-      SLASH_COMMANDS.forEach(command => {
+      SLASH_COMMANDS.forEach((command) => {
         expect(command.name).toBeDefined();
         expect(command.description).toBeDefined();
         expect(command.action).toBeDefined();
@@ -191,25 +191,25 @@ describe('slash-commands', () => {
     });
 
     it('should have unique names', () => {
-      const names = SLASH_COMMANDS.map(cmd => cmd.name);
+      const names = SLASH_COMMANDS.map((cmd) => cmd.name);
       const uniqueNames = new Set(names);
       expect(names.length).toBe(uniqueNames.size);
     });
 
     it('should have proper aliases', () => {
-      const clearCommand = SLASH_COMMANDS.find(cmd => cmd.name === 'clear');
+      const clearCommand = SLASH_COMMANDS.find((cmd) => cmd.name === 'clear');
       expect(clearCommand?.aliases).toEqual(['new']);
 
-      const exitCommand = SLASH_COMMANDS.find(cmd => cmd.name === 'exit');
+      const exitCommand = SLASH_COMMANDS.find((cmd) => cmd.name === 'exit');
       expect(exitCommand?.aliases).toEqual(['quit', 'q']);
 
-      const helpCommand = SLASH_COMMANDS.find(cmd => cmd.name === 'help');
+      const helpCommand = SLASH_COMMANDS.find((cmd) => cmd.name === 'help');
       expect(helpCommand?.aliases).toEqual(['commands']);
 
-      const modelsCommand = SLASH_COMMANDS.find(cmd => cmd.name === 'models');
+      const modelsCommand = SLASH_COMMANDS.find((cmd) => cmd.name === 'models');
       expect(modelsCommand?.aliases).toEqual(['model']);
 
-      const filesCommand = SLASH_COMMANDS.find(cmd => cmd.name === 'files');
+      const filesCommand = SLASH_COMMANDS.find((cmd) => cmd.name === 'files');
       expect(filesCommand?.aliases).toEqual(['file']);
     });
   });

@@ -24,7 +24,7 @@ describe('buildReplyRenderItems', () => {
     ];
 
     const items = buildReplyRenderItems(segments);
-    expect(items.map(item => item.type)).toEqual(['segment', 'tool', 'segment']);
+    expect(items.map((item) => item.type)).toEqual(['segment', 'tool', 'segment']);
     expect(items[1]?.type === 'tool' ? items[1].group.toolCallId : '').toBe('call_a');
     expect(items[1]?.type === 'tool' ? items[1].group.streams.length : 0).toBe(1);
     expect(items[1]?.type === 'tool' ? items[1].group.use?.data : undefined).toEqual({

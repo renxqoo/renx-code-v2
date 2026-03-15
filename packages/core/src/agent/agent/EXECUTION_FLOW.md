@@ -456,7 +456,7 @@ LLM 返回后：
 6. 根据：
    - `callbacks.onError` 返回值
    - `normalizedError.retryable`
-   决定是否重试
+     决定是否重试
 
 ### 重试行为
 

@@ -2,7 +2,13 @@ import { EventEmitter } from 'node:events';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { AgentCallbacks, AgentMetric, Message, StreamEvent, ToolPolicyCheckInfo } from '../../types';
+import type {
+  AgentCallbacks,
+  AgentMetric,
+  Message,
+  StreamEvent,
+  ToolPolicyCheckInfo,
+} from '../../types';
 import type { ToolManager } from '../../tool/tool-manager';
 import type { ToolConcurrencyPolicy } from '../../tool/types';
 import type { ToolCall } from '../../../providers';
@@ -355,7 +361,7 @@ describe('tool-runtime', () => {
       })
     );
 
-    expect(events.map(event => event.type)).toEqual(['progress', 'tool_result']);
+    expect(events.map((event) => event.type)).toEqual(['progress', 'tool_result']);
     expect(messages.at(-1)).toMatchObject({
       role: 'tool',
       content: 'tool-ok',
@@ -538,7 +544,7 @@ describe('tool-runtime', () => {
     const events = await eventsPromise;
 
     expect(maxInFlight).toBe(2);
-    expect(events.map(event => event.type)).toEqual([
+    expect(events.map((event) => event.type)).toEqual([
       'progress',
       'progress',
       'tool_result',
@@ -662,7 +668,7 @@ describe('tool-runtime', () => {
       })
     );
 
-    expect(events.map(event => event.type)).toEqual([
+    expect(events.map((event) => event.type)).toEqual([
       'progress',
       'progress',
       'tool_result',
@@ -756,7 +762,7 @@ describe('tool-runtime', () => {
       data: { content: 'tool failed without code', tool_call_id: 'call_err_no_code' },
     });
 
-    const toolMetric = metrics.find(metric => metric.name === 'agent.tool.duration_ms');
+    const toolMetric = metrics.find((metric) => metric.name === 'agent.tool.duration_ms');
     expect(toolMetric).toBeDefined();
     expect(toolMetric?.tags?.success).toBe('false');
   });
@@ -781,7 +787,7 @@ describe('tool-runtime', () => {
       )
     ).rejects.toThrow('chaos tool crash');
 
-    const toolMetric = metrics.find(metric => metric.name === 'agent.tool.duration_ms');
+    const toolMetric = metrics.find((metric) => metric.name === 'agent.tool.duration_ms');
     expect(toolMetric).toBeDefined();
     expect(toolMetric?.tags?.success).toBe('false');
   });

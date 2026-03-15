@@ -13,6 +13,7 @@
 `<workspace>/.agent-v4/agent.db`
 
 说明：
+
 - Phase 1 采用单库 SQLite。
 - JSON/JSONL 文件存储仅保留为迁移兼容，不作为默认主路径。
 
@@ -25,6 +26,7 @@
 - `checkpoints`：断点恢复索引（推荐独立表；可由 `events` 投影重建）
 
 建议同时落：
+
 - `meta`（schema/version/feature flags）
 
 ## 4. 写入策略

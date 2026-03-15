@@ -72,7 +72,7 @@ export const looksLikeDiff = (value: string): boolean => {
     return false;
   }
 
-  if (DIFF_HEADER_PATTERNS.some(pattern => pattern.test(normalized))) {
+  if (DIFF_HEADER_PATTERNS.some((pattern) => pattern.test(normalized))) {
     return (
       /^@@ /m.test(normalized) ||
       (/^--- /m.test(normalized) && /^\+\+\+ /m.test(normalized)) ||
@@ -168,9 +168,9 @@ export const inferCodeFiletype = (value: string, languageHint?: string): string 
 
   const meaningfulLines = normalized
     .split('\n')
-    .map(line => line.trim())
+    .map((line) => line.trim())
     .filter(Boolean);
-  if (meaningfulLines.length > 0 && meaningfulLines.every(line => line.startsWith('$ '))) {
+  if (meaningfulLines.length > 0 && meaningfulLines.every((line) => line.startsWith('$ '))) {
     return 'bash';
   }
 

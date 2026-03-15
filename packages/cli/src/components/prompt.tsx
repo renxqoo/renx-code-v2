@@ -46,7 +46,7 @@ export const Prompt = ({
   const mediaFiles = useMemo(
     () =>
       selectedFiles.filter(
-        file => isImageSelection(file) || isAudioSelection(file) || isVideoSelection(file)
+        (file) => isImageSelection(file) || isAudioSelection(file) || isVideoSelection(file)
       ),
     [selectedFiles]
   );
@@ -180,7 +180,7 @@ export const Prompt = ({
             {mediaFiles.length > 0 ? (
               <box flexDirection="column" gap={0} paddingBottom={1}>
                 <text fg={uiTheme.muted}>Media files</text>
-                {mediaFiles.map(file => (
+                {mediaFiles.map((file) => (
                   <text key={file.absolutePath} fg={uiTheme.accent} wrapMode="none">
                     {file.relativePath}
                   </text>

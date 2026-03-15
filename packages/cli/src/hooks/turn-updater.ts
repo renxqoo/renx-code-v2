@@ -22,7 +22,7 @@ export const patchTurn = (
   turnId: number,
   patch: (turn: ChatTurn) => ChatTurn
 ): ChatTurn[] => {
-  return turns.map(turn => (turn.id === turnId ? patch(turn) : turn));
+  return turns.map((turn) => (turn.id === turnId ? patch(turn) : turn));
 };
 
 export const ensureSegment = (
@@ -31,7 +31,7 @@ export const ensureSegment = (
   type: ReplySegmentType,
   data?: unknown
 ): ReplySegment[] => {
-  if (segments.some(segment => segment.id === segmentId)) {
+  if (segments.some((segment) => segment.id === segmentId)) {
     return segments;
   }
   return [
@@ -48,7 +48,7 @@ export const appendToSegment = (
   data?: unknown
 ): ReplySegment[] => {
   const base = ensureSegment(segments, segmentId, type, data);
-  return base.map(segment =>
+  return base.map((segment) =>
     segment.id === segmentId
       ? {
           ...segment,
@@ -149,7 +149,7 @@ export const setReplyStatus = (
   status: ReplyStatus,
   extras?: Partial<AssistantReply>
 ): ChatTurn[] => {
-  return patchTurn(turns, turnId, turn => {
+  return patchTurn(turns, turnId, (turn) => {
     const reply = turn.reply;
     if (!reply) {
       return turn;

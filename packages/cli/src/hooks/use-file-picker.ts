@@ -38,7 +38,7 @@ export const useFilePicker = (): UseFilePickerResult => {
     if (!query) {
       return allOptions;
     }
-    return allOptions.filter(item => item.relativePath.toLowerCase().includes(query));
+    return allOptions.filter((item) => item.relativePath.toLowerCase().includes(query));
   }, [allOptions, search]);
 
   useEffect(() => {
@@ -70,18 +70,18 @@ export const useFilePicker = (): UseFilePickerResult => {
     setSearch('');
     setSelectedIndex(0);
     setAllOptions([]);
-    setSelectedPaths(new Set(initialSelection.map(item => item.absolutePath)));
+    setSelectedPaths(new Set(initialSelection.map((item) => item.absolutePath)));
     requestIdRef.current += 1;
     const requestId = requestIdRef.current;
 
     void listWorkspaceFiles()
-      .then(files => {
+      .then((files) => {
         if (requestId !== requestIdRef.current) {
           return;
         }
         setAllOptions(files);
       })
-      .catch(loadError => {
+      .catch((loadError) => {
         if (requestId !== requestIdRef.current) {
           return;
         }
@@ -100,7 +100,7 @@ export const useFilePicker = (): UseFilePickerResult => {
     if (!selected) {
       return;
     }
-    setSelectedPaths(current => {
+    setSelectedPaths((current) => {
       const next = new Set(current);
       if (next.has(selected.absolutePath)) {
         next.delete(selected.absolutePath);
@@ -112,7 +112,7 @@ export const useFilePicker = (): UseFilePickerResult => {
   }, [options, selectedIndex]);
 
   const confirmSelected = useCallback(() => {
-    const result = allOptions.filter(item => selectedPaths.has(item.absolutePath));
+    const result = allOptions.filter((item) => selectedPaths.has(item.absolutePath));
     close();
     return result;
   }, [allOptions, close, selectedPaths]);
@@ -130,7 +130,7 @@ export const useFilePicker = (): UseFilePickerResult => {
 
       if (isUp) {
         if (options.length > 0) {
-          setSelectedIndex(current => (current - 1 + options.length) % options.length);
+          setSelectedIndex((current) => (current - 1 + options.length) % options.length);
         }
         event.preventDefault();
         return true;
@@ -138,7 +138,7 @@ export const useFilePicker = (): UseFilePickerResult => {
 
       if (isDown) {
         if (options.length > 0) {
-          setSelectedIndex(current => (current + 1) % options.length);
+          setSelectedIndex((current) => (current + 1) % options.length);
         }
         event.preventDefault();
         return true;

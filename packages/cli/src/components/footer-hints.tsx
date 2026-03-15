@@ -29,7 +29,7 @@ export const FooterHints = ({ isThinking, contextUsagePercent }: FooterHintsProp
     }
 
     const timer = setInterval(() => {
-      setFrameIndex(current => (current + 1) % SPINNER_FRAMES.length);
+      setFrameIndex((current) => (current + 1) % SPINNER_FRAMES.length);
     }, SPINNER_INTERVAL_MS);
 
     return () => {

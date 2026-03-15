@@ -63,13 +63,13 @@ export const useFileMentionMenu = ({
     const requestId = requestIdRef.current;
 
     void listWorkspaceFiles()
-      .then(files => {
+      .then((files) => {
         if (requestId !== requestIdRef.current) {
           return;
         }
         setAllOptions(files);
       })
-      .catch(loadError => {
+      .catch((loadError) => {
         if (requestId !== requestIdRef.current) {
           return;
         }
@@ -87,9 +87,9 @@ export const useFileMentionMenu = ({
     if (!mention) {
       return [];
     }
-    const selectedPaths = new Set(selectedFiles.map(file => file.absolutePath));
+    const selectedPaths = new Set(selectedFiles.map((file) => file.absolutePath));
     const query = normalize(mention.query);
-    return allOptions.filter(item => {
+    return allOptions.filter((item) => {
       if (selectedPaths.has(item.absolutePath)) {
         return false;
       }
@@ -138,7 +138,7 @@ export const useFileMentionMenu = ({
       if (!visible || options.length === 0) {
         return;
       }
-      setSelectedIndex(current => (current + step + options.length) % options.length);
+      setSelectedIndex((current) => (current + step + options.length) % options.length);
     },
     [options.length, visible]
   );

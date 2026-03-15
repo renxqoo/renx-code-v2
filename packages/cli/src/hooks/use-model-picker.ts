@@ -42,7 +42,7 @@ export const useModelPicker = ({ onModelChanged }: UseModelPickerParams): UseMod
       return allOptions;
     }
 
-    return allOptions.filter(item => {
+    return allOptions.filter((item) => {
       const provider = item.provider.toLowerCase();
       const id = item.id.toLowerCase();
       const name = item.name.toLowerCase();
@@ -82,13 +82,13 @@ export const useModelPicker = ({ onModelChanged }: UseModelPickerParams): UseMod
     const requestId = requestIdRef.current;
 
     void listAgentModels()
-      .then(models => {
+      .then((models) => {
         if (requestId !== requestIdRef.current) {
           return;
         }
         setAllOptions(models);
       })
-      .catch(loadError => {
+      .catch((loadError) => {
         if (requestId !== requestIdRef.current) {
           return;
         }
@@ -117,8 +117,8 @@ export const useModelPicker = ({ onModelChanged }: UseModelPickerParams): UseMod
       setSwitching(true);
       setError(null);
       const changed = await switchAgentModel(selected.id);
-      setAllOptions(prev =>
-        prev.map(item => ({
+      setAllOptions((prev) =>
+        prev.map((item) => ({
           ...item,
           current: item.id === changed.modelId,
         }))
@@ -147,7 +147,7 @@ export const useModelPicker = ({ onModelChanged }: UseModelPickerParams): UseMod
 
       if (isUp) {
         if (options.length > 0) {
-          setSelectedIndex(current => (current - 1 + options.length) % options.length);
+          setSelectedIndex((current) => (current - 1 + options.length) % options.length);
         }
         event.preventDefault();
         return true;
@@ -155,7 +155,7 @@ export const useModelPicker = ({ onModelChanged }: UseModelPickerParams): UseMod
 
       if (isDown) {
         if (options.length > 0) {
-          setSelectedIndex(current => (current + 1) % options.length);
+          setSelectedIndex((current) => (current + 1) % options.length);
         }
         event.preventDefault();
         return true;

@@ -108,7 +108,7 @@ describe('buildAgentEventHandlers', () => {
     handlers.onTextComplete?.('');
 
     const segments = readSegments();
-    expect(segments.map(segment => segment.id)).toEqual([
+    expect(segments.map((segment) => segment.id)).toEqual([
       `${turnId}:thinking:1`,
       `${turnId}:text:2`,
       `${turnId}:thinking:3`,
@@ -118,10 +118,14 @@ describe('buildAgentEventHandlers', () => {
       `${turnId}:text:4`,
     ]);
 
-    const firstThinkingIndex = segments.findIndex(segment => segment.id === `${turnId}:thinking:1`);
-    const toolUseIndex = segments.findIndex(segment => segment.id === `${turnId}:tool-use:call_1`);
+    const firstThinkingIndex = segments.findIndex(
+      (segment) => segment.id === `${turnId}:thinking:1`
+    );
+    const toolUseIndex = segments.findIndex(
+      (segment) => segment.id === `${turnId}:tool-use:call_1`
+    );
     const toolResultIndex = segments.findIndex(
-      segment => segment.id === `${turnId}:tool-result:call_1`
+      (segment) => segment.id === `${turnId}:tool-result:call_1`
     );
     expect(firstThinkingIndex).toBeGreaterThanOrEqual(0);
     expect(toolUseIndex).toBeGreaterThan(firstThinkingIndex);
@@ -136,7 +140,7 @@ describe('buildAgentEventHandlers', () => {
     handlers.onToolResult?.(createToolResultEvent());
 
     const toolResult = readSegments().find(
-      segment => segment.id === `${turnId}:tool-result:call_1`
+      (segment) => segment.id === `${turnId}:tool-result:call_1`
     );
     expect(toolResult?.content).toContain('# Result: bash (call_1) success');
     expect(toolResult?.content).not.toContain('total 80');
@@ -149,7 +153,7 @@ describe('buildAgentEventHandlers', () => {
     handlers.onToolResult?.(createToolResultEvent());
 
     const toolResult = readSegments().find(
-      segment => segment.id === `${turnId}:tool-result:call_1`
+      (segment) => segment.id === `${turnId}:tool-result:call_1`
     );
     expect(toolResult?.content).toContain('# Result: bash (call_1) success');
     expect(toolResult?.content).toContain('total 80');
@@ -168,7 +172,7 @@ describe('buildAgentEventHandlers', () => {
     handlers.onToolResult?.(createEmptyToolResultEvent());
 
     const toolResult = readSegments().find(
-      segment => segment.id === `${turnId}:tool-result:call_2`
+      (segment) => segment.id === `${turnId}:tool-result:call_2`
     );
     expect(toolResult?.content).toContain('# Result: bash (call_2) success');
     expect(toolResult?.content).toContain('Command completed successfully with no output.');
@@ -183,9 +187,9 @@ describe('buildAgentEventHandlers', () => {
     handlers.onToolUse?.(toolUseEvent);
     handlers.onToolResult?.(toolResultEvent);
 
-    const toolUse = readSegments().find(segment => segment.id === `${turnId}:tool-use:call_1`);
+    const toolUse = readSegments().find((segment) => segment.id === `${turnId}:tool-use:call_1`);
     const toolResult = readSegments().find(
-      segment => segment.id === `${turnId}:tool-result:call_1`
+      (segment) => segment.id === `${turnId}:tool-result:call_1`
     );
 
     expect(toolUse?.data).toEqual(toolUseEvent);
@@ -200,7 +204,7 @@ describe('buildAgentEventHandlers', () => {
     handlers.onToolUse?.(createToolUseEvent());
 
     const toolUseSegments = readSegments().filter(
-      segment => segment.id === `${turnId}:tool-use:call_1`
+      (segment) => segment.id === `${turnId}:tool-use:call_1`
     );
     expect(toolUseSegments.length).toBe(1);
   });

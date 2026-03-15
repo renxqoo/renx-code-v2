@@ -42,7 +42,11 @@ export type { AgentContextUsage, Message } from './agent/types';
 export type { AgentLogger } from './agent/agent/logger';
 export { createAgentLoggerAdapter } from './agent/agent/logger';
 export { DefaultToolManager } from './agent/tool/tool-manager';
-export type { ToolConfirmationMode, ToolManager, ToolManagerConfig } from './agent/tool/tool-manager';
+export type {
+  ToolConfirmationMode,
+  ToolManager,
+  ToolManagerConfig,
+} from './agent/tool/tool-manager';
 export {
   createUnconfiguredSubagentRunnerAdapter,
   RealSubagentRunnerAdapter,

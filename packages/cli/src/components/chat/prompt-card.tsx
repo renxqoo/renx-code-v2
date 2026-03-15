@@ -28,7 +28,7 @@ export const PromptCard = ({
   isFirst = false,
 }: PromptCardProps) => {
   const mediaFiles = files.filter(
-    file =>
+    (file) =>
       isImageSelection({ relativePath: file, absolutePath: file, size: 0 }) ||
       isAudioSelection({ relativePath: file, absolutePath: file, size: 0 }) ||
       isVideoSelection({ relativePath: file, absolutePath: file, size: 0 })
@@ -58,7 +58,7 @@ export const PromptCard = ({
             <text fg={uiTheme.muted} attributes={uiTheme.typography.note}>
               Media files
             </text>
-            {mediaFiles.map(file => (
+            {mediaFiles.map((file) => (
               <text
                 key={file}
                 fg={uiTheme.text}

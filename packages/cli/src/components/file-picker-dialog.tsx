@@ -117,7 +117,7 @@ export const FilePickerDialog = ({
               backgroundColor={uiTheme.panel}
               focusedBackgroundColor={uiTheme.panel}
               onContentChange={() => onSearchChange(searchRef.current?.plainText ?? '')}
-              onKeyDown={event => {
+              onKeyDown={(event) => {
                 const handled = onListKeyDown(event);
                 if (handled && (event.name === 'enter' || event.name === 'return')) {
                   onConfirm();

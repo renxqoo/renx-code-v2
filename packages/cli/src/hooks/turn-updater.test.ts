@@ -33,7 +33,7 @@ describe('orderReplySegments', () => {
     ];
 
     const ordered = orderReplySegments(input);
-    expect(ordered.map(segment => segment.id)).toEqual([
+    expect(ordered.map((segment) => segment.id)).toEqual([
       '1:thinking:1',
       '1:tool-use:call_a',
       '1:tool-result:call_a',
@@ -58,7 +58,7 @@ describe('orderReplySegments', () => {
     ];
 
     const ordered = orderReplySegments(input);
-    expect(ordered.map(segment => segment.id)).toEqual([
+    expect(ordered.map((segment) => segment.id)).toEqual([
       '1:tool-use:call_1',
       '1:tool:call_1:stdout',
       '1:tool-result:call_1',

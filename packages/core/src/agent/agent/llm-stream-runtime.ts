@@ -77,8 +77,7 @@ async function mergeStreamingToolCalls(
         messageId: chunkMessageId,
         sessionKey,
         sessions: writeBufferSessions,
-        onError: (error) =>
-          deps.logError('[Agent] Failed to buffer write_file tool chunk:', error),
+        onError: (error) => deps.logError('[Agent] Failed to buffer write_file tool chunk:', error),
       });
     },
   });

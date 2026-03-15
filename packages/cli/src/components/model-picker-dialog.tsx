@@ -140,7 +140,7 @@ export const ModelPickerDialog = ({
               backgroundColor={uiTheme.panel}
               focusedBackgroundColor={uiTheme.panel}
               onContentChange={() => onSearchChange(searchRef.current?.plainText ?? '')}
-              onKeyDown={event => {
+              onKeyDown={(event) => {
                 if (onListKeyDown(event)) {
                   return;
                 }

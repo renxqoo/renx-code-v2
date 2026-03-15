@@ -108,10 +108,10 @@ const parseToolUse = (content?: string, data?: unknown): ParsedToolUse | null =>
 
   const [_, name, callId] = match;
   const bodyLines = lines.slice(1);
-  const commandLine = bodyLines.find(line => line.trim().startsWith('$ '));
+  const commandLine = bodyLines.find((line) => line.trim().startsWith('$ '));
   const command = commandLine ? commandLine.trim().slice(2).trim() : undefined;
   const details = bodyLines
-    .filter(line => !line.trim().startsWith('$ '))
+    .filter((line) => !line.trim().startsWith('$ '))
     .join('\n')
     .trim();
 
@@ -194,7 +194,7 @@ const mergeOutputLines = (
   parsedResult: ParsedToolResult | null
 ): string => {
   const streamText = group.streams
-    .map(segment => segment.content)
+    .map((segment) => segment.content)
     .join('')
     .trim();
   const resultText = parsedResult?.output?.trim() || parsedResult?.details?.trim();
@@ -376,7 +376,9 @@ const formatTaskStatusIcon = (status?: string): string => {
 };
 
 const formatSummaryMeta = (parts: Array<string | null | undefined>): string | null => {
-  const filtered = parts.map(part => part?.trim()).filter((part): part is string => Boolean(part));
+  const filtered = parts
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part));
   return filtered.length > 0 ? filtered.join(' · ') : null;
 };
 
@@ -488,7 +490,7 @@ const buildTaskHeaderDetail = (
 
   if (toolName === 'task_list') {
     const statuses = readArray(args.statuses)
-      .map(value => readString(value))
+      .map((value) => readString(value))
       .filter(Boolean)
       .join(', ');
     return formatSummaryMeta([
@@ -575,11 +577,11 @@ const buildTaskResultSections = (
   if (toolName === 'task_list') {
     const namespace = readString(payload.namespace) ?? 'default';
     const tasks = readArray(payload.tasks)
-      .map(item => readObject(item))
+      .map((item) => readObject(item))
       .filter((item): item is Record<string, unknown> => Boolean(item));
     const total = readNumber(payload.total) ?? tasks.length;
     const lines = [`${total} task${total === 1 ? '' : 's'} in ${namespace}`];
-    tasks.slice(0, 5).forEach(task => {
+    tasks.slice(0, 5).forEach((task) => {
       const summary = summarizeTaskRecord(task);
       if (summary[0]) {
         lines.push(summary[0]);
@@ -597,7 +599,7 @@ const buildTaskResultSections = (
   if (toolName === 'task_stop') {
     const run = readObject(payload.agent_run);
     const cancelledTaskIds = readArray(payload.cancelled_task_ids)
-      .map(item => readString(item))
+      .map((item) => readString(item))
       .filter(Boolean);
     const sections: ToolSection[] = [];
     if (run) {
@@ -875,7 +877,7 @@ export const AssistantToolGroup = ({ group }: AssistantToolGroupProps) => {
                           if (!collapsible) {
                             return;
                           }
-                          setExpandedSections(previous => ({
+                          setExpandedSections((previous) => ({
                             ...previous,
                             [sectionId]: !previous[sectionId],
                           }));

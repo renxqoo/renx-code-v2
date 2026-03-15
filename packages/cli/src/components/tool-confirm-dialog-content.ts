@@ -70,7 +70,7 @@ const humanizeKey = (key: string): string => {
   return key
     .split('_')
     .filter(Boolean)
-    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
 };
 

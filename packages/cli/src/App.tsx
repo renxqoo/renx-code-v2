@@ -24,9 +24,9 @@ const appendFileTokens = (currentValue: string, files: PromptFileSelection[]) =>
 
   const existingTokens = new Set(currentValue.match(/@\/\S+/g) ?? []);
   const newTokens = files
-    .filter(file => !isMediaSelection(file))
-    .map(file => `@/${file.relativePath}`)
-    .filter(token => !existingTokens.has(token));
+    .filter((file) => !isMediaSelection(file))
+    .map((file) => `@/${file.relativePath}`)
+    .filter((token) => !existingTokens.has(token));
 
   if (newTokens.length === 0) {
     return currentValue;
@@ -81,7 +81,7 @@ export const App = () => {
       }
 
       selectionCopyTimeoutRef.current = setTimeout(() => {
-        void copyTextToClipboard(selectedText, renderer).then(success => {
+        void copyTextToClipboard(selectedText, renderer).then((success) => {
           if (!success) {
             return;
           }
@@ -144,7 +144,7 @@ export const App = () => {
     return false;
   };
 
-  useKeyboard(key => {
+  useKeyboard((key) => {
     if (key.ctrl && key.name === 'c') {
       requestExit(0);
       return;

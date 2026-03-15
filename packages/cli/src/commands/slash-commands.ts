@@ -37,7 +37,7 @@ export const resolveSlashCommand = (value: string): SlashCommandDefinition | nul
   }
 
   return (
-    SLASH_COMMANDS.find(command => {
+    SLASH_COMMANDS.find((command) => {
       if (command.name === token) {
         return true;
       }
@@ -52,13 +52,13 @@ export const filterSlashCommands = (query: string): SlashCommandDefinition[] => 
     return SLASH_COMMANDS;
   }
 
-  return SLASH_COMMANDS.filter(command => {
+  return SLASH_COMMANDS.filter((command) => {
     if (command.name.startsWith(normalizedQuery)) {
       return true;
     }
     if (command.name.includes(normalizedQuery)) {
       return true;
     }
-    return command.aliases?.some(alias => alias.includes(normalizedQuery)) ?? false;
+    return command.aliases?.some((alias) => alias.includes(normalizedQuery)) ?? false;
   });
 };

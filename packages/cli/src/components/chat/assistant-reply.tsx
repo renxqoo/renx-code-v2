@@ -122,7 +122,7 @@ export const AssistantReply = ({ reply }: AssistantReplyProps) => {
           <span fg={uiTheme.accent}>▣</span> assistant
           <span fg={uiTheme.muted}> · {reply.modelLabel}</span>
           <span fg={uiTheme.muted}> · {durationText}s</span>
-          {usageItems.map(item => (
+          {usageItems.map((item) => (
             <span key={`${item.icon}:${item.value}`} fg={uiTheme.muted}>
               {' · '}
               {item.icon} {item.value}

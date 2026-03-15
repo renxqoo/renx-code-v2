@@ -79,7 +79,7 @@ describe('runAgentPrompt error handling', () => {
       }
     }
 
-    buildModules = AppServiceClass =>
+    buildModules = (AppServiceClass) =>
       ({
         ProviderRegistry: {
           getModelIds: () => ['test-model'],

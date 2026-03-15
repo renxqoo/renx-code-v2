@@ -226,20 +226,20 @@ flowchart TD
 
 下面是“现有代码 -> 目标系统角色”的映射表。
 
-| 现有模块 | 角色 | 保留还是重写 |
-| --- | --- | --- |
-| `agent/index.ts` | Kernel | 保留 |
-| `app/agent-app-service.ts` | Application Orchestrator | 保留并扩展 |
-| `app/ports.ts` | App Ports | 保留 |
-| `app/sqlite-agent-app-store.ts` | 本地存储适配器 | 保留并扩展 |
-| `tool/tool-manager.ts` | Tool Runtime | 保留并扩展 |
-| `tool/task-*` | 子任务 / 子代理能力 | 保留 |
-| `docs/cli-app-layer/*` | 现有应用层文档 | 保留 |
-| 新增 `gateway/*` | Gateway 控制平面 | 新增 |
-| 新增 `channels/*` | 外部渠道适配器 | 新增 |
-| 新增 `plugins/*` | 插件系统 | 新增 |
-| 新增 `routing/*` | 会话路由 | 新增 |
-| 新增 `security/*` | 安全和策略 | 新增 |
+| 现有模块                        | 角色                     | 保留还是重写 |
+| ------------------------------- | ------------------------ | ------------ |
+| `agent/index.ts`                | Kernel                   | 保留         |
+| `app/agent-app-service.ts`      | Application Orchestrator | 保留并扩展   |
+| `app/ports.ts`                  | App Ports                | 保留         |
+| `app/sqlite-agent-app-store.ts` | 本地存储适配器           | 保留并扩展   |
+| `tool/tool-manager.ts`          | Tool Runtime             | 保留并扩展   |
+| `tool/task-*`                   | 子任务 / 子代理能力      | 保留         |
+| `docs/cli-app-layer/*`          | 现有应用层文档           | 保留         |
+| 新增 `gateway/*`                | Gateway 控制平面         | 新增         |
+| 新增 `channels/*`               | 外部渠道适配器           | 新增         |
+| 新增 `plugins/*`                | 插件系统                 | 新增         |
+| 新增 `routing/*`                | 会话路由                 | 新增         |
+| 新增 `security/*`               | 安全和策略               | 新增         |
 
 ## 6. 推荐目录结构
 
@@ -756,7 +756,7 @@ sequenceDiagram
 它应该只属于：
 
 - `channels/wechat/*`
-或
+  或
 - `plugins/wechat/*`
 
 ### 15.1 微信适配器应该负责什么
@@ -791,10 +791,7 @@ export interface GatewayRequestContext {
 }
 
 export interface Gateway {
-  handleInboundMessage(
-    message: InboundChannelMessage,
-    ctx: GatewayRequestContext
-  ): Promise<void>;
+  handleInboundMessage(message: InboundChannelMessage, ctx: GatewayRequestContext): Promise<void>;
 }
 ```
 
