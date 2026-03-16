@@ -135,8 +135,6 @@ Current built-ins:
 - `file_edit`
 - `file_history_list`
 - `file_history_restore`
-- `glob`
-- `grep`
 - `lsp`
 - `write_file`
 - `web_fetch`

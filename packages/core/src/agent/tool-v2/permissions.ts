@@ -1,6 +1,12 @@
+import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { ToolFileSystemPolicy, ToolNetworkPolicy, ToolPermissionProfile } from './contracts';
+import type {
+  ToolExecutionPlan,
+  ToolFileSystemPolicy,
+  ToolNetworkPolicy,
+  ToolPermissionProfile,
+} from './contracts';
 import { ToolV2PermissionError } from './errors';
 
 function expandHomePath(rawPath: string): string {
@@ -23,6 +29,33 @@ function isWithinRoot(candidatePath: string, rootPath: string): boolean {
 
 function normalizeHost(host: string): string {
   return host.trim().toLowerCase();
+}
+
+function resolvePermissionRoot(resolvedPath: string): string {
+  try {
+    const stats = fs.statSync(resolvedPath);
+    if (stats.isDirectory()) {
+      return resolvedPath;
+    }
+  } catch {
+    // Fall back to parent directory for files that do not exist yet.
+  }
+
+  return path.dirname(resolvedPath);
+}
+
+function compactRoots(roots: Iterable<string>): string[] {
+  const sorted = Array.from(new Set(roots)).sort((left, right) => left.length - right.length);
+  const result: string[] = [];
+
+  for (const root of sorted) {
+    if (result.some((existing) => isWithinRoot(root, existing))) {
+      continue;
+    }
+    result.push(root);
+  }
+
+  return result;
 }
 
 export function createWorkspaceFileSystemPolicy(
@@ -234,6 +267,79 @@ export function isPermissionProfileSatisfied(
   }
 
   return true;
+}
+
+export function collectMissingPermissionProfile(
+  plan: Pick<ToolExecutionPlan, 'readPaths' | 'writePaths' | 'networkTargets'>,
+  workingDirectory: string,
+  base: EffectiveToolPermissions
+): ToolPermissionProfile | undefined {
+  const normalizedFileSystem = normalizeFileSystemPolicy(base.fileSystem);
+  const normalizedNetwork = normalizeNetworkPolicy(base.network);
+  const readableRoots = Array.from(
+    new Set([...normalizedFileSystem.readRoots, ...normalizedFileSystem.writeRoots])
+  );
+  const missingRead = new Set<string>();
+  const missingWrite = new Set<string>();
+  const missingHosts = new Set<string>();
+
+  for (const readPath of plan.readPaths || []) {
+    const resolvedPath = resolveToolPath(readPath, workingDirectory);
+    if (!readableRoots.some((root) => isWithinRoot(resolvedPath, root))) {
+      missingRead.add(resolvePermissionRoot(resolvedPath));
+    }
+  }
+
+  for (const writePath of plan.writePaths || []) {
+    const resolvedPath = resolveToolPath(writePath, workingDirectory);
+    if (!normalizedFileSystem.writeRoots.some((root) => isWithinRoot(resolvedPath, root))) {
+      missingWrite.add(resolvePermissionRoot(resolvedPath));
+    }
+  }
+
+  for (const networkTarget of plan.networkTargets || []) {
+    let url: URL;
+    try {
+      url = new URL(networkTarget);
+    } catch {
+      continue;
+    }
+
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      continue;
+    }
+
+    const host = normalizeHost(url.hostname);
+    const blockedByAllowlist =
+      normalizedNetwork.allowedHosts &&
+      normalizedNetwork.allowedHosts.length > 0 &&
+      !normalizedNetwork.allowedHosts.includes(host);
+    const blockedByMode = normalizedNetwork.mode !== 'enabled';
+    if (blockedByAllowlist || blockedByMode) {
+      missingHosts.add(host);
+    }
+  }
+
+  if (missingRead.size === 0 && missingWrite.size === 0 && missingHosts.size === 0) {
+    return undefined;
+  }
+
+  return {
+    fileSystem:
+      missingRead.size > 0 || missingWrite.size > 0
+        ? {
+            read: compactRoots(missingRead),
+            write: compactRoots(missingWrite),
+          }
+        : undefined,
+    network:
+      missingHosts.size > 0
+        ? {
+            enabled: true,
+            allowedHosts: Array.from(missingHosts),
+          }
+        : undefined,
+  };
 }
 
 export function resolveToolPath(requestedPath: string, workingDirectory: string): string {

@@ -14,6 +14,7 @@ export type AgentToolStreamEvent = {
 };
 
 export type AgentToolConfirmEvent = {
+  kind: 'approval';
   toolCallId: string;
   toolName: string;
   args: Record<string, unknown>;
@@ -26,6 +27,34 @@ export type AgentToolConfirmDecision = {
   approved: boolean;
   message?: string;
 };
+
+export type AgentToolPermissionProfile = {
+  fileSystem?: {
+    read?: string[];
+    write?: string[];
+  };
+  network?: {
+    enabled?: boolean;
+    allowedHosts?: string[];
+    deniedHosts?: string[];
+  };
+};
+
+export type AgentToolPermissionEvent = {
+  kind: 'permission';
+  toolCallId: string;
+  toolName: string;
+  reason?: string;
+  requestedScope: 'turn' | 'session';
+  permissions: AgentToolPermissionProfile;
+};
+
+export type AgentToolPermissionGrant = {
+  granted: AgentToolPermissionProfile;
+  scope: 'turn' | 'session';
+};
+
+export type AgentToolPromptEvent = AgentToolConfirmEvent | AgentToolPermissionEvent;
 
 export type AgentStepEvent = {
   stepIndex: number;
@@ -82,9 +111,13 @@ export type AgentEventHandlers = {
   onTextComplete?: (text: string) => void;
   onToolStream?: (event: AgentToolStreamEvent) => void;
   onToolConfirm?: (event: AgentToolConfirmEvent) => void;
+  onToolPermission?: (event: AgentToolPermissionEvent) => void;
   onToolConfirmRequest?: (
     event: AgentToolConfirmEvent
   ) => AgentToolConfirmDecision | Promise<AgentToolConfirmDecision>;
+  onToolPermissionRequest?: (
+    event: AgentToolPermissionEvent
+  ) => AgentToolPermissionGrant | Promise<AgentToolPermissionGrant>;
   onToolUse?: (event: AgentToolUseEvent) => void;
   onToolResult?: (event: AgentToolResultEvent) => void;
   onStep?: (event: AgentStepEvent) => void;

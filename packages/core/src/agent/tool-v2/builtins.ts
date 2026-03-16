@@ -8,8 +8,6 @@ import {
   type ShellBackgroundExecutionStore,
 } from './shell-background';
 import { AgentStatusToolV2 } from './handlers/agent-status';
-import { GlobToolV2 } from './handlers/glob';
-import { GrepToolV2 } from './handlers/grep';
 import { CancelAgentToolV2 } from './handlers/cancel-agent';
 import { FileEditToolV2 } from './handlers/file-edit';
 import { FileHistoryListToolV2 } from './handlers/file-history-list';
@@ -55,8 +53,6 @@ export function createBuiltInToolHandlersV2(
     new FileEditToolV2(),
     new FileHistoryListToolV2(),
     new FileHistoryRestoreToolV2(),
-    new GlobToolV2(),
-    new GrepToolV2(),
     new LspToolV2(),
     new WriteFileToolV2(),
     new WebFetchToolV2(),

@@ -396,24 +396,25 @@ describe('tool-v2 subagent tools', () => {
     expect(DEFAULT_SUBAGENT_ROLES['general-purpose']?.allowedTools).toEqual(
       expect.arrayContaining(['file_edit', 'write_file', 'local_shell', 'skill'])
     );
+    expect(DEFAULT_SUBAGENT_ROLES['general-purpose']?.allowedTools).not.toEqual(
+      expect.arrayContaining(['glob', 'grep'])
+    );
     expect(DEFAULT_SUBAGENT_ROLES['Restore']?.allowedTools).toEqual(
-      expect.arrayContaining(['file_history_list', 'file_history_restore'])
+      expect.arrayContaining(['file_history_list', 'file_history_restore', 'local_shell'])
     );
     expect(DEFAULT_SUBAGENT_ROLES['find-skills']?.allowedTools).toEqual(
       expect.arrayContaining(['skill', 'local_shell'])
     );
   });
 
-  it('publishes native tool-v2 descriptions for search and shell tools', () => {
+  it('publishes native tool-v2 descriptions for shell tools', () => {
     const specs = new EnterpriseToolSystem(createBuiltInToolHandlersV2()).specs();
-    const grep = specs.find((spec) => spec.name === 'grep');
-    const glob = specs.find((spec) => spec.name === 'glob');
     const shell = specs.find((spec) => spec.name === 'local_shell');
 
-    expect(grep?.description).toContain('ALWAYS use this tool for content search tasks');
-    expect(glob?.description).toContain('Fast file pattern matching tool');
+    expect(specs.map((spec) => spec.name)).not.toEqual(expect.arrayContaining(['glob', 'grep']));
     expect(shell?.description).toContain('Execute a shell command with explicit policy');
-    expect(shell?.description).toContain('Prefer specialized tools over local_shell');
+    expect(shell?.description).toContain('Use local_shell for:');
+    expect(shell?.description).toContain('Windows: prefer PowerShell command shapes');
   });
 
   it('syncs linked task state on subagent start, completion, and parent abort', async () => {

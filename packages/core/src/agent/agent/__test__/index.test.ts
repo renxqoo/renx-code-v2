@@ -1301,7 +1301,7 @@ describe('StatelessAgent', () => {
       type: 'tool_result',
       data: {
         tool_call_id: 'tool_budget_1',
-        content: 'tool stage budget exceeded',
+        content: 'Command failed: tool stage budget exceeded',
       },
     });
     expect(events.at(-1)).toMatchObject({

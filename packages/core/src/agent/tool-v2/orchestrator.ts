@@ -5,12 +5,19 @@ import type {
   ToolExecutionEventStage,
   ToolExecutionPlan,
 } from './contracts';
-import { toToolErrorContract, ToolV2ApprovalDeniedError, ToolV2PolicyDeniedError } from './errors';
+import {
+  toToolErrorContract,
+  ToolV2ApprovalDeniedError,
+  ToolV2PermissionError,
+  ToolV2PolicyDeniedError,
+} from './errors';
 import {
   applyPermissionProfile,
   assertNetworkAccess,
   assertReadAccess,
   assertWriteAccess,
+  collectMissingPermissionProfile,
+  isPermissionProfileSatisfied,
 } from './permissions';
 import { ToolRouter } from './router';
 
@@ -53,13 +60,18 @@ export class ToolOrchestrator {
         approvalRequired: plan.approval?.required || false,
       });
 
-      this.assertPlanPermissions(plan, effectiveContext);
-      await this.ensureApproval(routed.toolName, call, plan, effectiveContext);
+      const executableContext = await this.ensurePlanPermissions(
+        routed.toolName,
+        call,
+        plan,
+        effectiveContext
+      );
+      await this.ensureApproval(routed.toolName, call, plan, executableContext);
 
       await this.emitEvent(context, call, 'executing', {
         toolName: routed.toolName,
       });
-      const result = await routed.handler.execute(args, effectiveContext);
+      const result = await routed.handler.execute(args, executableContext);
       await this.emitEvent(context, call, 'succeeded', {
         toolName: routed.toolName,
         durationMs: this.now(context) - startedAt,
@@ -130,6 +142,78 @@ export class ToolOrchestrator {
     for (const networkTarget of plan.networkTargets || []) {
       assertNetworkAccess(networkTarget, context.networkPolicy);
     }
+  }
+
+  private async ensurePlanPermissions(
+    toolName: string,
+    call: ToolCallRequest,
+    plan: ToolExecutionPlan,
+    context: ToolExecutionContext
+  ): Promise<ToolExecutionContext> {
+    const missingPermissions = collectMissingPermissionProfile(plan, context.workingDirectory, {
+      fileSystem: context.fileSystemPolicy,
+      network: context.networkPolicy,
+    });
+
+    if (!missingPermissions) {
+      this.assertPlanPermissions(plan, context);
+      return context;
+    }
+
+    if (!context.requestPermissions) {
+      this.assertPlanPermissions(plan, context);
+      return context;
+    }
+
+    await this.emitEvent(context, call, 'permission_requested', {
+      toolName,
+      requestedScope: 'turn',
+      permissions: missingPermissions,
+    });
+
+    const grant = await context.requestPermissions({
+      toolName,
+      callId: call.callId,
+      reason: this.describeMissingPermissions(toolName, missingPermissions),
+      requestedScope: 'turn',
+      permissions: missingPermissions,
+    });
+    const normalizedGrant = {
+      granted: grant.granted,
+      scope: grant.scope === 'session' ? 'session' : 'turn',
+    } as const;
+    context.sessionState.grantPermissions(normalizedGrant);
+
+    const updatedPermissions = applyPermissionProfile(
+      {
+        fileSystem: context.fileSystemPolicy,
+        network: context.networkPolicy,
+      },
+      context.sessionState.effectivePermissions()
+    );
+    const executableContext: ToolExecutionContext = {
+      ...context,
+      fileSystemPolicy: updatedPermissions.fileSystem,
+      networkPolicy: updatedPermissions.network,
+    };
+
+    if (
+      !isPermissionProfileSatisfied(updatedPermissions, missingPermissions) &&
+      missingPermissions
+    ) {
+      throw new ToolV2PermissionError(`Permission request denied for ${toolName}`, {
+        toolName,
+        requestedPermissions: missingPermissions,
+      });
+    }
+
+    this.assertPlanPermissions(plan, executableContext);
+    await this.emitEvent(executableContext, call, 'permission_resolved', {
+      toolName,
+      granted: normalizedGrant.granted,
+      scope: normalizedGrant.scope,
+    });
+    return executableContext;
   }
 
   private async ensureApproval(
@@ -207,6 +291,34 @@ export class ToolOrchestrator {
       context.sessionState.grantApproval(cacheKey, decision.scope);
       return;
     }
+  }
+
+  private describeMissingPermissions(
+    toolName: string,
+    permissions: ReturnType<typeof collectMissingPermissionProfile>
+  ): string {
+    if (!permissions) {
+      return `Additional permissions required before running ${toolName}`;
+    }
+
+    const segments: string[] = [];
+    const read = permissions.fileSystem?.read || [];
+    const write = permissions.fileSystem?.write || [];
+    const hosts = permissions.network?.allowedHosts || [];
+
+    if (read.length > 0) {
+      segments.push(`read ${read.join(', ')}`);
+    }
+    if (write.length > 0) {
+      segments.push(`write ${write.join(', ')}`);
+    }
+    if (hosts.length > 0) {
+      segments.push(`access network hosts ${hosts.join(', ')}`);
+    }
+
+    return segments.length > 0
+      ? `Additional permissions required to ${segments.join('; ')}`
+      : `Additional permissions required before running ${toolName}`;
   }
 
   private now(context: ToolExecutionContext): number {

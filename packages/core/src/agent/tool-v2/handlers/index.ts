@@ -3,8 +3,6 @@ export * from './cancel-agent';
 export * from './file-edit';
 export * from './file-history-list';
 export * from './file-history-restore';
-export * from './glob';
-export * from './grep';
 export * from './lsp';
 export * from './read-file';
 export * from './request-permissions';

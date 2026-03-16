@@ -55,6 +55,7 @@ export const App = () => {
     resetConversation,
     setModelLabelDisplay,
     setToolConfirmSelection,
+    setToolConfirmScope,
     submitToolConfirmSelection,
     rejectPendingToolConfirm,
   } = useAgentChat();
@@ -180,6 +181,18 @@ export const App = () => {
         return;
       }
 
+      if (pendingToolConfirm.kind === 'permission') {
+        if (key.name === 'up' || key.name === 'k') {
+          setToolConfirmScope('session');
+          return;
+        }
+
+        if (key.name === 'down' || key.name === 'j') {
+          setToolConfirmScope('turn');
+          return;
+        }
+      }
+
       if (key.name === 'escape') {
         rejectPendingToolConfirm();
       }
@@ -285,7 +298,7 @@ export const App = () => {
           paddingY={0}
         >
           <text fg={uiTheme.accent} attributes={TextAttributes.BOLD}>
-            ✓
+            OK
           </text>
           <text fg={uiTheme.text} attributes={TextAttributes.BOLD}>
             Copied

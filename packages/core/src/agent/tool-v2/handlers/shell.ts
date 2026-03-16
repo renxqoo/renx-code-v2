@@ -80,14 +80,37 @@ const schema = z
 
 const LOCAL_SHELL_TOOL_DESCRIPTION = `Execute a shell command with explicit policy, sandbox, and approval controls.
 
-Usage notes:
-- command is required.
-- workdir is optional and defaults to the current workspace.
-- timeoutMs is optional and defaults to the profile timeout.
-- runInBackground starts the command asynchronously and returns a background task id.
-- Do not append "&" manually when runInBackground=true.
-- Prefer specialized tools over local_shell for search, reading, and editing when dedicated tools exist.
-- Commands run through explicit shell policy and sandbox profiles.`;
+Use local_shell for:
+- repository search and inspection
+- listing files and directories
+- build, test, lint, and git commands
+- focused environment checks
+
+Prefer other tools when available:
+- use read_file when you already know the file path
+- use file_edit for precise edits to existing files
+- use write_file for full-file writes
+
+Platform guidance:
+- Windows: prefer PowerShell command shapes such as Get-ChildItem, Get-Content, Select-String, and direct git/npm commands
+- macOS/Linux: prefer rg, rg --files, ls, cat, find, and shell pipelines
+
+Execution guidance:
+- command is required
+- workdir defaults to the current workspace
+- timeoutMs defaults to the active profile timeout
+- runInBackground starts the command asynchronously and returns a background task id
+- use parallel calls for independent commands
+- use && only when later commands depend on earlier ones
+- do not append "&" manually when runInBackground=true
+- commands run through explicit shell policy and sandbox profiles
+
+Examples:
+- Windows search: Get-ChildItem -Path src -Recurse | Select-String -Pattern 'TODO'
+- Windows read: Get-Content -Raw package.json
+- Unix search: rg "local_shell" src
+- Unix file discovery: rg --files src
+- Git status: git status && git diff --stat`;
 
 export class LocalShellToolV2 extends StructuredToolHandler<typeof schema> {
   private readonly runtime: ShellRuntime;

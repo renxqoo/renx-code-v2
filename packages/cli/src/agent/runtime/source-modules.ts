@@ -26,12 +26,23 @@ type AgentToolConfirmDecision = {
   approved: boolean;
   message?: string;
 };
+type AgentToolPermissionGrant = {
+  granted: Record<string, unknown>;
+  scope: 'turn' | 'session';
+};
 type AgentToolConfirmRequest = {
   toolCallId: string;
   toolName: string;
   arguments: string;
   reason?: string;
   metadata?: Record<string, unknown>;
+};
+type AgentToolPermissionRequest = {
+  toolCallId: string;
+  toolName: string;
+  reason?: string;
+  requestedScope?: 'turn' | 'session';
+  permissions: Record<string, unknown>;
 };
 type AgentMessage = {
   messageId?: string;
@@ -88,6 +99,10 @@ export type ToolDecisionLike = AgentToolConfirmDecision;
 export type ToolConfirmEventLike = AgentToolConfirmRequest & {
   resolve: (decision: ToolDecisionLike) => void;
 };
+export type ToolPermissionGrantLike = AgentToolPermissionGrant;
+export type ToolPermissionEventLike = AgentToolPermissionRequest & {
+  resolve: (grant: ToolPermissionGrantLike) => void;
+};
 export type AgentV4MessageLike = AgentMessage;
 export type CliEventEnvelopeLike = AgentCliEvent;
 export type AgentAppRunResultLike = AgentRunResult;
@@ -136,8 +151,10 @@ export type AgentAppServiceLike = {
 };
 type AgentLoggerLike = AgentLoggerApi;
 export type StatelessAgentLike = {
-  on: (eventName: 'tool_confirm', listener: (event: ToolConfirmEventLike) => void) => void;
-  off: (eventName: 'tool_confirm', listener: (event: ToolConfirmEventLike) => void) => void;
+  on(eventName: 'tool_confirm', listener: (event: ToolConfirmEventLike) => void): void;
+  on(eventName: 'tool_permission', listener: (event: ToolPermissionEventLike) => void): void;
+  off(eventName: 'tool_confirm', listener: (event: ToolConfirmEventLike) => void): void;
+  off(eventName: 'tool_permission', listener: (event: ToolPermissionEventLike) => void): void;
 };
 export type ToolSchemaLike = {
   type: string;

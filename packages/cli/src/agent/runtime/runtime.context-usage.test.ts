@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./tool-confirmation', () => ({
   resolveToolConfirmDecision: vi.fn(),
+  resolveToolPermissionGrant: vi.fn(),
 }));
 
 vi.mock('./source-modules', () => ({

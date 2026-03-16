@@ -3,6 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./tool-confirmation', () => ({
   resolveToolConfirmDecision: vi.fn().mockResolvedValue({ approved: true, message: 'Approved' }),
+  resolveToolPermissionGrant: vi.fn().mockResolvedValue({
+    granted: {
+      fileSystem: {
+        read: ['/tmp/project'],
+      },
+    },
+    scope: 'turn',
+  }),
 }));
 
 vi.mock('./source-modules', () => ({

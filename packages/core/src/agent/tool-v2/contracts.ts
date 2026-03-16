@@ -120,6 +120,8 @@ export type ToolExecutionEventStage =
   | 'received'
   | 'parsed'
   | 'planned'
+  | 'permission_requested'
+  | 'permission_resolved'
   | 'approval_requested'
   | 'approval_resolved'
   | 'executing'

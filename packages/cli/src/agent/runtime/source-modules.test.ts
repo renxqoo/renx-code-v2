@@ -1,6 +1,6 @@
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { resolveRepoRoot } from './source-modules';
@@ -31,6 +31,6 @@ describe('resolveRepoRoot', () => {
     process.env.AGENT_REPO_ROOT = '/tmp/coding-agent-v2';
     vi.spyOn(process, 'cwd').mockReturnValue('/tmp/example-workspace');
 
-    expect(resolveRepoRoot()).toBe('/tmp/coding-agent-v2');
+    expect(resolveRepoRoot()).toBe(resolve('/tmp/coding-agent-v2'));
   });
 });

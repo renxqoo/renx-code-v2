@@ -1,4 +1,4 @@
-import type { AgentToolConfirmEvent } from '../agent/runtime/types';
+import type { AgentToolPromptEvent } from '../agent/runtime/types';
 import { getToolHiddenArgumentKeys, getToolDisplayName } from './tool-display-config';
 
 export type ToolConfirmDialogContent = {
@@ -7,6 +7,10 @@ export type ToolConfirmDialogContent = {
   reason?: string;
   requestedPath?: string;
   allowedDirectories: string[];
+  permissionItems: Array<{
+    label: string;
+    values: string[];
+  }>;
   argumentItems: Array<{
     label: string;
     value: string;
@@ -105,8 +109,11 @@ const formatArgumentValue = (
 };
 
 const buildArgumentItems = (
-  event: AgentToolConfirmEvent
+  event: AgentToolPromptEvent
 ): ToolConfirmDialogContent['argumentItems'] => {
+  if (event.kind === 'permission') {
+    return [];
+  }
   const hiddenKeys = new Set(getToolHiddenArgumentKeys(event.toolName));
 
   return Object.entries(asRecord(event.args)).flatMap(([key, value]) => {
@@ -129,7 +136,45 @@ const buildArgumentItems = (
   });
 };
 
-const buildSummary = (event: AgentToolConfirmEvent): { summary: string; detail?: string } => {
+const buildPermissionItems = (
+  event: AgentToolPromptEvent
+): ToolConfirmDialogContent['permissionItems'] => {
+  if (event.kind !== 'permission') {
+    return [];
+  }
+
+  const read = event.permissions.fileSystem?.read || [];
+  const write = event.permissions.fileSystem?.write || [];
+  const hosts = event.permissions.network?.allowedHosts || [];
+  const items: ToolConfirmDialogContent['permissionItems'] = [];
+
+  if (read.length > 0) {
+    items.push({ label: 'Read access', values: read });
+  }
+  if (write.length > 0) {
+    items.push({ label: 'Write access', values: write });
+  }
+  if (hosts.length > 0) {
+    items.push({ label: 'Network hosts', values: hosts });
+  }
+
+  return items;
+};
+
+const buildSummary = (
+  event: AgentToolPromptEvent,
+  selectedScope?: 'turn' | 'session'
+): { summary: string; detail?: string } => {
+  if (event.kind === 'permission') {
+    const displayName = getToolDisplayName(event.toolName);
+    const scope = selectedScope ?? event.requestedScope;
+    const scopeLabel = scope === 'session' ? 'this session' : 'this turn';
+    return {
+      summary: `Grant additional permissions for ${displayName}`,
+      detail: `Selected scope: ${scopeLabel}`,
+    };
+  }
+
   const args = asRecord(event.args);
 
   switch (event.toolName) {
@@ -172,10 +217,14 @@ const buildSummary = (event: AgentToolConfirmEvent): { summary: string; detail?:
 };
 
 export const buildToolConfirmDialogContent = (
-  event: AgentToolConfirmEvent
+  event: AgentToolPromptEvent,
+  options?: {
+    selectedScope?: 'turn' | 'session';
+  }
 ): ToolConfirmDialogContent => {
-  const metadata = asRecord(event.metadata);
-  const { summary, detail } = buildSummary(event);
+  const metadata =
+    event.kind === 'approval' ? asRecord(event.metadata) : ({} as Record<string, unknown>);
+  const { summary, detail } = buildSummary(event, options?.selectedScope);
 
   return {
     summary,
@@ -183,6 +232,7 @@ export const buildToolConfirmDialogContent = (
     reason: readString(event.reason),
     requestedPath: readString(metadata.requestedPath),
     allowedDirectories: readStringArray(metadata.allowedDirectories),
+    permissionItems: buildPermissionItems(event),
     argumentItems: buildArgumentItems(event),
   };
 };

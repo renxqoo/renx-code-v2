@@ -5,6 +5,7 @@ import { buildToolConfirmDialogContent } from './tool-confirm-dialog-content';
 describe('buildToolConfirmDialogContent', () => {
   it('formats outside-workspace glob confirmations with path details', () => {
     const content = buildToolConfirmDialogContent({
+      kind: 'approval',
       toolCallId: 'call_1',
       toolName: 'glob',
       args: {
@@ -32,6 +33,7 @@ describe('buildToolConfirmDialogContent', () => {
 
   it('formats local shell confirmations with command preview', () => {
     const content = buildToolConfirmDialogContent({
+      kind: 'approval',
       toolCallId: 'call_2',
       toolName: 'local_shell',
       args: {
@@ -52,6 +54,7 @@ describe('buildToolConfirmDialogContent', () => {
 
   it('hides redundant file path arguments that are already surfaced elsewhere', () => {
     const content = buildToolConfirmDialogContent({
+      kind: 'approval',
       toolCallId: 'call_3',
       toolName: 'read_file',
       args: {
@@ -74,6 +77,7 @@ describe('buildToolConfirmDialogContent', () => {
 
   it('parses json-like string arguments into readable structured values', () => {
     const content = buildToolConfirmDialogContent({
+      kind: 'approval',
       toolCallId: 'call_4',
       toolName: 'custom_tool',
       args: {
@@ -99,5 +103,35 @@ describe('buildToolConfirmDialogContent', () => {
         multiline: undefined,
       },
     ]);
+  });
+
+  it('formats permission requests with requested access details', () => {
+    const content = buildToolConfirmDialogContent(
+      {
+        kind: 'permission',
+        toolCallId: 'call_5',
+        toolName: 'read_file',
+        reason: 'Additional permissions required to read /tmp/project',
+        requestedScope: 'turn',
+        permissions: {
+          fileSystem: {
+            read: ['/tmp/project'],
+          },
+        },
+      },
+      {
+        selectedScope: 'session',
+      }
+    );
+
+    expect(content.summary).toBe('Grant additional permissions for read_file');
+    expect(content.detail).toBe('Selected scope: this session');
+    expect(content.permissionItems).toEqual([
+      {
+        label: 'Read access',
+        values: ['/tmp/project'],
+      },
+    ]);
+    expect(content.argumentItems).toEqual([]);
   });
 });

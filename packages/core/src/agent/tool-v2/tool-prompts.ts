@@ -1,37 +1,38 @@
-export const BASH_TOOL_DESCRIPTION = `Executes a given shell command with optional timeout.
+export const BASH_TOOL_DESCRIPTION = `Executes a shell command with optional timeout.
 
-IMPORTANT: This tool is for terminal operations like git, npm, docker, and test commands.
-DO NOT use it for file operations (reading, writing, editing, searching, finding files) when
-dedicated tools are available. Use read_file, file_edit, write_file, glob, and grep instead.
+Use local_shell as the default tool for:
+- repository search and inspection
+- listing files and directories
+- build, test, lint, and git commands
+- focused environment checks
 
-Usage notes:
-- command is required.
-- timeoutMs is optional, max 600000ms. If omitted, default timeout is 60000ms.
-- runInBackground can be used for long-running commands when immediate output is not required.
-- Do not append "&" manually when runInBackground=true.
-- Quote file paths that contain spaces.
-- Prefer absolute paths and avoid unnecessary "cd" usage.
+Prefer other tools when available:
+- use read_file when you already know the file path
+- use file_edit for precise edits to existing files
+- use write_file for full-file writes
+- use the agent tool only for genuinely multi-step delegated work
 
-When issuing multiple commands:
-- If independent, run multiple shell calls in parallel.
-- If dependent, chain with "&&" (or ";" when later commands should still run on failure).
-- Do not separate commands with raw newlines.`;
+Platform guidance:
+- Windows: prefer PowerShell command shapes such as Get-ChildItem, Get-Content, Select-String, and direct git/npm commands
+- macOS/Linux: prefer rg, rg --files, ls, cat, find, and shell pipelines
 
-export const GLOB_TOOL_DESCRIPTION = `- Fast file pattern matching tool that works with any codebase size
-- Supports glob patterns like "**/*.js" or "src/**/*.ts"
-- Returns matching file paths for downstream tools
-- Use this tool when you need to find files by name patterns
-- For open-ended multi-round exploration, prefer spawn_agent with an exploration role
-- It is often better to run multiple glob searches in parallel when useful`;
+Search guidance:
+- Prefer rg for text search and rg --files for file discovery when available
+- Prefer absolute or workspace-relative paths
+- Avoid unnecessary cd usage when workdir can be set directly
 
-export const GREP_TOOL_DESCRIPTION = `A powerful search tool built on ripgrep.
+Execution guidance:
+- Use parallel shell calls for independent commands
+- Use && only when later commands depend on earlier ones
+- Use runInBackground only for genuinely long-running commands
+- Do not append & manually when runInBackground=true
 
-Usage:
-- ALWAYS use this tool for content search tasks. Do not run "grep" or "rg" via local_shell for normal searches.
-- Supports full regex syntax (for example "log.*Error" or "function\\s+\\w+").
-- Use the glob parameter to constrain files (for example "**/*.ts" or "src/**/*.tsx").
-- Use spawn_agent for broad open-ended search workflows that need many iterative rounds.
-- Ripgrep regex semantics apply. Escape literals when needed.`;
+Examples:
+- Windows search: Get-ChildItem -Path src -Recurse | Select-String -Pattern 'TODO'
+- Windows read: Get-Content -Raw package.json
+- Unix search: rg "local_shell" src
+- Unix file discovery: rg --files src
+- Git status: git status && git diff --stat`;
 
 export const FILE_READ_TOOL_DESCRIPTION = `Reads a file from the local filesystem. You can access any file directly by using this tool.
 Assume this tool is able to read all files on the machine. If the user provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
@@ -102,23 +103,22 @@ The agent tool launches specialized subagents that autonomously handle complex w
 
 Available subagent types and their default tools:
 - Bash: terminal and command execution specialist. Use for focused shell work. (Tools: local_shell)
-- general-purpose: broad multi-step research and implementation agent. Use when the task may require several rounds of searching, reading, editing, and verification. (Tools: local_shell, glob, grep, read_file, file_edit, write_file, skill)
-- Explore: fast codebase exploration and discovery agent. Use for open-ended codebase exploration, pattern-based file discovery, and multi-round keyword searches. (Tools: glob, grep, read_file, skill)
-- Restore: focused rollback agent for restoring a file from saved history when the parent agent already knows the target path. (Tools: glob, read_file, file_history_list, file_history_restore)
-- Plan: implementation planning and architecture strategy agent. Use when you need a concrete implementation plan, critical file list, risks, and trade-offs before editing code. (Tools: glob, grep, read_file, skill)
-- research-agent: long-form research and synthesis agent. Use when you need evidence collection and structured findings from local project context. (Tools: glob, grep, read_file, skill)
+- general-purpose: broad multi-step research and implementation agent. Use when the task may require several rounds of searching, reading, editing, and verification. (Tools: local_shell, read_file, file_edit, write_file, file_history_list, file_history_restore, skill, web_fetch, web_search)
+- Explore: fast codebase exploration and discovery agent. Use for open-ended codebase exploration and multi-round keyword searches. (Tools: local_shell, read_file, skill)
+- Restore: focused rollback agent for restoring a file from saved history when the parent agent already knows the target path. (Tools: local_shell, read_file, file_history_list, file_history_restore)
+- Plan: implementation planning and architecture strategy agent. Use when you need a concrete implementation plan, critical file list, risks, and trade-offs before editing code. (Tools: local_shell, read_file, skill)
+- research-agent: long-form research and synthesis agent. Use when you need evidence collection and structured findings from local project context. (Tools: local_shell, read_file, skill, web_fetch, web_search)
 - find-skills: local skill lookup + installation guidance agent. Use to discover the right skill, prefer local skills first, and fall back to verified installation steps when needed. (Tools: skill, local_shell)
 
 When to use the agent tool:
 - Complex, multi-step work that benefits from delegation.
 - Open-ended exploration or research that will likely take multiple searches.
 - Parallel, independent branches of investigation.
-- Broad codebase search when you are not confident a direct glob/grep query will find the right match in the first few tries.
+- Broad codebase search only when you are not confident a direct local_shell query will find the right match in the first few tries.
 
 When NOT to use the agent tool:
 - If you already know the file path, use read_file.
-- If you need a direct filename/pattern match, use glob.
-- If you need exact content search, use grep.
+- If you need direct search or file discovery yourself, prefer local_shell.
 - If you only need to inspect one file or a small known set of files, use direct tools instead.
 
 Usage notes:
@@ -130,7 +130,8 @@ Usage notes:
 - Launch multiple task calls in parallel when the work is independent.
 - The subagent result is returned to you through the tool response; summarize relevant findings to the user.
 - Provide a clear prompt that states whether the subagent should research only or also make code changes.
-- For direct needle queries, prefer direct tools first (glob/grep/read_file/file_edit).`;
+- For direct needle queries, prefer direct tools first (local_shell/read_file/file_edit).
+- Default workflow: use local_shell to locate candidates, read_file to inspect exact files, and file_edit or write_file only when you are ready to change code.`;
 
 export const TASK_CREATE_DESCRIPTION = `Use this tool to create a structured task list entry for the current coding session.
 

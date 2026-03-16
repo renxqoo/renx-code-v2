@@ -91,7 +91,7 @@ describe('EnterpriseToolExecutor', () => {
     const system = new EnterpriseToolSystem([
       {
         spec: {
-          name: 'grep',
+          name: 'search_text',
           description: 'Search text',
           inputSchema: { type: 'object' },
           supportsParallel: true,
@@ -105,7 +105,7 @@ describe('EnterpriseToolExecutor', () => {
 
     const executor = new EnterpriseToolExecutor({ system });
 
-    expect(executor.getConcurrencyPolicy(createToolCall('grep', { pattern: 'x' }))).toEqual({
+    expect(executor.getConcurrencyPolicy(createToolCall('search_text', { pattern: 'x' }))).toEqual({
       mode: 'parallel-safe',
     });
     expect(executor.getConcurrencyPolicy(createToolCall('missing', {}))).toEqual({

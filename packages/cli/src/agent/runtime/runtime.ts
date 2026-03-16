@@ -7,6 +7,7 @@ import type {
   AgentStopEvent,
   AgentTextDeltaEvent,
   AgentToolConfirmEvent,
+  AgentToolPermissionEvent,
   AgentToolResultEvent,
   AgentToolStreamEvent,
   AgentToolUseEvent,
@@ -14,7 +15,7 @@ import type {
   AgentUsageEvent,
 } from './types';
 import type { AgentModelOption, AgentModelSwitchResult } from './model-types';
-import { resolveToolConfirmDecision } from './tool-confirmation';
+import { resolveToolConfirmDecision, resolveToolPermissionGrant } from './tool-confirmation';
 import {
   type AgentAppContextUsageLike,
   type AgentAppUsageLike,
@@ -27,9 +28,10 @@ import {
   resolveWorkspaceRoot,
   type SourceModules,
   type StatelessAgentLike,
-  type ToolExecutorLike,
-  type ToolSchemaLike,
   type ToolConfirmEventLike,
+  type ToolExecutorLike,
+  type ToolPermissionEventLike,
+  type ToolSchemaLike,
 } from './source-modules';
 import { filterToolSchemas } from './tool-catalog';
 import { ToolCallBuffer } from './tool-call-buffer';
@@ -557,6 +559,7 @@ export const runAgentPrompt = async (
   const onToolConfirm = (event: ToolConfirmEventLike): void => {
     const rawArgs = parseJsonObject(event.arguments);
     const toolConfirmEvent: AgentToolConfirmEvent = {
+      kind: 'approval',
       toolCallId: event.toolCallId,
       toolName: event.toolName,
       args: rawArgs,
@@ -579,7 +582,34 @@ export const runAgentPrompt = async (
       });
   };
 
+  const onToolPermission = (event: ToolPermissionEventLike): void => {
+    const toolPermissionEvent: AgentToolPermissionEvent = {
+      kind: 'permission',
+      toolCallId: event.toolCallId,
+      toolName: event.toolName,
+      reason: readString(event.reason),
+      requestedScope: event.requestedScope || 'turn',
+      permissions:
+        event.permissions && typeof event.permissions === 'object'
+          ? (event.permissions as AgentToolPermissionEvent['permissions'])
+          : {},
+    };
+    safeInvoke(() => handlers.onToolPermission?.(toolPermissionEvent));
+
+    void resolveToolPermissionGrant(toolPermissionEvent, handlers)
+      .then((grant) => {
+        event.resolve(grant);
+      })
+      .catch(() => {
+        event.resolve({
+          granted: {},
+          scope: 'turn',
+        });
+      });
+  };
+
   runtime.agent.on('tool_confirm', onToolConfirm);
+  runtime.agent.on('tool_permission', onToolPermission);
 
   let result: AgentAppRunResultLike;
   try {
@@ -757,6 +787,7 @@ export const runAgentPrompt = async (
       activeExecution = null;
     }
     runtime.agent.off('tool_confirm', onToolConfirm);
+    runtime.agent.off('tool_permission', onToolPermission);
   }
 
   if (!streamedState.stopEmitted) {

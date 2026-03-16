@@ -4,9 +4,24 @@ import { spawn } from 'node:child_process';
 type ClipboardCommand = {
   command: string;
   args: string[];
+  stdinEncoding?: BufferEncoding;
+  prependBom?: boolean;
 };
 
 type ClipboardRenderer = Pick<CliRenderer, 'copyToClipboardOSC52'>;
+
+export const buildClipboardInput = (text: string, candidate: ClipboardCommand): string | Buffer => {
+  if (!candidate.stdinEncoding) {
+    return text;
+  }
+
+  const encoded = Buffer.from(text, candidate.stdinEncoding);
+  if (!candidate.prependBom) {
+    return encoded;
+  }
+
+  return Buffer.concat([Buffer.from([0xff, 0xfe]), encoded]);
+};
 
 const runClipboardCommand = (text: string, candidate: ClipboardCommand): Promise<boolean> => {
   return new Promise((resolve) => {
@@ -34,7 +49,7 @@ const runClipboardCommand = (text: string, candidate: ClipboardCommand): Promise
       child.stdin.on('error', () => {
         finish(false);
       });
-      child.stdin.end(text);
+      child.stdin.end(buildClipboardInput(text, candidate));
     } catch {
       finish(false);
     }
@@ -50,7 +65,24 @@ export const getClipboardCommandCandidates = (
   }
 
   if (platform === 'win32') {
-    return [{ command: 'cmd', args: ['/c', 'clip'] }];
+    return [
+      {
+        command: 'powershell.exe',
+        args: [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          '[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false); Set-Clipboard -Value ([Console]::In.ReadToEnd())',
+        ],
+        stdinEncoding: 'utf8',
+      },
+      {
+        command: 'clip',
+        args: [],
+        stdinEncoding: 'utf16le',
+        prependBom: true,
+      },
+    ];
   }
 
   const candidates: ClipboardCommand[] = [];

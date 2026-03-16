@@ -114,8 +114,10 @@ const DEFAULT_DENIED_PATTERNS: ShellPatternRule[] = [
 
 const DEFAULT_SAFE_COMMANDS = [
   'ls',
+  'dir',
   'pwd',
   'cat',
+  'type',
   'head',
   'tail',
   'echo',
@@ -129,6 +131,19 @@ const DEFAULT_SAFE_COMMANDS = [
   'grep',
   'rg',
   'find',
+  'get-childitem',
+  'get-content',
+  'select-string',
+  'get-process',
+  'where-object',
+  'select-object',
+  'get-item',
+  'test-path',
+  'resolve-path',
+  'gci',
+  'gc',
+  'sls',
+  'foreach-object',
   'git',
   'pnpm',
   'npm',
@@ -148,7 +163,7 @@ const DEFAULT_SAFE_COMMANDS = [
 ];
 
 function normalizeCommandToken(token: string): string {
-  const trimmed = token.trim().toLowerCase();
+  const trimmed = stripWrappingQuotes(token.trim()).toLowerCase();
   if (!trimmed) {
     return '';
   }
@@ -157,7 +172,9 @@ function normalizeCommandToken(token: string): string {
 }
 
 export function extractShellCommands(command: string): string[] {
-  const tokens = parse(command);
+  const tokens = shouldUsePowerShellParsing(command)
+    ? parsePowerShellTokens(command)
+    : parse(command);
   const commands: string[] = [];
   let expectingCommand = true;
 
@@ -197,12 +214,14 @@ export function extractShellCommands(command: string): string[] {
 }
 
 export function tokenizeShellCommand(command: string): string[] {
-  const tokens = parse(command);
+  const tokens = shouldUsePowerShellParsing(command)
+    ? parsePowerShellTokens(command)
+    : parse(command);
   const result: string[] = [];
 
   for (const token of tokens) {
     if (typeof token === 'string') {
-      const trimmed = token.trim();
+      const trimmed = stripWrappingQuotes(token.trim());
       if (trimmed) {
         result.push(trimmed);
       }
@@ -213,7 +232,9 @@ export function tokenizeShellCommand(command: string): string[] {
 }
 
 export function splitShellCommandSegments(command: string): string[] {
-  const tokens = parse(command);
+  const tokens = shouldUsePowerShellParsing(command)
+    ? parsePowerShellTokens(command)
+    : parse(command);
   const segments: string[] = [];
   let current: string[] = [];
 
@@ -250,6 +271,158 @@ export function splitShellCommandSegments(command: string): string[] {
   }
 
   return segments.length > 0 ? segments : [command.trim()].filter(Boolean);
+}
+
+function shouldUsePowerShellParsing(command: string): boolean {
+  return (
+    /\b(?:pwsh|powershell)(?:\.exe)?\b/i.test(command) ||
+    /\$_/.test(command) ||
+    /@['"]/.test(command) ||
+    /\b(?:Get|Set|New|Remove|Copy|Move|Select|Where|ForEach|Write|Test|Resolve|Join|Split|Start|Stop|Import|Export|Convert|Invoke)-[A-Za-z][A-Za-z0-9]*/.test(
+      command
+    )
+  );
+}
+
+function parsePowerShellTokens(command: string): Array<string | { op: string }> {
+  const tokens: Array<string | { op: string }> = [];
+  let current = '';
+  let quote: "'" | '"' | null = null;
+  let hereString: "'" | '"' | null = null;
+  let braceDepth = 0;
+  let parenDepth = 0;
+  let bracketDepth = 0;
+
+  const flushCurrent = () => {
+    const trimmed = current.trim();
+    if (trimmed) {
+      tokens.push(trimmed);
+    }
+    current = '';
+  };
+
+  for (let index = 0; index < command.length; index += 1) {
+    const char = command[index]!;
+    const next = command[index + 1];
+
+    if (hereString) {
+      current += char;
+      if (
+        char === hereString &&
+        next === '@' &&
+        (index === 0 || command[index - 1] === '\n' || command[index - 1] === '\r')
+      ) {
+        current += next;
+        index += 1;
+        hereString = null;
+      }
+      continue;
+    }
+
+    if (quote) {
+      current += char;
+      if (quote === "'" && char === "'" && next === "'") {
+        current += next;
+        index += 1;
+        continue;
+      }
+      if (quote === '"' && char === '`' && next) {
+        current += next;
+        index += 1;
+        continue;
+      }
+      if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if ((char === '@' && next === "'") || (char === '@' && next === '"')) {
+      current += `${char}${next}`;
+      hereString = next;
+      index += 1;
+      continue;
+    }
+
+    if (char === "'" || char === '"') {
+      current += char;
+      quote = char;
+      continue;
+    }
+
+    if (char === '{') {
+      braceDepth += 1;
+      current += char;
+      continue;
+    }
+    if (char === '}') {
+      braceDepth = Math.max(0, braceDepth - 1);
+      current += char;
+      continue;
+    }
+    if (char === '(') {
+      parenDepth += 1;
+      current += char;
+      continue;
+    }
+    if (char === ')') {
+      parenDepth = Math.max(0, parenDepth - 1);
+      current += char;
+      continue;
+    }
+    if (char === '[') {
+      bracketDepth += 1;
+      current += char;
+      continue;
+    }
+    if (char === ']') {
+      bracketDepth = Math.max(0, bracketDepth - 1);
+      current += char;
+      continue;
+    }
+
+    const topLevel = braceDepth === 0 && parenDepth === 0 && bracketDepth === 0;
+    if (topLevel && /\s/.test(char)) {
+      flushCurrent();
+      continue;
+    }
+
+    if (topLevel && char === '&' && next === '&') {
+      flushCurrent();
+      tokens.push({ op: '&&' });
+      index += 1;
+      continue;
+    }
+    if (topLevel && char === '|' && next === '|') {
+      flushCurrent();
+      tokens.push({ op: '||' });
+      index += 1;
+      continue;
+    }
+    if (topLevel && (char === '|' || char === ';' || char === '&')) {
+      flushCurrent();
+      tokens.push({ op: char });
+      continue;
+    }
+
+    current += char;
+  }
+
+  flushCurrent();
+  return tokens;
+}
+
+function stripWrappingQuotes(token: string): string {
+  if (token.length < 2) {
+    return token;
+  }
+  if (
+    (token.startsWith('"') && token.endsWith('"')) ||
+    (token.startsWith("'") && token.endsWith("'"))
+  ) {
+    return token.slice(1, -1);
+  }
+  return token;
 }
 
 export function assessShellCommand(

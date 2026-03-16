@@ -190,7 +190,10 @@ export interface ToolRuntimeFactoryDeps {
     throwIfAborted: (signal?: AbortSignal) => void;
   };
   createLifecycleHooks: () => AgentRuntimeLifecycleHooks;
-  emitEvent: (eventName: 'tool_chunk' | 'tool_confirm', payload: unknown) => void;
+  emitEvent: (
+    eventName: 'tool_chunk' | 'tool_confirm' | 'tool_permission',
+    payload: unknown
+  ) => void;
 }
 
 /**

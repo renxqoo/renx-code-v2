@@ -178,4 +178,83 @@ describe('useAgentChat', () => {
       )
     ).toBe(true);
   });
+
+  it('submits permission grants with the selected scope', async () => {
+    let resolvedGrant:
+      | {
+          granted: unknown;
+          scope: 'turn' | 'session';
+        }
+      | undefined;
+    mockRunAgentPrompt.mockImplementation(
+      async (_prompt: unknown, handlers: Record<string, unknown>) => {
+        resolvedGrant = await (
+          handlers.onToolPermissionRequest as
+            | ((event: {
+                kind: 'permission';
+                toolCallId: string;
+                toolName: string;
+                reason?: string;
+                requestedScope: 'turn' | 'session';
+                permissions: unknown;
+              }) => Promise<{ granted: unknown; scope: 'turn' | 'session' }>)
+            | undefined
+        )?.({
+          kind: 'permission',
+          toolCallId: 'call_perm',
+          toolName: 'read_file',
+          reason: 'Additional permissions required to read D:\\outside',
+          requestedScope: 'turn',
+          permissions: {
+            fileSystem: {
+              read: ['D:\\outside'],
+            },
+          },
+        });
+
+        return {
+          text: 'done',
+          completionReason: 'stop',
+          durationSeconds: 0,
+          modelLabel: 'glm-5',
+        };
+      }
+    );
+
+    const { result } = renderHook(() => useAgentChat());
+
+    await waitFor(() => {
+      expect(result.current.modelLabel).toBe('glm-5');
+    });
+
+    act(() => {
+      result.current.setInputValue('read outside file');
+    });
+    act(() => {
+      result.current.submitInput();
+    });
+
+    await waitFor(() => {
+      expect(result.current.pendingToolConfirm?.kind).toBe('permission');
+    });
+
+    act(() => {
+      result.current.setToolConfirmScope('session');
+    });
+    act(() => {
+      result.current.submitToolConfirmSelection();
+    });
+
+    await waitFor(() => {
+      expect(resolvedGrant).toEqual({
+        granted: {
+          fileSystem: {
+            read: ['D:\\outside'],
+          },
+        },
+        scope: 'session',
+      });
+    });
+    expect(result.current.pendingToolConfirm).toBe(null);
+  });
 });

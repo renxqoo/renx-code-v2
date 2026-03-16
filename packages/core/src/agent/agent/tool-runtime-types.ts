@@ -29,7 +29,7 @@ export type ToolRuntime = {
   };
   hooks: AgentRuntimeLifecycleHooks;
   events: {
-    emit: (eventName: 'tool_chunk' | 'tool_confirm', payload: unknown) => void;
+    emit: (eventName: 'tool_chunk' | 'tool_confirm' | 'tool_permission', payload: unknown) => void;
   };
 };
 

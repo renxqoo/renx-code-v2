@@ -4,6 +4,16 @@ import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import {
+  createPosixBackgroundShellInvocation,
+  createPosixForegroundShellInvocation,
+  resolvePreferredPosixShell,
+} from './shell-runtime-posix';
+import {
+  createWindowsBackgroundShellInvocation,
+  createWindowsForegroundShellInvocation,
+  resolvePreferredWindowsShell,
+} from './shell-runtime-windows';
 import type { ToolSandboxMode } from '../contracts';
 import type { ShellExecutionMode } from '../shell-policy';
 import type { ShellSandboxPolicy } from '../shell-sandbox';
@@ -95,10 +105,21 @@ export interface ShellSandboxStateAwareRuntime extends ShellRuntime {
   updateSandboxPolicy(policy: ShellSandboxPolicy): Promise<void>;
 }
 
+export type ShellFlavor = 'cmd' | 'powershell' | 'posix';
+
+export interface ResolvedShell {
+  readonly shellPath: string;
+  readonly flavor: ShellFlavor;
+}
+
+export type ShellPathExists = (candidate: string) => boolean;
+export type ShellCommandWorks = (candidate: string, args: string[]) => boolean;
+
 export class LocalProcessShellRuntime implements ShellRuntime {
   private readonly backgroundBaseDir: string;
   private readonly now: () => number;
   private readonly maxBackgroundOutputBytes: number;
+  private readonly preferredShell: ResolvedShell;
 
   constructor(
     options: {
@@ -112,6 +133,7 @@ export class LocalProcessShellRuntime implements ShellRuntime {
     );
     this.now = options.now || Date.now;
     this.maxBackgroundOutputBytes = options.maxBackgroundOutputBytes ?? 30000;
+    this.preferredShell = resolvePreferredShell();
   }
 
   getCapabilities(): ShellRuntimeCapabilities {
@@ -140,12 +162,13 @@ export class LocalProcessShellRuntime implements ShellRuntime {
   }
 
   async execute(request: ShellRuntimeRequest): Promise<ShellRuntimeResult> {
-    const shell = process.platform === 'win32' ? process.env.COMSPEC || 'cmd.exe' : '/bin/bash';
-    const shellArgs =
-      process.platform === 'win32' ? ['/d', '/s', '/c', request.command] : ['-lc', request.command];
+    const { shellPath, shellArgs } = createForegroundShellInvocation(
+      this.preferredShell,
+      request.command
+    );
 
     return new Promise((resolve, reject) => {
-      const child = spawn(shell, shellArgs, {
+      const child = spawn(shellPath, shellArgs, {
         cwd: path.resolve(request.cwd),
         env: {
           ...process.env,
@@ -216,7 +239,11 @@ export class LocalProcessShellRuntime implements ShellRuntime {
     const statusPath = path.join(runDir, 'status');
     fs.writeFileSync(logPath, '', 'utf8');
     const outputFd = fs.openSync(logPath, 'a');
-    const { shellPath, shellArgs } = resolveBackgroundShell(request.command, statusPath);
+    const { shellPath, shellArgs } = resolveBackgroundShell(
+      this.preferredShell,
+      request.command,
+      statusPath
+    );
     const child = spawn(shellPath, shellArgs, {
       cwd: path.resolve(request.cwd),
       env: {
@@ -374,29 +401,55 @@ export async function syncShellRuntimeSandboxPolicy(
   await candidate.updateSandboxPolicy(policy);
 }
 
+export function resolvePreferredShell(
+  options: {
+    platform?: NodeJS.Platform;
+    env?: NodeJS.ProcessEnv;
+    pathExists?: ShellPathExists;
+    commandWorks?: ShellCommandWorks;
+  } = {}
+): ResolvedShell {
+  const platform = options.platform || process.platform;
+  const env = options.env || process.env;
+  const pathExists = options.pathExists || fs.existsSync;
+  const commandWorks =
+    options.commandWorks ||
+    ((candidate: string, args: string[]) => {
+      const probe = spawnSync(candidate, args, {
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      return !probe.error && probe.status === 0;
+    });
+
+  if (platform === 'win32') {
+    return resolvePreferredWindowsShell(env, pathExists, commandWorks);
+  }
+
+  return resolvePreferredPosixShell(env, pathExists);
+}
+
+function createForegroundShellInvocation(
+  shell: ResolvedShell,
+  command: string
+): { shellPath: string; shellArgs: string[] } {
+  if (shell.flavor === 'posix') {
+    return createPosixForegroundShellInvocation(shell, command);
+  }
+
+  return createWindowsForegroundShellInvocation(shell, command);
+}
+
 function resolveBackgroundShell(
+  shell: ResolvedShell,
   command: string,
   statusPath: string
 ): { shellPath: string; shellArgs: string[] } {
-  if (process.platform === 'win32') {
-    return {
-      shellPath: process.env.COMSPEC || 'cmd.exe',
-      shellArgs: [
-        '/d',
-        '/s',
-        '/c',
-        `(${command}) & set "__renx_exit=%ERRORLEVEL%" & > "${statusPath}" echo %__renx_exit% & exit /b %__renx_exit%`,
-      ],
-    };
+  if (shell.flavor === 'posix') {
+    return createPosixBackgroundShellInvocation(shell, command, statusPath);
   }
 
-  return {
-    shellPath: '/bin/bash',
-    shellArgs: [
-      '-lc',
-      `{ ${command}; }; __renx_exit=$?; printf '%s' "$__renx_exit" > '${statusPath.replace(/'/g, `'\\''`)}'; exit "$__renx_exit"`,
-    ],
-  };
+  return createWindowsBackgroundShellInvocation(shell, command, statusPath);
 }
 
 async function readBackgroundOutput(

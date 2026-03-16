@@ -61,6 +61,34 @@ describe('local_shell v2', () => {
     expect(approve).not.toHaveBeenCalled();
   });
 
+  it('treats common PowerShell inspection commands as safe in policy mode', async () => {
+    const runtime = new RecordingShellRuntime();
+    const approve = vi.fn();
+    const system = new EnterpriseToolSystem([
+      new LocalShellToolV2({
+        runtime,
+        approvalMode: 'policy',
+      }),
+    ]);
+
+    const result = await system.execute(
+      {
+        callId: 'shell-powershell-safe',
+        toolName: 'local_shell',
+        arguments: JSON.stringify({
+          command: `Get-ChildItem -Path src -Recurse | Select-String -Pattern 'TODO'`,
+        }),
+      },
+      createContext(workspaceDir, {
+        approve: approve as ToolExecutionContext['approve'],
+      })
+    );
+
+    expect(result.success).toBe(true);
+    expect(runtime.requests).toHaveLength(1);
+    expect(approve).not.toHaveBeenCalled();
+  });
+
   it('requests approval for unknown commands in policy mode and forwards command preview', async () => {
     const runtime = new RecordingShellRuntime();
     const approvalRequests: ToolApprovalRequest[] = [];
@@ -213,6 +241,35 @@ describe('local_shell v2', () => {
     expect(runtime.requests[0]?.sandboxPolicy?.networkAccess).toBe(false);
     expect(runtime.requests[0]?.environment?.CODEX_SANDBOX_POLICY).toBe('workspace-write');
     expect(runtime.requests[0]?.environment?.CODEX_SANDBOX_NETWORK_DISABLED).toBe('1');
+  });
+
+  it('allows PowerShell read commands under the workspace policy profile', async () => {
+    const runtime = new RecordingShellRuntime();
+    const approve = vi.fn();
+    const system = new EnterpriseToolSystem([
+      new LocalShellToolV2({
+        runtime,
+        profile: SHELL_POLICY_PROFILES.workspaceGuarded,
+      }),
+    ]);
+
+    const result = await system.execute(
+      {
+        callId: 'shell-workspace-powershell-read',
+        toolName: 'local_shell',
+        arguments: JSON.stringify({
+          command: 'Get-Content -Raw package.json',
+        }),
+      },
+      createContext(workspaceDir, {
+        approve: approve as ToolExecutionContext['approve'],
+      })
+    );
+
+    expect(result.success).toBe(true);
+    expect(runtime.requests).toHaveLength(1);
+    expect(runtime.requests[0]?.sandbox).toBe('workspace-write');
+    expect(approve).not.toHaveBeenCalled();
   });
 
   it('requests additional sandbox permissions for package manager installs before execution', async () => {
@@ -505,6 +562,70 @@ describe('local_shell v2', () => {
     }
   });
 
+  it('forwards representative Codex-style inspection command shapes without rewriting them', async () => {
+    const commands = [
+      'Get-ChildItem -Force',
+      'Get-ChildItem -Path src',
+      'Get-ChildItem -Path src -Recurse -Filter *.ts',
+      'Get-ChildItem -LiteralPath src',
+      'Get-ChildItem -Path src -Recurse | Select-Object -First 5',
+      "Get-ChildItem -Recurse | Select-String -Pattern 'TODO'",
+      `Get-ChildItem -Path src | Where-Object { $_.Name -like '*shell*' }`,
+      `Get-Process | Where-Object { $_.ProcessName -like '*node*' }`,
+      `Select-String -Path "src/**/*.ts" -Pattern "local_shell" -CaseSensitive`,
+      `powershell -NoProfile -Command "Get-Content -Raw sample.txt"`,
+      'git status && git diff --stat',
+      'rg "local_shell" src',
+      'Get-Content -Raw package.json',
+      'Get-Content -Tail 50 package.json',
+      'Get-Content "src/agent/tool-v2/handlers/shell.ts" -TotalCount 20',
+      '@\'\nprint("hello")\n\'@ | python -',
+    ];
+
+    for (const [index, command] of commands.entries()) {
+      const runtime = new RecordingShellRuntime();
+      const system = new EnterpriseToolSystem([
+        new LocalShellToolV2({
+          runtime,
+          approvalMode: 'policy',
+          policy: createRuleBasedShellCommandPolicy({
+            rules: [],
+            fallback: {
+              evaluate(commandText) {
+                return {
+                  effect: 'allow',
+                  commands: [commandText],
+                  preferredSandbox: 'workspace-write',
+                  executionMode: 'sandboxed',
+                  reason: `compatibility allow: ${commandText}`,
+                };
+              },
+            },
+          }),
+        }),
+      ]);
+
+      const result = await system.execute(
+        {
+          callId: `shell-compat-${index}`,
+          toolName: 'local_shell',
+          arguments: JSON.stringify({
+            command,
+          }),
+        },
+        createContext(workspaceDir)
+      );
+
+      expect(result.success, command).toBe(true);
+      expect(runtime.requests).toHaveLength(1);
+      expect(runtime.requests[0]?.command).toBe(command);
+      expect(runtime.requests[0]?.sandbox).toBe('workspace-write');
+      if (result.success) {
+        expect((result.structured as { executionMode: string }).executionMode).toBe('sandboxed');
+      }
+    }
+  });
+
   it('starts background shell runs and exposes them through task_output/task_stop', async () => {
     const runtime = new BackgroundRecordingShellRuntime();
     const backgroundStoreDir = await fs.mkdtemp(
@@ -677,9 +798,9 @@ describe('local_shell v2', () => {
         );
       });
 
-      expect(
+      await waitUntil(async () =>
         events.some((event) => event.includes('background shell cancelled by parent abort'))
-      ).toBe(true);
+      );
     } finally {
       await fs.rm(backgroundStoreDir, { recursive: true, force: true });
     }

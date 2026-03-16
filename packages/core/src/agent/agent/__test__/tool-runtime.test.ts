@@ -193,7 +193,7 @@ describe('tool-runtime', () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       type: 'tool_result',
-      data: { role: 'tool', content: 'Unknown error', tool_call_id: 'call_2' },
+      data: { role: 'tool', content: 'Command failed.', tool_call_id: 'call_2' },
     });
     expect(onMessage).toHaveBeenCalledOnce();
     expect(toolChunkSpy).toHaveBeenCalledOnce();
@@ -249,7 +249,9 @@ describe('tool-runtime', () => {
     });
     expect(events[0]).toMatchObject({
       type: 'tool_result',
-      data: { content: 'Tool bash blocked by policy [DANGEROUS_COMMAND]: rm blocked' },
+      data: {
+        content: 'Command failed: Tool bash blocked by policy [DANGEROUS_COMMAND]: rm blocked',
+      },
     });
   });
 
@@ -297,6 +299,64 @@ describe('tool-runtime', () => {
     expect(toolChunkSpy).toHaveBeenCalledOnce();
   });
 
+  it('executeTool resolves permission requests through tool_permission events', async () => {
+    const { runtime, manager, emitter } = createToolRuntime();
+
+    manager.execute = vi.fn().mockImplementation(async (_toolCall, options) => {
+      const grant = await options.onPermissionRequest?.({
+        toolName: 'read_file',
+        callId: 'call_perm_1',
+        requestedScope: 'turn',
+        permissions: {
+          fileSystem: {
+            read: ['/tmp/project'],
+          },
+        },
+        reason: 'Need access to /tmp/project',
+      });
+      return grant?.granted
+        ? { success: true, output: JSON.stringify(grant.granted) }
+        : { success: false, output: 'permission denied' };
+    });
+
+    emitter.on(
+      'tool_permission',
+      (info: {
+        resolve: (grant: { granted: Record<string, unknown>; scope: 'turn' | 'session' }) => void;
+      }) => {
+        info.resolve({
+          granted: {
+            fileSystem: {
+              read: ['/tmp/project'],
+            },
+          },
+          scope: 'turn',
+        });
+      }
+    );
+
+    const events = await collectEvents(
+      executeTool(runtime, {
+        toolCall: {
+          id: 'call_perm_1',
+          type: 'function',
+          index: 0,
+          function: { name: 'read_file', arguments: '{"path":"/tmp/project"}' },
+        },
+        stepIndex: 4,
+        callbacks: createCallbacks(),
+      })
+    );
+
+    expect(events[0]).toMatchObject({
+      type: 'tool_result',
+      data: {
+        content: '{"fileSystem":{"read":["/tmp/project"]}}',
+        tool_call_id: 'call_perm_1',
+      },
+    });
+  });
+
   it('executeTool returns an aborted confirmation result when the signal aborts first', async () => {
     const { runtime, manager } = createToolRuntime();
     const abortController = new AbortController();
@@ -331,7 +391,7 @@ describe('tool-runtime', () => {
 
     expect(events[0]).toMatchObject({
       type: 'tool_result',
-      data: { content: 'Operation aborted', tool_call_id: 'call_abort_confirm' },
+      data: { content: 'Command failed: Operation aborted', tool_call_id: 'call_abort_confirm' },
     });
   });
 
@@ -799,7 +859,7 @@ describe('tool-runtime', () => {
 
     expect(events[0]).toMatchObject({
       type: 'tool_result',
-      data: { content: 'tool failed explicitly', tool_call_id: 'call_err_message' },
+      data: { content: 'Command failed: tool failed explicitly', tool_call_id: 'call_err_message' },
     });
   });
 
@@ -826,7 +886,10 @@ describe('tool-runtime', () => {
 
     expect(events[0]).toMatchObject({
       type: 'tool_result',
-      data: { content: 'tool failed without code', tool_call_id: 'call_err_no_code' },
+      data: {
+        content: 'Command failed: tool failed without code',
+        tool_call_id: 'call_err_no_code',
+      },
     });
 
     const toolMetric = metrics.find((metric) => metric.name === 'agent.tool.duration_ms');

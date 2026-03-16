@@ -1,7 +1,7 @@
 import { TextAttributes } from '@opentui/core';
 import type { ReactNode } from 'react';
 
-import type { AgentToolConfirmEvent } from '../agent/runtime/types';
+import type { PendingToolConfirm } from '../hooks/use-agent-chat';
 import { uiTheme } from '../ui/theme';
 import { buildToolConfirmDialogContent } from './tool-confirm-dialog-content';
 import { getToolDisplayIcon, getToolDisplayName } from './tool-display-config';
@@ -10,7 +10,7 @@ type ToolConfirmDialogProps = {
   visible: boolean;
   viewportWidth: number;
   viewportHeight: number;
-  request: (AgentToolConfirmEvent & { selectedAction: 'approve' | 'deny' }) | null;
+  request: PendingToolConfirm | null;
 };
 
 const selectedForeground = '#050608';
@@ -30,6 +30,25 @@ const renderButton = (label: string, tone: 'approve' | 'deny', selected: boolean
       borderColor={selected ? activeBackground : uiTheme.divider}
     >
       <text fg={selected ? activeForeground : uiTheme.text} attributes={TextAttributes.BOLD}>
+        {label}
+      </text>
+    </box>
+  );
+};
+
+const renderScopeOption = (label: string, selected: boolean) => {
+  return (
+    <box
+      paddingLeft={1}
+      paddingRight={1}
+      backgroundColor={selected ? uiTheme.accent : uiTheme.surface}
+      border={['top', 'bottom', 'left', 'right']}
+      borderColor={selected ? uiTheme.accent : uiTheme.divider}
+    >
+      <text
+        fg={selected ? selectedForeground : uiTheme.text}
+        attributes={selected ? TextAttributes.BOLD : undefined}
+      >
         {label}
       </text>
     </box>
@@ -64,11 +83,14 @@ export const ToolConfirmDialog = ({
     return null;
   }
 
-  const content = buildToolConfirmDialogContent(request);
+  const content = buildToolConfirmDialogContent(request, {
+    selectedScope: request.kind === 'permission' ? request.selectedScope : undefined,
+  });
   const metadataSectionCount =
     Number(Boolean(content.reason)) +
     Number(Boolean(content.requestedPath)) +
     Number(content.allowedDirectories.length > 0) +
+    Number(content.permissionItems.length > 0) +
     Number(content.argumentItems.length > 0);
   const preferredHeight =
     12 +
@@ -82,6 +104,11 @@ export const ToolConfirmDialog = ({
   const selectedAction = request.selectedAction;
   const toolLabel = getToolDisplayName(request.toolName);
   const toolIcon = getToolDisplayIcon(request.toolName);
+  const dialogTitle = request.kind === 'permission' ? 'Permission required' : 'Approval required';
+  const dialogSubtitle =
+    request.kind === 'permission'
+      ? 'Review and scope the requested permissions before continuing.'
+      : 'Review the requested tool action before allowing it to run.';
 
   return (
     <box
@@ -114,12 +141,10 @@ export const ToolConfirmDialog = ({
                 {'△'}
               </text>
               <text fg={uiTheme.text} attributes={TextAttributes.BOLD}>
-                Permission required
+                {dialogTitle}
               </text>
             </box>
-            <text fg={uiTheme.muted}>
-              Review the requested tool action before allowing it to run.
-            </text>
+            <text fg={uiTheme.muted}>{dialogSubtitle}</text>
           </box>
 
           <box
@@ -169,10 +194,25 @@ export const ToolConfirmDialog = ({
 
               {content.reason
                 ? renderSection(
-                    'Why approval is needed',
+                    request.kind === 'permission'
+                      ? 'Why these permissions are needed'
+                      : 'Why approval is needed',
                     <text fg={uiTheme.text} wrapMode="word">
                       {content.reason}
                     </text>
+                  )
+                : null}
+
+              {request.kind === 'permission'
+                ? renderSection(
+                    'Permission scope',
+                    <box flexDirection="column" gap={1}>
+                      <text fg={uiTheme.muted}>Choose how long to keep the granted access.</text>
+                      <box flexDirection="row" gap={1}>
+                        {renderScopeOption('This turn', request.selectedScope === 'turn')}
+                        {renderScopeOption('This session', request.selectedScope === 'session')}
+                      </box>
+                    </box>
                   )
                 : null}
 
@@ -199,6 +239,30 @@ export const ToolConfirmDialog = ({
                         >
                           {directory}
                         </text>
+                      ))}
+                    </box>,
+                    uiTheme.codeBlock.bg
+                  )
+                : null}
+
+              {content.permissionItems.length > 0
+                ? renderSection(
+                    'Requested permissions',
+                    <box flexDirection="column" gap={1}>
+                      {content.permissionItems.map((item) => (
+                        <box key={item.label} flexDirection="column" gap={0}>
+                          <text fg={uiTheme.muted}>{item.label}</text>
+                          {item.values.map((value) => (
+                            <text
+                              key={`${item.label}:${value}`}
+                              fg={uiTheme.text}
+                              wrapMode="char"
+                              attributes={uiTheme.typography.code}
+                            >
+                              {value}
+                            </text>
+                          ))}
+                        </box>
                       ))}
                     </box>,
                     uiTheme.codeBlock.bg
@@ -247,11 +311,19 @@ export const ToolConfirmDialog = ({
           backgroundColor={uiTheme.panel}
         >
           <box flexDirection="row" gap={1}>
-            {renderButton('Allow once', 'approve', selectedAction === 'approve')}
+            {renderButton(
+              request.kind === 'permission' ? 'Grant access' : 'Allow once',
+              'approve',
+              selectedAction === 'approve'
+            )}
             {renderButton('Reject', 'deny', selectedAction === 'deny')}
           </box>
           <box flexDirection="column">
-            <text fg={uiTheme.muted}>left/right switch enter confirm</text>
+            <text fg={uiTheme.muted}>
+              {request.kind === 'permission'
+                ? 'left/right action up/down scope enter confirm'
+                : 'left/right switch enter confirm'}
+            </text>
             <text fg={uiTheme.muted}>esc rejects this request</text>
           </box>
         </box>
