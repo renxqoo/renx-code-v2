@@ -53,7 +53,8 @@ function hasAgentSourceRoot(root) {
   return (
     fs.existsSync(path.join(root, 'packages', 'core', 'src', 'providers', 'index.ts')) &&
     fs.existsSync(path.join(root, 'packages', 'core', 'src', 'config', 'index.ts')) &&
-    fs.existsSync(path.join(root, 'packages', 'core', 'src', 'agent', 'app', 'index.ts'))
+    fs.existsSync(path.join(root, 'packages', 'core', 'src', 'agent', 'app', 'index.ts')) &&
+    fs.existsSync(path.join(root, 'packages', 'cli', 'src', 'index.ts'))
   );
 }
 
@@ -72,7 +73,7 @@ for (const candidate of binaryCandidates) {
   }
 }
 
-const sourceEntry = path.join(packageRoot, 'src', 'index.tsx');
+const sourceEntry = path.join(packageRoot, 'src', 'index.ts');
 if (fs.existsSync(sourceEntry)) {
   const packagedRepoRoot = path.join(packageRoot, 'vendor', 'agent-root');
   const localRepoRoot = path.resolve(packageRoot, '..', '..');

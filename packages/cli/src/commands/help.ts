@@ -1,0 +1,25 @@
+export function renderHelp(): string {
+  return [
+    'Renx CLI',
+    '',
+    'Usage:',
+    '  renx                          Enter TUI (same as `renx tui`)',
+    '  renx tui [--session-id <id>] [--conversation-id <id>]',
+    '  renx run <prompt> [--model <id>] [--json] [--max-steps <n>] [--require-approval]',
+    '  renx ask <question> [--model <id>] [--json] [--max-steps <n>] [--require-approval]',
+    '  renx session list [--conversation-id <id>] [--status <csv>] [--limit <n>] [--cursor <cursor>] [--json]',
+    '  renx session show --id <conversation-id|execution-id> [--limit <n>] [--json]',
+    '  renx session resume --id <conversation-id>',
+    '  renx config get <key> [--scope <project|global>] [--json]',
+    '  renx config set <key> <value> [--scope <project|global>]',
+    '  renx config list [--scope <project|global>] [--json]',
+    '  renx doctor [--json]',
+    '  renx --help',
+    '  renx --version',
+    '',
+    'Notes:',
+    '  - `run` and `ask` are non-interactive command modes and auto-approve tools by default.',
+    '  - Add `--require-approval` to make non-interactive runs deny approval-requiring tools.',
+    '  - `session-id` and `conversation-id` can be used interchangeably for TUI launch.',
+  ].join('\n');
+}

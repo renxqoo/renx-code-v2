@@ -144,6 +144,30 @@ importers:
         specifier: ^4.3.6
         version: 4.3.6
 
+  packages/tui:
+    dependencies:
+      '@opentui/core':
+        specifier: ^0.1.84
+        version: 0.1.87(stage-js@1.0.1)(typescript@5.9.3)(web-tree-sitter@0.25.10)
+      '@opentui/react':
+        specifier: ^0.1.84
+        version: 0.1.87(react-devtools-core@7.0.1)(react@19.2.4)(stage-js@1.0.1)(typescript@5.9.3)(web-tree-sitter@0.25.10)(ws@8.19.0)
+      '@renx-code/core':
+        specifier: workspace:*
+        version: link:../core
+      marked:
+        specifier: ^15.0.12
+        version: 15.0.12
+      react:
+        specifier: ^19.2.4
+        version: 19.2.4
+      react-dom:
+        specifier: ^19.2.4
+        version: 19.2.4(react@19.2.4)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
 packages:
 
   '@ampproject/remapping@2.3.0':

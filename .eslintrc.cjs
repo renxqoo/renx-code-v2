@@ -18,6 +18,7 @@ module.exports = {
     '.husky',
     'packages/*/dist',
     'packages/cli/bin',
+    'packages/tui/bin',
   ],
   overrides: [
     {

@@ -8,6 +8,7 @@ const SOURCE_REPO_ROOT = resolve(THIS_DIR, '../../../../../');
 const REPO_MARKERS = [
   'pnpm-workspace.yaml',
   join('packages', 'core', 'src', 'index.ts'),
+  join('packages', 'tui', 'package.json'),
   join('packages', 'cli', 'package.json'),
 ];
 
