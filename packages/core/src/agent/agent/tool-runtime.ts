@@ -1,5 +1,4 @@
 import type { Message, StreamEvent } from '../types';
-import { ToolManager } from '../tool/tool-manager';
 import type { ToolConcurrencyPolicy } from '../tool/types';
 import type { ToolCall } from '../../providers';
 
@@ -27,18 +26,15 @@ export function resolveToolConcurrencyPolicy(
   runtime: ToolRuntime,
   toolCall: ToolCall
 ): ToolConcurrencyPolicy {
-  // Prefer explicit runtime overrides, then fall back to ToolManager defaults.
+  // Prefer explicit runtime overrides, then fall back to executor defaults.
   // This keeps orchestration policy replaceable without coupling the rest of
-  // the pipeline to one manager implementation.
+  // the pipeline to one executor implementation.
   if (runtime.execution.resolveConcurrencyPolicy) {
     return runtime.execution.resolveConcurrencyPolicy(toolCall);
   }
 
-  const manager = runtime.execution.manager as ToolManager & {
-    getConcurrencyPolicy?: (call: ToolCall) => ToolConcurrencyPolicy;
-  };
-  if (typeof manager.getConcurrencyPolicy === 'function') {
-    return manager.getConcurrencyPolicy(toolCall);
+  if (typeof runtime.execution.executor.getConcurrencyPolicy === 'function') {
+    return runtime.execution.executor.getConcurrencyPolicy(toolCall);
   }
 
   return { mode: 'exclusive' };

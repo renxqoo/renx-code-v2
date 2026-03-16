@@ -68,6 +68,7 @@ const parseJsonLike = (value: unknown): unknown => {
 
 const humanizeKey = (key: string): string => {
   return key
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
     .split('_')
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
@@ -132,15 +133,15 @@ const buildSummary = (event: AgentToolConfirmEvent): { summary: string; detail?:
   const args = asRecord(event.args);
 
   switch (event.toolName) {
-    case 'bash': {
+    case 'local_shell': {
       const command = readString(args.command) ?? '(empty command)';
       const description = readString(args.description);
       return {
-        summary: description ? `Run bash: ${description}` : 'Run bash command',
+        summary: description ? `Run shell: ${description}` : 'Run shell command',
         detail: `$ ${command}`,
       };
     }
-    case 'file_read':
+    case 'read_file':
       return { summary: `Read ${formatPathTarget(args.path)}` };
     case 'file_edit':
       return { summary: `Edit ${formatPathTarget(args.path)}` };
@@ -156,14 +157,15 @@ const buildSummary = (event: AgentToolConfirmEvent): { summary: string; detail?:
         summary: `Grep ${readString(args.pattern) ?? ''}`,
         detail: `Path: ${formatPathTarget(args.path)}`,
       };
-    case 'task':
-    case 'agent': {
-      const displayName = getToolDisplayName(event.toolName).replace(/\s+run$/i, '');
+    case 'spawn_agent': {
+      const displayName = getToolDisplayName(event.toolName);
       return {
-        summary: `Run ${displayName} ${(readString(args.subagent_type) ?? 'agent').trim()}`,
+        summary: `Run ${displayName} ${(readString(args.role) ?? 'agent').trim()}`,
         detail: readString(args.description),
       };
     }
+    case 'cancel_agent':
+      return { summary: `Cancel ${readString(args.agentId) ?? 'agent run'}` };
     default:
       return { summary: `Call ${event.toolName}` };
   }

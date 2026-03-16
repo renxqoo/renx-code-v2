@@ -36,14 +36,14 @@ const buildHarness = () => {
 const createToolUseEvent = (): AgentToolUseEvent => ({
   id: 'call_1',
   function: {
-    name: 'bash',
+    name: 'local_shell',
     arguments: JSON.stringify({ command: 'ls -la' }),
   },
 });
 
 const createStdoutStreamEvent = (): AgentToolStreamEvent => ({
   toolCallId: 'call_1',
-  toolName: 'bash',
+  toolName: 'local_shell',
   type: 'stdout',
   sequence: 1,
   timestamp: Date.now(),
@@ -54,7 +54,7 @@ const createToolResultEvent = (): AgentToolResultEvent => ({
   toolCall: {
     id: 'call_1',
     function: {
-      name: 'bash',
+      name: 'local_shell',
       arguments: JSON.stringify({ command: 'ls -la' }),
     },
   },
@@ -70,7 +70,7 @@ const createEmptyToolResultEvent = (): AgentToolResultEvent => ({
   toolCall: {
     id: 'call_2',
     function: {
-      name: 'bash',
+      name: 'local_shell',
       arguments: JSON.stringify({ command: 'find /tmp -name missing' }),
     },
   },
@@ -142,7 +142,7 @@ describe('buildAgentEventHandlers', () => {
     const toolResult = readSegments().find(
       (segment) => segment.id === `${turnId}:tool-result:call_1`
     );
-    expect(toolResult?.content).toContain('# Result: bash (call_1) success');
+    expect(toolResult?.content).toContain('# Result: local_shell (call_1) success');
     expect(toolResult?.content).not.toContain('total 80');
   });
 
@@ -155,7 +155,7 @@ describe('buildAgentEventHandlers', () => {
     const toolResult = readSegments().find(
       (segment) => segment.id === `${turnId}:tool-result:call_1`
     );
-    expect(toolResult?.content).toContain('# Result: bash (call_1) success');
+    expect(toolResult?.content).toContain('# Result: local_shell (call_1) success');
     expect(toolResult?.content).toContain('total 80');
   });
 
@@ -165,7 +165,7 @@ describe('buildAgentEventHandlers', () => {
     handlers.onToolUse?.({
       id: 'call_2',
       function: {
-        name: 'bash',
+        name: 'local_shell',
         arguments: JSON.stringify({ command: 'find /tmp -name missing' }),
       },
     });
@@ -174,7 +174,7 @@ describe('buildAgentEventHandlers', () => {
     const toolResult = readSegments().find(
       (segment) => segment.id === `${turnId}:tool-result:call_2`
     );
-    expect(toolResult?.content).toContain('# Result: bash (call_2) success');
+    expect(toolResult?.content).toContain('# Result: local_shell (call_2) success');
     expect(toolResult?.content).toContain('Command completed successfully with no output.');
     expect(toolResult?.content).not.toContain('{"output":""}');
   });

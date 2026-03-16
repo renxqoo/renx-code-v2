@@ -1,26 +1,22 @@
-import type { ToolCall } from '../../providers';
 import type { ToolDecision } from '../types';
+import type { ToolCall } from '../../providers';
 
-import { UnknownError } from './error';
 import { generateId } from './shared';
 import { executeToolCallWithLedger, type ToolExecutionLedgerRecord } from './tool-execution-ledger';
 import { createToolResultMessageFromLedger, resolveToolResultSummary } from './tool-result';
-import {
-  buildWriteFileSessionKey,
-  cleanupWriteFileBufferIfNeeded,
-  enrichWriteFileToolError,
-  isWriteFileProtocolOutput,
-  isWriteFileToolCall,
-  parseWriteFileProtocolOutput,
-  shouldEnrichWriteFileFailure,
-} from './write-file-session';
-import type { ToolResult } from '../tool/base-tool';
 import type { ExecuteToolArgs, ToolRuntime } from './tool-runtime-types';
+import { parseWriteFileProtocolOutput } from '../tool-v2/write-file-protocol';
 
 function buildToolConfirmPromise(
   runtime: ToolRuntime,
   abortSignal: AbortSignal | undefined
-): (info: { toolCallId: string; toolName: string; arguments: string }) => Promise<ToolDecision> {
+): (info: {
+  toolCallId: string;
+  toolName: string;
+  arguments: string;
+  reason?: string;
+  metadata?: Record<string, unknown>;
+}) => Promise<ToolDecision> {
   return async (info) =>
     new Promise<ToolDecision>((resolve) => {
       let settled = false;
@@ -54,180 +50,150 @@ function buildToolConfirmPromise(
     });
 }
 
-async function maybeAutoFinalizeWriteFileResult(
-  runtime: ToolRuntime,
-  params: {
-    toolCall: ToolCall;
-    toolOutput: string;
-    stepIndex: number;
-    abortSignal?: AbortSignal;
-  }
-): Promise<ToolResult> {
-  const { toolCall, toolOutput, stepIndex, abortSignal } = params;
-  if (!isWriteFileToolCall(toolCall)) {
-    return {
-      success: false,
-      output: toolOutput,
-    };
-  }
-
-  const protocol = parseWriteFileProtocolOutput(toolOutput);
-  if (
-    !protocol ||
-    protocol.code !== 'WRITE_FILE_PARTIAL_BUFFERED' ||
-    protocol.nextAction !== 'finalize'
-  ) {
-    return {
-      success: false,
-      output: toolOutput,
-    };
-  }
-
-  const bufferId = protocol.nextArgs?.bufferId || protocol.buffer?.bufferId;
-  const finalizePath = protocol.nextArgs?.path || protocol.buffer?.path || undefined;
-  if (!bufferId) {
-    return {
-      success: false,
-      output: toolOutput,
-    };
-  }
-
-  const finalizeToolCall: ToolCall = {
-    id: `${toolCall.id}__finalize`,
-    type: toolCall.type,
-    index: toolCall.index,
-    function: {
-      name: toolCall.function.name,
-      arguments: JSON.stringify({
-        mode: 'finalize',
-        bufferId,
-        ...(finalizePath ? { path: finalizePath } : {}),
-      }),
-    },
-  };
-
-  // Buffered write_file protocols intentionally split "receive content" from
-  // "commit to disk". When only finalize remains, we complete it here so the
-  // outer loop still observes a single logical tool result.
-  runtime.resilience.throwIfAborted(abortSignal);
-  return runtime.execution.manager.execute(finalizeToolCall, {
-    toolCallId: finalizeToolCall.id,
-    loopIndex: stepIndex,
-    agent: runtime.agentRef,
-    toolAbortSignal: abortSignal,
-  });
-}
-
 async function buildRecordedToolResult(
   runtime: ToolRuntime,
-  {
-    toolCall,
-    stepIndex,
-    callbacks,
-    abortSignal,
-    executionId,
-    writeBufferSessions = new Map(),
-  }: ExecuteToolArgs
+  { toolCall, stepIndex, callbacks, abortSignal, executionId }: ExecuteToolArgs
 ): Promise<ToolExecutionLedgerRecord> {
-  const writeFileSessionKey = buildWriteFileSessionKey({
+  const confirm = buildToolConfirmPromise(runtime, abortSignal);
+  const toolExecResult = await runtime.execution.executor.execute(toolCall, {
     executionId,
     stepIndex,
-    toolCallId: toolCall.id,
-  });
-  const confirm = buildToolConfirmPromise(runtime, abortSignal);
-
-  const toolExecResult = await runtime.execution.manager.execute(toolCall, {
-    onChunk: (chunk) => {
+    agent: runtime.agentRef,
+    sessionState: runtime.execution.sessionState,
+    abortSignal,
+    onStreamEvent: async (event) => {
       runtime.events.emit('tool_chunk', {
         toolCallId: toolCall.id,
         toolName: toolCall.function.name,
         arguments: toolCall.function.arguments,
-        chunk: chunk.data,
-        chunkType: chunk.type,
+        chunk: event.message,
+        chunkType: event.type,
       });
     },
-    onConfirm: confirm,
+    onExecutionEvent: undefined,
+    onApproval: async (request) => {
+      const decision = await confirm({
+        toolCallId: request.callId,
+        toolName: request.toolName,
+        arguments: toolCall.function.arguments,
+        reason: request.reason,
+        metadata: {
+          commandPreview: request.commandPreview,
+          readPaths: request.readPaths,
+          writePaths: request.writePaths,
+        },
+      });
+      return {
+        approved: decision.approved,
+        scope: 'once',
+        reason: decision.message,
+      };
+    },
+    onPermissionRequest: undefined,
     onPolicyCheck: callbacks?.onToolPolicy
       ? async (info) => {
           const decision = await callbacks.onToolPolicy?.(info);
           return decision || { allowed: true };
         }
       : undefined,
-    toolCallId: toolCall.id,
-    loopIndex: stepIndex,
-    agent: runtime.agentRef,
-    toolAbortSignal: abortSignal,
+  });
+  const finalizedResult = await maybeAutoFinalizeWriteFileResult(runtime, {
+    toolCall,
+    toolExecResult,
+    stepIndex,
+    callbacks,
+    abortSignal,
+    executionId,
+    confirm,
   });
 
-  let toolOutput = '';
-  let errorCode: string | undefined;
+  return {
+    result: finalizedResult,
+    summary: resolveToolResultSummary(toolCall, finalizedResult),
+    recordedAt: Date.now(),
+  };
+}
 
-  if (toolExecResult.success) {
-    toolOutput = toolExecResult.output || '';
-    await cleanupWriteFileBufferIfNeeded(toolCall, writeBufferSessions, writeFileSessionKey);
-  } else if (isWriteFileToolCall(toolCall)) {
-    // write_file failures are special because the model may stream a large
-    // payload incrementally. Preserve or enrich protocol data so the model can
-    // recover deterministically instead of seeing a lossy generic error string.
-    if (isWriteFileProtocolOutput(toolExecResult.output)) {
-      toolOutput = toolExecResult.output;
-    } else if (shouldEnrichWriteFileFailure(toolExecResult.error, toolExecResult.output)) {
-      const errorContent =
-        toolExecResult.error?.message || toolExecResult.output || new UnknownError().message;
-      toolOutput = await enrichWriteFileToolError(
-        toolCall,
-        errorContent,
-        writeBufferSessions,
-        writeFileSessionKey
-      );
-    } else {
-      toolOutput =
-        toolExecResult.error?.message || toolExecResult.output || new UnknownError().message;
-    }
-
-    if (isWriteFileProtocolOutput(toolOutput)) {
-      const finalizeResult = await maybeAutoFinalizeWriteFileResult(runtime, {
-        toolCall,
-        toolOutput,
-        stepIndex,
-        abortSignal,
-      });
-      if (finalizeResult.success) {
-        toolOutput = finalizeResult.output || '';
-        await cleanupWriteFileBufferIfNeeded(toolCall, writeBufferSessions, writeFileSessionKey);
-        return {
-          success: true,
-          output: toolOutput,
-          summary: resolveToolResultSummary(toolCall, finalizeResult, toolOutput),
-          payload: finalizeResult.payload,
-          metadata: finalizeResult.metadata,
-          errorName: undefined,
-          errorMessage: undefined,
-          errorCode: undefined,
-          recordedAt: Date.now(),
-        };
-      }
-    }
-
-    errorCode =
-      runtime.diagnostics.extractErrorCode(toolExecResult.error) || 'TOOL_EXECUTION_FAILED';
-  } else {
-    toolOutput =
-      toolExecResult.error?.message || toolExecResult.output || new UnknownError().message;
-    errorCode =
-      runtime.diagnostics.extractErrorCode(toolExecResult.error) || 'TOOL_EXECUTION_FAILED';
+async function maybeAutoFinalizeWriteFileResult(
+  runtime: ToolRuntime,
+  params: {
+    toolCall: ToolCall;
+    toolExecResult: Awaited<ReturnType<ToolRuntime['execution']['executor']['execute']>>;
+    stepIndex: number;
+    callbacks: ExecuteToolArgs['callbacks'];
+    abortSignal: AbortSignal | undefined;
+    executionId: string | undefined;
+    confirm: ReturnType<typeof buildToolConfirmPromise>;
+  }
+) {
+  const protocol = parseWriteFileProtocolOutput(params.toolExecResult.output);
+  const onToolPolicy = params.callbacks?.onToolPolicy;
+  if (
+    params.toolCall.function.name !== 'write_file' ||
+    !protocol ||
+    protocol.nextAction !== 'finalize' ||
+    !protocol.nextArgs
+  ) {
+    return params.toolExecResult;
   }
 
+  const finalizeResult = await runtime.execution.executor.execute(
+    {
+      ...params.toolCall,
+      id: `${params.toolCall.id}__finalize`,
+      function: {
+        ...params.toolCall.function,
+        arguments: JSON.stringify(protocol.nextArgs),
+      },
+    },
+    {
+      executionId: params.executionId,
+      stepIndex: params.stepIndex,
+      agent: runtime.agentRef,
+      sessionState: runtime.execution.sessionState,
+      abortSignal: params.abortSignal,
+      onStreamEvent: async (event) => {
+        runtime.events.emit('tool_chunk', {
+          toolCallId: params.toolCall.id,
+          toolName: params.toolCall.function.name,
+          arguments: params.toolCall.function.arguments,
+          chunk: event.message,
+          chunkType: event.type,
+        });
+      },
+      onExecutionEvent: undefined,
+      onApproval: async (request) => {
+        const decision = await params.confirm({
+          toolCallId: request.callId,
+          toolName: request.toolName,
+          arguments: JSON.stringify(protocol.nextArgs),
+          reason: request.reason,
+          metadata: {
+            commandPreview: request.commandPreview,
+            readPaths: request.readPaths,
+            writePaths: request.writePaths,
+          },
+        });
+        return {
+          approved: decision.approved,
+          scope: 'once',
+          reason: decision.message,
+        };
+      },
+      onPermissionRequest: undefined,
+      onPolicyCheck: onToolPolicy
+        ? async (info) => {
+            const decision = await onToolPolicy(info);
+            return decision || { allowed: true };
+          }
+        : undefined,
+    }
+  );
+
   return {
-    success: toolExecResult.success,
-    output: toolOutput,
-    summary: resolveToolResultSummary(toolCall, toolExecResult, toolOutput),
-    payload: toolExecResult.payload,
-    metadata: toolExecResult.metadata,
-    errorName: toolExecResult.error?.name,
-    errorMessage: toolExecResult.error?.message,
-    errorCode,
-    recordedAt: Date.now(),
+    ...finalizeResult,
+    callId: params.toolCall.id,
+    toolName: params.toolCall.function.name,
   };
 }
 
@@ -263,7 +229,9 @@ export async function executeToolWithLedger(
   return {
     replayResult,
     fromCache: ledgerResult.fromCache,
-    errorCode: ledgerResult.record.errorCode,
-    success: ledgerResult.record.success,
+    errorCode: ledgerResult.record.result.success
+      ? undefined
+      : ledgerResult.record.result.error?.errorCode,
+    success: ledgerResult.record.result.success,
   };
 }

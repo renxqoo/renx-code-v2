@@ -1,0 +1,463 @@
+import { spawn, spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import * as fs from 'node:fs';
+import * as fsp from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import type { ToolSandboxMode } from '../contracts';
+import type { ShellExecutionMode } from '../shell-policy';
+import type { ShellSandboxPolicy } from '../shell-sandbox';
+
+export type ShellSandboxEnforcement = 'advisory' | 'enforced';
+
+export interface ShellRuntimeSandboxCapability {
+  readonly mode: ToolSandboxMode;
+  readonly enforcement: ShellSandboxEnforcement;
+}
+
+export interface ShellRuntimeCapabilities {
+  readonly sandboxing: readonly ShellRuntimeSandboxCapability[];
+  readonly escalation?: {
+    readonly supported: boolean;
+  };
+  readonly background?: {
+    readonly supported: boolean;
+  };
+}
+
+export interface ShellRuntimeRequest {
+  readonly command: string;
+  readonly cwd: string;
+  readonly timeoutMs: number;
+  readonly sandbox: ToolSandboxMode;
+  readonly sandboxProfile?: string;
+  readonly policyProfile?: string;
+  readonly requireSandboxEnforcement?: boolean;
+  readonly executionMode?: ShellExecutionMode;
+  readonly sandboxPolicy?: ShellSandboxPolicy;
+  readonly environment?: Record<string, string>;
+  readonly signal?: AbortSignal;
+  readonly onStdout?: (chunk: string) => void | Promise<void>;
+  readonly onStderr?: (chunk: string) => void | Promise<void>;
+}
+
+export type ShellBackgroundExecutionStatus =
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'timed_out';
+
+export interface ShellBackgroundExecutionRecord {
+  readonly taskId: string;
+  readonly command: string;
+  readonly cwd: string;
+  readonly pid?: number;
+  readonly logPath: string;
+  readonly statusPath: string;
+  readonly status: ShellBackgroundExecutionStatus;
+  readonly sandbox: ToolSandboxMode;
+  readonly sandboxProfile?: string;
+  readonly policyProfile?: string;
+  readonly executionMode: ShellExecutionMode;
+  readonly exitCode?: number;
+  readonly output?: string;
+  readonly error?: string;
+  readonly timeoutMs: number;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+  readonly startedAt?: number;
+  readonly endedAt?: number;
+  readonly metadata?: Record<string, unknown>;
+}
+
+export interface ShellRuntimeResult {
+  readonly exitCode: number;
+  readonly timedOut: boolean;
+  readonly output: string;
+}
+
+export interface ShellRuntime {
+  execute(request: ShellRuntimeRequest): Promise<ShellRuntimeResult>;
+  getCapabilities?(): ShellRuntimeCapabilities;
+}
+
+export interface ShellBackgroundRuntime extends ShellRuntime {
+  startBackground(request: ShellRuntimeRequest): Promise<ShellBackgroundExecutionRecord>;
+  pollBackground(record: ShellBackgroundExecutionRecord): Promise<ShellBackgroundExecutionRecord>;
+  cancelBackground(
+    record: ShellBackgroundExecutionRecord,
+    reason?: string
+  ): Promise<ShellBackgroundExecutionRecord>;
+}
+
+export interface ShellSandboxStateAwareRuntime extends ShellRuntime {
+  updateSandboxPolicy(policy: ShellSandboxPolicy): Promise<void>;
+}
+
+export class LocalProcessShellRuntime implements ShellRuntime {
+  private readonly backgroundBaseDir: string;
+  private readonly now: () => number;
+  private readonly maxBackgroundOutputBytes: number;
+
+  constructor(
+    options: {
+      backgroundBaseDir?: string;
+      now?: () => number;
+      maxBackgroundOutputBytes?: number;
+    } = {}
+  ) {
+    this.backgroundBaseDir = path.resolve(
+      options.backgroundBaseDir || path.join(os.tmpdir(), 'renx-tool-v2-shell-bg')
+    );
+    this.now = options.now || Date.now;
+    this.maxBackgroundOutputBytes = options.maxBackgroundOutputBytes ?? 30000;
+  }
+
+  getCapabilities(): ShellRuntimeCapabilities {
+    return {
+      sandboxing: [
+        {
+          mode: 'restricted',
+          enforcement: 'advisory',
+        },
+        {
+          mode: 'workspace-write',
+          enforcement: 'advisory',
+        },
+        {
+          mode: 'full-access',
+          enforcement: 'advisory',
+        },
+      ],
+      escalation: {
+        supported: true,
+      },
+      background: {
+        supported: true,
+      },
+    };
+  }
+
+  async execute(request: ShellRuntimeRequest): Promise<ShellRuntimeResult> {
+    const shell = process.platform === 'win32' ? process.env.COMSPEC || 'cmd.exe' : '/bin/bash';
+    const shellArgs =
+      process.platform === 'win32' ? ['/d', '/s', '/c', request.command] : ['-lc', request.command];
+
+    return new Promise((resolve, reject) => {
+      const child = spawn(shell, shellArgs, {
+        cwd: path.resolve(request.cwd),
+        env: {
+          ...process.env,
+          ...(request.environment || {}),
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+
+      let output = '';
+      let timedOut = false;
+
+      const timeout = setTimeout(() => {
+        timedOut = true;
+        child.kill();
+      }, request.timeoutMs);
+
+      if (request.signal) {
+        if (request.signal.aborted) {
+          timedOut = true;
+          child.kill();
+        } else {
+          request.signal.addEventListener(
+            'abort',
+            () => {
+              timedOut = true;
+              child.kill();
+            },
+            { once: true }
+          );
+        }
+      }
+
+      child.stdout?.on('data', (chunk: Buffer) => {
+        const text = chunk.toString('utf8');
+        output += text;
+        void request.onStdout?.(text);
+      });
+
+      child.stderr?.on('data', (chunk: Buffer) => {
+        const text = chunk.toString('utf8');
+        output += text;
+        void request.onStderr?.(text);
+      });
+
+      child.once('error', (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
+
+      child.once('close', (code) => {
+        clearTimeout(timeout);
+        resolve({
+          exitCode: code ?? (timedOut ? 124 : 1),
+          timedOut,
+          output: output.trim(),
+        });
+      });
+    });
+  }
+
+  async startBackground(request: ShellRuntimeRequest): Promise<ShellBackgroundExecutionRecord> {
+    await fsp.mkdir(this.backgroundBaseDir, { recursive: true });
+    const taskId = `task_${this.now()}_${randomUUID().slice(0, 8)}`;
+    const runDir = path.join(this.backgroundBaseDir, taskId);
+    await fsp.mkdir(runDir, { recursive: true });
+    const logPath = path.join(runDir, 'output.log');
+    const statusPath = path.join(runDir, 'status');
+    fs.writeFileSync(logPath, '', 'utf8');
+    const outputFd = fs.openSync(logPath, 'a');
+    const { shellPath, shellArgs } = resolveBackgroundShell(request.command, statusPath);
+    const child = spawn(shellPath, shellArgs, {
+      cwd: path.resolve(request.cwd),
+      env: {
+        ...process.env,
+        ...(request.environment || {}),
+      },
+      detached: true,
+      stdio: ['ignore', outputFd, outputFd],
+      windowsHide: true,
+    });
+    fs.closeSync(outputFd);
+    child.unref();
+
+    const now = this.now();
+    return {
+      taskId,
+      command: request.command,
+      cwd: path.resolve(request.cwd),
+      pid: child.pid,
+      logPath,
+      statusPath,
+      status: 'running',
+      sandbox: request.sandbox,
+      sandboxProfile: request.sandboxProfile,
+      policyProfile: request.policyProfile,
+      executionMode: request.executionMode || 'sandboxed',
+      timeoutMs: request.timeoutMs,
+      createdAt: now,
+      updatedAt: now,
+      startedAt: now,
+      metadata: {
+        networkAccess: request.sandboxPolicy?.networkAccess,
+      },
+    };
+  }
+
+  async pollBackground(
+    record: ShellBackgroundExecutionRecord
+  ): Promise<ShellBackgroundExecutionRecord> {
+    const output = await readBackgroundOutput(record.logPath, this.maxBackgroundOutputBytes);
+    if (record.status !== 'running') {
+      return {
+        ...record,
+        output,
+      };
+    }
+
+    const statusFile = await readStatusFile(record.statusPath);
+    if (statusFile) {
+      const endedAt = await readMtimeMs(record.statusPath);
+      return {
+        ...record,
+        status: statusFile.exitCode === 0 ? 'completed' : 'failed',
+        exitCode: statusFile.exitCode,
+        output,
+        updatedAt: this.now(),
+        endedAt: endedAt || this.now(),
+      };
+    }
+
+    if (typeof record.pid === 'number' && !isProcessAlive(record.pid)) {
+      return {
+        ...record,
+        status: 'failed',
+        error: 'Background process exited without status metadata',
+        output,
+        updatedAt: this.now(),
+        endedAt: this.now(),
+      };
+    }
+
+    return {
+      ...record,
+      output,
+      updatedAt: this.now(),
+    };
+  }
+
+  async cancelBackground(
+    record: ShellBackgroundExecutionRecord,
+    reason?: string
+  ): Promise<ShellBackgroundExecutionRecord> {
+    if (record.status !== 'running') {
+      return record;
+    }
+
+    if (typeof record.pid === 'number') {
+      terminateProcess(record.pid);
+    }
+
+    const now = this.now();
+    await fsp.writeFile(record.statusPath, '130', 'utf8').catch(() => undefined);
+    const output = await readBackgroundOutput(record.logPath, this.maxBackgroundOutputBytes);
+    return {
+      ...record,
+      status: 'cancelled',
+      exitCode: 130,
+      error: reason || 'Cancelled by local_shell',
+      output,
+      updatedAt: now,
+      endedAt: now,
+    };
+  }
+}
+
+export function getShellRuntimeCapabilities(runtime: ShellRuntime): ShellRuntimeCapabilities {
+  return (
+    runtime.getCapabilities?.() || {
+      sandboxing: [
+        {
+          mode: 'full-access',
+          enforcement: 'advisory',
+        },
+      ],
+      escalation: {
+        supported: false,
+      },
+      background: {
+        supported: false,
+      },
+    }
+  );
+}
+
+export function getShellRuntimeSandboxCapability(
+  runtime: ShellRuntime,
+  mode: ToolSandboxMode
+): ShellRuntimeSandboxCapability | undefined {
+  return getShellRuntimeCapabilities(runtime).sandboxing.find(
+    (capability) => capability.mode === mode
+  );
+}
+
+export function shellRuntimeSupportsEscalation(runtime: ShellRuntime): boolean {
+  return getShellRuntimeCapabilities(runtime).escalation?.supported === true;
+}
+
+export function shellRuntimeSupportsBackground(runtime: ShellRuntime): boolean {
+  return getShellRuntimeCapabilities(runtime).background?.supported === true;
+}
+
+export async function syncShellRuntimeSandboxPolicy(
+  runtime: ShellRuntime,
+  policy?: ShellSandboxPolicy
+): Promise<void> {
+  if (!policy) {
+    return;
+  }
+
+  const candidate = runtime as Partial<ShellSandboxStateAwareRuntime>;
+  if (typeof candidate.updateSandboxPolicy !== 'function') {
+    return;
+  }
+
+  await candidate.updateSandboxPolicy(policy);
+}
+
+function resolveBackgroundShell(
+  command: string,
+  statusPath: string
+): { shellPath: string; shellArgs: string[] } {
+  if (process.platform === 'win32') {
+    return {
+      shellPath: process.env.COMSPEC || 'cmd.exe',
+      shellArgs: [
+        '/d',
+        '/s',
+        '/c',
+        `(${command}) & set "__renx_exit=%ERRORLEVEL%" & > "${statusPath}" echo %__renx_exit% & exit /b %__renx_exit%`,
+      ],
+    };
+  }
+
+  return {
+    shellPath: '/bin/bash',
+    shellArgs: [
+      '-lc',
+      `{ ${command}; }; __renx_exit=$?; printf '%s' "$__renx_exit" > '${statusPath.replace(/'/g, `'\\''`)}'; exit "$__renx_exit"`,
+    ],
+  };
+}
+
+async function readBackgroundOutput(
+  logPath: string,
+  maxBytes: number
+): Promise<string | undefined> {
+  try {
+    const buffer = await fsp.readFile(logPath);
+    const slice = buffer.length > maxBytes ? buffer.subarray(buffer.length - maxBytes) : buffer;
+    return slice.toString('utf8').trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function readStatusFile(statusPath: string): Promise<{ exitCode: number } | null> {
+  try {
+    const raw = await fsp.readFile(statusPath, 'utf8');
+    const exitCode = Number.parseInt(raw.trim(), 10);
+    if (Number.isNaN(exitCode)) {
+      return null;
+    }
+    return { exitCode };
+  } catch {
+    return null;
+  }
+}
+
+async function readMtimeMs(filePath: string): Promise<number | undefined> {
+  try {
+    const stat = await fsp.stat(filePath);
+    return Math.round(stat.mtimeMs);
+  } catch {
+    return undefined;
+  }
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function terminateProcess(pid: number): void {
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/pid', String(pid), '/t', '/f'], {
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    return;
+  }
+  try {
+    process.kill(-pid, 'SIGTERM');
+  } catch {
+    try {
+      process.kill(pid, 'SIGTERM');
+    } catch {
+      // ignore cancellation races
+    }
+  }
+}

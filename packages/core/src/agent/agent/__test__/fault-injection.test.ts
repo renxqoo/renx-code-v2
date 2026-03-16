@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getEventListeners } from 'node:events';
 import { StatelessAgent } from '../index';
+import type { AgentToolExecutor } from '../tool-executor';
 import type { AgentMetric, Message, StreamEvent } from '../../types';
-import type { ToolManager } from '../../tool/tool-manager';
 import type { Chunk, LLMProvider } from '../../../providers';
 
 type ChunkDelta = NonNullable<NonNullable<Chunk['choices']>[number]>['delta'];
@@ -49,7 +49,7 @@ function createToolManager() {
     getTools: vi.fn(() => []),
     getToolSchemas: vi.fn(() => []),
     getConcurrencyPolicy: vi.fn(() => ({ mode: 'exclusive' as const })),
-  } as unknown as ToolManager;
+  } as unknown as AgentToolExecutor;
 }
 
 function createInput(executionId = 'exec_fault_1') {

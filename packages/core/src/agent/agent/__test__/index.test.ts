@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { StatelessAgent } from '../index';
+import type { AgentToolExecutor } from '../tool-executor';
 import type {
   AgentMetric,
   AgentTraceEvent,
@@ -10,7 +11,6 @@ import type {
   Message,
   StreamEvent,
 } from '../../types';
-import type { ToolManager } from '../../tool/tool-manager';
 import { DefaultToolManager } from '../../tool/tool-manager';
 import { BashTool } from '../../tool/bash';
 import { WriteFileTool } from '../../tool/write-file';
@@ -115,7 +115,7 @@ function createToolManager() {
     getTools: vi.fn(() => []),
     getToolSchemas: vi.fn(() => []),
     getConcurrencyPolicy: vi.fn(() => ({ mode: 'exclusive' as const })),
-  } as unknown as ToolManager;
+  } as unknown as AgentToolExecutor;
 }
 
 function createInput() {
@@ -170,7 +170,7 @@ describe('StatelessAgent', () => {
       ])
     );
 
-    const agent = new StatelessAgent(provider, manager, {
+    const agent = new StatelessAgent(provider, manager as unknown as AgentToolExecutor, {
       maxRetryCount: 3,
       toolExecutionLedger: new InMemoryToolExecutionLedger(),
     });
@@ -222,7 +222,7 @@ describe('StatelessAgent', () => {
       ])
     );
 
-    const agent = new StatelessAgent(provider, manager, {
+    const agent = new StatelessAgent(provider, manager as unknown as AgentToolExecutor, {
       maxRetryCount: 3,
       toolExecutionLedger: new InMemoryToolExecutionLedger(),
     });
@@ -270,7 +270,7 @@ describe('StatelessAgent', () => {
         ])
       );
 
-    const agent = new StatelessAgent(provider, manager, {
+    const agent = new StatelessAgent(provider, manager as unknown as AgentToolExecutor, {
       maxRetryCount: 3,
       enableServerSideContinuation: true,
       toolExecutionLedger: new InMemoryToolExecutionLedger(),
@@ -608,7 +608,7 @@ describe('StatelessAgent', () => {
       ])
     );
 
-    const agent = new StatelessAgent(provider, manager, {
+    const agent = new StatelessAgent(provider, manager as unknown as AgentToolExecutor, {
       maxRetryCount: 3,
       toolExecutionLedger: new InMemoryToolExecutionLedger(),
     });
@@ -800,7 +800,7 @@ describe('StatelessAgent', () => {
       ])
     );
 
-    const agent = new StatelessAgent(provider, manager, {
+    const agent = new StatelessAgent(provider, manager as unknown as AgentToolExecutor, {
       maxRetryCount: 3,
       toolExecutionLedger: new InMemoryToolExecutionLedger(),
     });
@@ -1269,7 +1269,7 @@ describe('StatelessAgent', () => {
 
     manager.execute = vi.fn().mockImplementation(async (_toolCall, options) => {
       await new Promise<void>((resolve) => setTimeout(resolve, 20));
-      if (options.toolAbortSignal?.aborted) {
+      if (options.abortSignal?.aborted) {
         return {
           success: false,
           error: { message: 'tool stage budget exceeded' },
@@ -1839,13 +1839,13 @@ describe('StatelessAgent', () => {
       );
 
     manager.execute = vi.fn().mockImplementation(async (_toolCall, options) => {
-      options.onChunk?.({ type: 'stdout', data: 'streamed' });
-      const decision = await options.onConfirm?.({
-        toolCallId: 'call_1',
+      await options.onStreamEvent?.({ type: 'stdout', message: 'streamed' });
+      const decision = await options.onApproval?.({
         toolName: 'bash',
-        arguments: '{"a":1}',
+        callId: 'call_1',
+        reason: 'run bash',
       });
-      expect(decision).toEqual({ approved: true, message: 'ok' });
+      expect(decision).toEqual({ approved: true, scope: 'once', reason: 'ok' });
       return { success: true, output: 'tool-output' };
     });
 
@@ -2034,7 +2034,9 @@ describe('StatelessAgent', () => {
           ])
         );
 
-      const agent = new StatelessAgent(provider, manager, { maxRetryCount: 3 });
+      const agent = new StatelessAgent(provider, manager as unknown as AgentToolExecutor, {
+        maxRetryCount: 3,
+      });
       const events = await collectEvents(
         agent.runStream(
           {
@@ -2153,7 +2155,9 @@ describe('StatelessAgent', () => {
           ])
         );
 
-      const agent = new StatelessAgent(provider, manager, { maxRetryCount: 3 });
+      const agent = new StatelessAgent(provider, manager as unknown as AgentToolExecutor, {
+        maxRetryCount: 3,
+      });
       const events = await collectEvents(
         agent.runStream(
           {

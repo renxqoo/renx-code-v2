@@ -6,7 +6,6 @@ import {
   StreamEvent,
   ErrorDecision,
 } from '../types';
-import { ToolManager } from '../tool/tool-manager';
 import { LLMProvider, Tool, ToolCall } from '../../providers';
 import { EventEmitter } from 'events';
 import { AgentError, MaxRetriesError, TimeoutBudgetExceededError } from './error';
@@ -67,12 +66,14 @@ import {
   createLLMStreamRuntimeDeps as buildLLMStreamRuntimeDeps,
   createRunLoopRuntime as buildRunLoopRuntime,
   createToolRuntime as buildToolRuntime,
-  resolveLLMToolsFromManager,
+  resolveLLMToolsFromExecutor,
 } from './runtime-composition';
 import { createObservabilityLifecycleHooks } from './observability-hooks';
 import { calculateContextUsage } from './compaction-policy';
 import type { CompactionPromptVersion } from './compaction-prompt';
 import { prepareMessagesForLlmStep } from './step-compaction';
+import type { AgentToolExecutor } from './tool-executor';
+import { ToolSessionState } from '../tool-v2/context';
 
 export interface AgentConfig {
   maxRetryCount?: number;
@@ -95,6 +96,7 @@ export interface AgentConfig {
 }
 
 export type { AgentLogger } from './logger';
+export type { AgentToolExecutionContext, AgentToolExecutor } from './tool-executor';
 
 interface InternalAgentConfig {
   maxRetryCount: number;
@@ -130,11 +132,11 @@ export type { ToolExecutionLedger, ToolExecutionLedgerRecord } from './tool-exec
  */
 export class StatelessAgent extends EventEmitter {
   private llmProvider: LLMProvider;
-  private toolExecutor: ToolManager;
+  private toolExecutor: AgentToolExecutor;
   private config: InternalAgentConfig;
   private logger: AgentLogger;
   private toolExecutionLedger: ToolExecutionLedger;
-  constructor(llmProvider: LLMProvider, toolExecutor: ToolManager, config: AgentConfig) {
+  constructor(llmProvider: LLMProvider, toolExecutor: AgentToolExecutor, config: AgentConfig) {
     super();
     this.llmProvider = llmProvider;
     this.toolExecutor = toolExecutor;
@@ -216,6 +218,7 @@ export class StatelessAgent extends EventEmitter {
       }
     }
     const writeBufferSessions = new Map<string, WriteBufferRuntime>();
+    const toolSessionState = new ToolSessionState();
     const timeoutBudget = this.createTimeoutBudgetState(input);
     const executionScope = this.createExecutionAbortScope(inputAbortSignal, timeoutBudget);
     const abortSignal = executionScope.signal;
@@ -232,7 +235,7 @@ export class StatelessAgent extends EventEmitter {
         maxSteps,
         timeoutBudgetMs: timeoutBudget?.totalMs,
       })) ?? createNoopObservation<RunLifecycleFinishContext>();
-    return yield* runAgentLoop(this.createRunLoopRuntime(lifecycleHooks), {
+    return yield* runAgentLoop(this.createRunLoopRuntime(lifecycleHooks, toolSessionState), {
       input,
       callbacks,
       maxSteps,
@@ -265,7 +268,10 @@ export class StatelessAgent extends EventEmitter {
     );
   }
 
-  private createRunLoopRuntime(hooks: AgentRuntimeLifecycleHooks): RunLoopRuntime {
+  private createRunLoopRuntime(
+    hooks: AgentRuntimeLifecycleHooks,
+    toolSessionState: ToolSessionState
+  ): RunLoopRuntime {
     return buildRunLoopRuntime(
       {
         config: {
@@ -299,6 +305,7 @@ export class StatelessAgent extends EventEmitter {
         },
         createLLMStreamRuntimeDeps: this.createLLMStreamRuntimeDeps.bind(this),
         createToolRuntime: this.createToolRuntime.bind(this),
+        toolSessionState,
         stream: {
           progress: this.emitProgress.bind(this),
           checkpoint: this.yieldCheckpoint.bind(this),
@@ -334,12 +341,13 @@ export class StatelessAgent extends EventEmitter {
     });
   }
 
-  private createToolRuntime(hooks?: AgentRuntimeLifecycleHooks) {
+  private createToolRuntime(sessionState: ToolSessionState, hooks?: AgentRuntimeLifecycleHooks) {
     return buildToolRuntime(
       {
         agentRef: this,
         execution: {
-          manager: this.toolExecutor,
+          executor: this.toolExecutor,
+          sessionState,
           ledger: this.toolExecutionLedger,
           maxConcurrentToolCalls: this.config.maxConcurrentToolCalls,
           resolveConcurrencyPolicy: this.config.toolConcurrencyPolicyResolver,
@@ -414,7 +422,7 @@ export class StatelessAgent extends EventEmitter {
   }
 
   private resolveLLMTools(inputTools?: Tool[]): Tool[] | undefined {
-    return resolveLLMToolsFromManager(this.toolExecutor, inputTools);
+    return resolveLLMToolsFromExecutor(this.toolExecutor, inputTools);
   }
 
   private async emitMetric(

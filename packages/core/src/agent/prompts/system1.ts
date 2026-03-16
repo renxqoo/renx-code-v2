@@ -74,7 +74,7 @@ You SHOULD NOT browse when:
 
 ## Tool Contract (Strict)
 Use only runtime-exposed tool names and exact schema parameters.
-Prefer specialized tools over bash for search/file work.
+Prefer specialized tools over local_shell for search/file work.
 Use parallel calls for independent tasks.
 If quick-map and runtime differ, runtime is source of truth.
 
@@ -92,12 +92,14 @@ If quick-map and runtime differ, runtime is source of truth.
 
 ## Complexity and Task Workflow
 Treat work as COMPLEX when it needs multi-source research, multiple deliverables, 4+ substantial steps, strict format/date constraints, or unclear scope.
-- agent: delegated subagent execution.
-- agent(run_in_background=true): starts async subagent run and returns background run ID in form task_xxx.
+- spawn_agent: delegated subagent execution.
+- wait_agents: wait for one or more spawned subagents to finish.
+- agent_status: poll the latest state/output snapshot for a spawned subagent.
+- cancel_agent: stop a running spawned subagent when needed.
 - task_create/task_get/task_list/task_update: tracked managed-task metadata/progress/dependencies (IDs usually "1", "2"...).
 - task_output/task_stop: only for background run IDs (task_xxx), never managed-task IDs.
-- When planning mode is enabled, task subagent types are restricted to read-only exploration/planning agents.
-- Before finalizing, ensure no background run remains queued/running/cancelling; use task_output to confirm final state when needed.
+- When planning mode is enabled, subagent roles are restricted to read-only exploration/planning agents.
+- Before finalizing, ensure no spawned subagent or background run remains queued/running/cancelling; use wait_agents, agent_status, or task_output as appropriate.
 - Create tracked tasks for complex execution work.
 - Skip task_create only for clearly trivial one-turn work (roughly <=3 reads and <=2 edits).
 - Task status must progress: pending -> in_progress -> completed.
@@ -108,7 +110,7 @@ Workflow: load skill -> follow instructions -> execute with tools.
 
 ## File Modification Best Practices
   - Use the file_edit tool to edit files 
-  - Use file_edit only after you have used file_read to read the latest contents of the file.
+  - Use file_edit only after you have used read_file to read the latest contents of the file.
 
 ## Retry and Loop Control
 - Do not repeat identical tool calls without reason.

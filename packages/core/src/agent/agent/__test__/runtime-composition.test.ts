@@ -1,13 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { Tool } from '../../../providers';
+import type { AgentToolExecutor } from '../tool-executor';
 import {
   createLLMStreamRuntimeDeps,
   createRunLoopRuntime,
   createToolRuntime,
-  resolveLLMToolsFromManager,
+  resolveLLMToolsFromExecutor,
 } from '../runtime-composition';
 import { createNoopObservation } from '../runtime-hooks';
+import { ToolSessionState } from '../../tool-v2/context';
 
 describe('runtime-composition', () => {
   it('returns caller-provided tools without consulting the manager', () => {
@@ -23,14 +25,14 @@ describe('runtime-composition', () => {
     ];
     const getToolSchemas = vi.fn();
 
-    const result = resolveLLMToolsFromManager({ getToolSchemas } as never, inputTools);
+    const result = resolveLLMToolsFromExecutor({ getToolSchemas } as never, inputTools);
 
     expect(result).toBe(inputTools);
     expect(getToolSchemas).not.toHaveBeenCalled();
   });
 
   it('normalizes manager schemas into provider tools and defaults empty parameters', () => {
-    const result = resolveLLMToolsFromManager({
+    const result = resolveLLMToolsFromExecutor({
       getToolSchemas: () => [
         {
           type: 'function',
@@ -67,7 +69,8 @@ describe('runtime-composition', () => {
       {
         agentRef: {},
         execution: {
-          manager: {} as never,
+          executor: {} as AgentToolExecutor,
+          sessionState: new ToolSessionState(),
           ledger: {} as never,
           maxConcurrentToolCalls: 1,
         },
@@ -101,7 +104,8 @@ describe('runtime-composition', () => {
     const runtime = createToolRuntime({
       agentRef: {},
       execution: {
-        manager: {} as never,
+        executor: {} as AgentToolExecutor,
+        sessionState: new ToolSessionState(),
         ledger: {} as never,
         maxConcurrentToolCalls: 1,
       },
@@ -138,9 +142,14 @@ describe('runtime-composition', () => {
           logError: () => undefined,
         }) as never
     );
-    const createToolRuntimeFn = vi.fn(() => ({
+    const createToolRuntimeFn = vi.fn((_sessionState) => ({
       agentRef: {},
-      execution: { manager: {} as never, ledger: {} as never, maxConcurrentToolCalls: 1 },
+      execution: {
+        executor: {} as AgentToolExecutor,
+        sessionState: new ToolSessionState(),
+        ledger: {} as never,
+        maxConcurrentToolCalls: 1,
+      },
       callbacks: { safe: async () => undefined },
       diagnostics: { extractErrorCode: () => undefined, logError: () => undefined },
       resilience: { throwIfAborted: () => undefined },
@@ -169,6 +178,7 @@ describe('runtime-composition', () => {
         messages: { prepareForLlmStep, mergeLLMConfig },
         createLLMStreamRuntimeDeps: createLLMDeps,
         createToolRuntime: createToolRuntimeFn,
+        toolSessionState: new ToolSessionState(),
         stream: { progress, checkpoint, done, error, maxRetries },
         resilience: {
           createStageAbortScope,

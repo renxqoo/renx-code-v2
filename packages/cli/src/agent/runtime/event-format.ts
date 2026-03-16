@@ -100,17 +100,21 @@ const formatToolUseAsCode = (toolCall: ToolCallLike): string => {
   const callId = toolCall.id ?? 'unknown';
   const args = parseToolArguments(toolCall.function?.arguments);
 
-  if (toolName === 'bash') {
+  if (toolName === 'local_shell') {
     const command = pickString(args.command) ?? '';
-    const timeout = args.timeout;
-    const lines = [`# Tool: bash (${callId})`, `$ ${command}`];
-    if (typeof timeout === 'number') {
-      lines.push(`# timeout: ${timeout}ms`);
+    const timeoutMs = args.timeoutMs;
+    const workdir = pickString(args.workdir);
+    const lines = [`# Tool: local_shell (${callId})`, `$ ${command}`];
+    if (typeof timeoutMs === 'number') {
+      lines.push(`# timeout: ${timeoutMs}ms`);
+    }
+    if (workdir) {
+      lines.push(`# workdir: ${workdir}`);
     }
     return lines.join('\n');
   }
 
-  if (toolName.startsWith('file_')) {
+  if (toolName === 'read_file' || toolName === 'write_file' || toolName.startsWith('file_')) {
     const path = pickString(args.path);
     const action = pickString(args.action);
     const lines = [`# Tool: ${toolName} (${callId})`];

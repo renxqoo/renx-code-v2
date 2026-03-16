@@ -2,12 +2,12 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ToolManager } from '../../tool/tool-manager';
 import { DefaultToolManager } from '../../tool/tool-manager';
 import type { Chunk, LLMProvider } from '../../../providers';
 import { LLMRateLimitError } from '../../../providers';
 import { LLMRetryableError } from '../../../providers';
 import { StatelessAgent } from '../../agent';
+import type { AgentToolExecutor } from '../../agent/tool-executor';
 import { AgentAppService } from '../agent-app-service';
 import { SqliteAgentAppStore } from '../sqlite-agent-app-store';
 import { WriteFileTool } from '../../tool/write-file';
@@ -40,7 +40,7 @@ function createProvider(): LLMProvider {
   } as unknown as LLMProvider;
 }
 
-function createToolManager(): ToolManager {
+function createToolManager(): AgentToolExecutor {
   return {
     execute: vi.fn(),
     registerTool: vi.fn(),
@@ -48,7 +48,7 @@ function createToolManager(): ToolManager {
     getTools: vi.fn(() => []),
     getToolSchemas: vi.fn(() => []),
     getConcurrencyPolicy: vi.fn(() => ({ mode: 'exclusive' as const })),
-  } as unknown as ToolManager;
+  } as unknown as AgentToolExecutor;
 }
 
 async function delay(ms: number): Promise<void> {
@@ -503,7 +503,7 @@ describe('AgentAppService', () => {
       );
 
     manager.execute = vi.fn().mockImplementation(async (_toolCall, options) => {
-      options.onChunk?.({ type: 'stdout', data: 'streamed-output' });
+      await options.onStreamEvent?.({ type: 'stdout', message: 'streamed-output' });
       return { success: true, output: 'ok' };
     });
 
@@ -585,7 +585,7 @@ describe('AgentAppService', () => {
 
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'renx-app-service-resume-'));
     store = new SqliteAgentAppStore(path.join(tempDir, 'agent.db'));
-    const agent = new StatelessAgent(provider, manager, {
+    const agent = new StatelessAgent(provider, manager as unknown as AgentToolExecutor, {
       maxRetryCount: 2,
       backoffConfig: { initialDelayMs: 1, maxDelayMs: 1, base: 2, jitter: false },
     });

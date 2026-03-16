@@ -77,7 +77,8 @@ const parseToolUseFromData = (value: unknown): ParsedToolUse | null => {
   const rawArguments =
     typeof toolFunction.arguments === 'string' ? toolFunction.arguments : undefined;
   const args = parseToolArgumentsObject(rawArguments);
-  const command = name === 'bash' && typeof args?.command === 'string' ? args.command : undefined;
+  const command =
+    name === 'local_shell' && typeof args?.command === 'string' ? args.command : undefined;
 
   return {
     name,
@@ -295,7 +296,7 @@ const resolveSectionLanguageHint = (
     return undefined;
   }
   if (section.label === 'command') {
-    return toolName === 'bash' ? 'bash' : undefined;
+    return toolName === 'local_shell' ? 'bash' : undefined;
   }
   if (section.label === 'arguments') {
     return 'json';
@@ -391,10 +392,10 @@ const summarizeTaskRecord = (
   const id = readString(task.id);
   const status = readString(task.status);
   const priority = readString(task.priority);
-  const progress = readNumber(task.effective_progress) ?? readNumber(task.progress);
+  const progress = readNumber(task.effectiveProgress) ?? readNumber(task.progress);
   const owner = readString(task.owner);
-  const blockers = readArray(task.blockers).length || readArray(task.blocked_by).length;
-  const blocks = readArray(task.blocked_tasks).length || readArray(task.blocks).length;
+  const blockers = readArray(task.blockers).length || readArray(task.blockedBy).length;
+  const blocks = readArray(task.blockedTasks).length || readArray(task.blocks).length;
 
   const lines = [`${formatTaskStatusIcon(status)} ${truncate(subject)}`];
   const meta = formatSummaryMeta([
@@ -427,7 +428,7 @@ const summarizeAgentRun = (
 ): { lines: string[]; output?: string } => {
   const agentId = readString(run.agentId);
   const status = readString(run.status);
-  const subagentType = readString(run.subagentType);
+  const role = readString(run.role) ?? readString(run.subagentType);
   const description = readString(run.description);
   const linkedTaskId = readString(run.linkedTaskId);
   const progress = readNumber(run.progress);
@@ -439,13 +440,13 @@ const summarizeAgentRun = (
   const meta = formatSummaryMeta([
     agentId,
     formatStatusLabel(status),
-    subagentType,
+    role,
     progress !== undefined ? `${Math.round(progress)}%` : null,
     linkedTaskId ? `task ${linkedTaskId}` : null,
     readBoolean(extras?.completed) === false ? 'still running' : null,
-    readBoolean(extras?.timeout_hit) === true ? 'timeout hit' : null,
-    readNumber(extras?.waited_ms) !== undefined
-      ? `${Math.round((readNumber(extras?.waited_ms) ?? 0) / 1000)}s waited`
+    readBoolean(extras?.timeoutHit) === true ? 'timeout hit' : null,
+    readNumber(extras?.waitedMs) !== undefined
+      ? `${Math.round((readNumber(extras?.waitedMs) ?? 0) / 1000)}s waited`
       : null,
   ]);
   if (meta) {
@@ -469,6 +470,38 @@ const buildTaskHeaderDetail = (
     return null;
   }
 
+  if (toolName === 'spawn_agent') {
+    const prompt = readString(args.prompt);
+    const description = readString(args.description);
+    return formatSummaryMeta([
+      description ? truncate(description, 56) : prompt ? truncate(prompt, 56) : null,
+      readString(args.role),
+      readBoolean(args.runInBackground) ? 'background' : 'foreground',
+      readString(args.linkedTaskId) ? `task ${readString(args.linkedTaskId)}` : null,
+    ]);
+  }
+
+  if (toolName === 'agent_status') {
+    return formatSummaryMeta([`inspect ${readString(args.agentId) ?? 'agent run'}`]);
+  }
+
+  if (toolName === 'wait_agents') {
+    const agentCount = readArray(args.agentIds).length;
+    return formatSummaryMeta([
+      agentCount > 0 ? `wait ${agentCount} agent${agentCount === 1 ? '' : 's'}` : null,
+      readNumber(args.timeoutMs) !== undefined
+        ? `${Math.round((readNumber(args.timeoutMs) ?? 0) / 1000)}s timeout`
+        : null,
+    ]);
+  }
+
+  if (toolName === 'cancel_agent') {
+    return formatSummaryMeta([
+      `cancel ${readString(args.agentId) ?? 'agent run'}`,
+      readString(args.reason) ? truncate(readString(args.reason) ?? '', 56) : null,
+    ]);
+  }
+
   if (toolName === 'task_create') {
     const subject = readString(args.subject);
     return formatSummaryMeta([
@@ -483,8 +516,8 @@ const buildTaskHeaderDetail = (
 
   if (toolName === 'task_get') {
     return formatSummaryMeta([
-      `inspect ${readString(args.task_id) ?? 'task'}`,
-      readBoolean(args.include_history) ? 'include history' : null,
+      `inspect ${readString(args.taskId) ?? 'task'}`,
+      readBoolean(args.includeHistory) ? 'include history' : null,
     ]);
   }
 
@@ -502,41 +535,30 @@ const buildTaskHeaderDetail = (
   }
 
   if (toolName === 'task_update') {
-    const changes: string[] = [`update ${readString(args.task_id) ?? 'task'}`];
+    const changes: string[] = [`update ${readString(args.taskId) ?? 'task'}`];
     if (readString(args.status))
       changes.push(`status -> ${readString(args.status)?.replace(/_/g, ' ')}`);
     if (readNumber(args.progress) !== undefined)
       changes.push(`progress ${Math.round(readNumber(args.progress) ?? 0)}%`);
     if (readString(args.owner)) changes.push(`owner ${readString(args.owner)}`);
-    if (readArray(args.add_blocked_by).length > 0)
-      changes.push(`+${readArray(args.add_blocked_by).length} blockers`);
-    if (readArray(args.remove_blocked_by).length > 0)
-      changes.push(`-${readArray(args.remove_blocked_by).length} blockers`);
+    if (readArray(args.addBlockedBy).length > 0)
+      changes.push(`+${readArray(args.addBlockedBy).length} blockers`);
+    if (readArray(args.removeBlockedBy).length > 0)
+      changes.push(`-${readArray(args.removeBlockedBy).length} blockers`);
     return changes.join(' · ');
   }
 
   if (toolName === 'task_stop') {
     return formatSummaryMeta([
-      `stop ${readString(args.task_id) ?? readString(args.agent_id) ?? 'agent run'}`,
-      readBoolean(args.cancel_linked_task) !== false ? 'cancel linked tasks' : null,
+      `stop ${readString(args.taskId) ?? readString(args.agentId) ?? 'agent run'}`,
+      readBoolean(args.cancelLinkedTask) !== false ? 'cancel linked tasks' : null,
     ]);
   }
 
   if (toolName === 'task_output') {
     return formatSummaryMeta([
-      `watch ${readString(args.task_id) ?? readString(args.agent_id) ?? 'agent run'}`,
+      `watch ${readString(args.taskId) ?? readString(args.agentId) ?? 'agent run'}`,
       readBoolean(args.block) === false ? 'non-blocking poll' : 'wait for completion',
-    ]);
-  }
-
-  if (toolName === 'agent' || toolName === 'task') {
-    const prompt = readString(args.prompt);
-    const description = readString(args.description);
-    return formatSummaryMeta([
-      description ? truncate(description, 56) : prompt ? truncate(prompt, 56) : null,
-      readString(args.subagent_type),
-      readBoolean(args.run_in_background) ? 'background' : 'foreground',
-      readString(args.linked_task_id) ? `task ${readString(args.linked_task_id)}` : null,
     ]);
   }
 
@@ -574,6 +596,54 @@ const buildTaskResultSections = (
     ];
   }
 
+  const subagentRecord =
+    readString(payload.agentId) && readString(payload.status)
+      ? payload
+      : readObject(payload.agentRun);
+  if (toolName === 'spawn_agent' || toolName === 'agent_status' || toolName === 'cancel_agent') {
+    if (!subagentRecord) {
+      return [
+        {
+          label: 'result',
+          content: resultDetails || summary || '',
+          tone: 'body',
+        },
+      ];
+    }
+    const subagentSummary = summarizeAgentRun(subagentRecord, payload);
+    const sections: ToolSection[] = [
+      {
+        label: 'result',
+        content: subagentSummary.lines.join('\n'),
+        tone: 'body',
+      },
+    ];
+    if (subagentSummary.output) {
+      sections.push({
+        label: 'output',
+        content: subagentSummary.output,
+        tone: 'body',
+      });
+    }
+    return sections;
+  }
+
+  if (toolName === 'wait_agents') {
+    const records = Array.isArray(result?.payload)
+      ? result.payload
+      : Array.isArray(payload.records)
+        ? payload.records
+        : [];
+    const lines = records
+      .map((item) => readObject(item))
+      .filter((item): item is Record<string, unknown> => Boolean(item))
+      .slice(0, 5)
+      .flatMap((record) => summarizeAgentRun(record).lines);
+    if (lines.length > 0) {
+      return [{ label: 'result', content: lines.join('\n'), tone: 'body' }];
+    }
+  }
+
   if (toolName === 'task_list') {
     const namespace = readString(payload.namespace) ?? 'default';
     const tasks = readArray(payload.tasks)
@@ -597,8 +667,8 @@ const buildTaskResultSections = (
   }
 
   if (toolName === 'task_stop') {
-    const run = readObject(payload.agent_run);
-    const cancelledTaskIds = readArray(payload.cancelled_task_ids)
+    const run = readObject(payload.agentRun);
+    const cancelledTaskIds = readArray(payload.cancelledTaskIds)
       .map((item) => readString(item))
       .filter(Boolean);
     const sections: ToolSection[] = [];
@@ -619,8 +689,8 @@ const buildTaskResultSections = (
     return sections;
   }
 
-  if (toolName === 'task_output' || toolName === 'task' || toolName === 'agent') {
-    const run = readObject(payload.agent_run);
+  if (toolName === 'task_output') {
+    const run = readObject(payload.agentRun);
     if (run) {
       const summary = summarizeAgentRun(run, payload);
       const sections: ToolSection[] = [
@@ -643,7 +713,7 @@ const buildTaskResultSections = (
 
   const task = readObject(payload.task);
   if (task) {
-    const canStart = readObject(payload.can_start) ?? readObject(task.can_start);
+    const canStart = readObject(payload.canStart) ?? readObject(task.canStart);
     return [
       {
         label: 'result',
@@ -680,11 +750,11 @@ const buildSearchHeaderDetail = (
       JSON.stringify(pattern),
       readString(args.path) ? `in ${readString(args.path)}` : null,
       readString(args.glob) ? `glob ${readString(args.glob)}` : null,
-      readNumber(args.max_results) !== undefined
-        ? `limit ${Math.round(readNumber(args.max_results) ?? 0)}`
+      readNumber(args.maxResults) !== undefined
+        ? `limit ${Math.round(readNumber(args.maxResults) ?? 0)}`
         : null,
-      readNumber(args.timeout_ms) !== undefined
-        ? `${Math.round((readNumber(args.timeout_ms) ?? 0) / 1000)}s timeout`
+      readNumber(args.timeoutMs) !== undefined
+        ? `${Math.round((readNumber(args.timeoutMs) ?? 0) / 1000)}s timeout`
         : null,
     ]);
   }
@@ -698,9 +768,9 @@ const buildSearchHeaderDetail = (
     return formatSummaryMeta([
       pattern,
       readString(args.path) ? `in ${readString(args.path)}` : null,
-      readBoolean(args.include_hidden) ? 'include hidden' : null,
-      readNumber(args.max_results) !== undefined
-        ? `limit ${Math.round(readNumber(args.max_results) ?? 0)}`
+      readBoolean(args.includeHidden) ? 'include hidden' : null,
+      readNumber(args.maxResults) !== undefined
+        ? `limit ${Math.round(readNumber(args.maxResults) ?? 0)}`
         : null,
     ]);
   }
@@ -751,7 +821,13 @@ const buildSpecialToolPresentation = (
   parsedResult: ParsedToolResult | null
 ): SpecialToolPresentation | null => {
   const args = parsedUse?.args ?? parseJsonObject(parsedUse?.details);
-  if (toolName === 'agent' || toolName === 'task' || toolName.startsWith('task_')) {
+  if (
+    toolName === 'spawn_agent' ||
+    toolName === 'agent_status' ||
+    toolName === 'wait_agents' ||
+    toolName === 'cancel_agent' ||
+    toolName.startsWith('task_')
+  ) {
     const sections = buildTaskResultSections(toolName, parsedResult);
 
     return {

@@ -30,10 +30,10 @@ describe('buildToolConfirmDialogContent', () => {
     expect(content.argumentItems).toEqual([]);
   });
 
-  it('formats bash confirmations with command preview', () => {
+  it('formats local shell confirmations with command preview', () => {
     const content = buildToolConfirmDialogContent({
       toolCallId: 'call_2',
-      toolName: 'bash',
+      toolName: 'local_shell',
       args: {
         description: 'List repo files',
         command: 'rg --files src',
@@ -44,7 +44,7 @@ describe('buildToolConfirmDialogContent', () => {
       },
     });
 
-    expect(content.summary).toBe('Run bash: List repo files');
+    expect(content.summary).toBe('Run shell: List repo files');
     expect(content.detail).toBe('$ rg --files src');
     expect(content.reason).toBeUndefined();
     expect(content.argumentItems).toEqual([]);
@@ -53,7 +53,7 @@ describe('buildToolConfirmDialogContent', () => {
   it('hides redundant file path arguments that are already surfaced elsewhere', () => {
     const content = buildToolConfirmDialogContent({
       toolCallId: 'call_3',
-      toolName: 'file_read',
+      toolName: 'read_file',
       args: {
         path: '/Users/wrr/work/ironclaw/src/sandbox/config.rs',
       },

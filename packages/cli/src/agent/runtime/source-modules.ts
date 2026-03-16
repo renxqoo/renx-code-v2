@@ -1,42 +1,5 @@
-import {
-  AgentAppService,
-  BashTool,
-  createAgentLoggerAdapter,
-  createLoggerFromEnv,
-  createSqliteAgentAppStore,
-  DefaultToolManager,
-  FileEditTool,
-  FileHistoryListTool,
-  FileHistoryRestoreTool,
-  FileReadTool,
-  GlobTool,
-  GrepTool,
-  loadConfigToEnv,
-  loadEnvFiles,
-  ProviderRegistry,
-  RealSubagentRunnerAdapter,
-  SkillTool,
-  StatelessAgent,
-  TaskCreateTool,
-  TaskGetTool,
-  TaskListTool,
-  TaskOutputTool,
-  TaskStore,
-  TaskStopTool,
-  TaskTool,
-  TaskUpdateTool,
-  WriteFileTool,
-} from '@renx-code/core';
-import type {
-  AgentCliEvent,
-  AgentLoggerApi,
-  AgentMessage,
-  AgentRunContextUsage,
-  AgentRunResult,
-  AgentRunUsage,
-  AgentToolConfirmDecision,
-  AgentToolConfirmRequest,
-} from '@renx-code/core';
+import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import type { MessageContent } from '../../types/message-content';
 import { resolveRepoRoot, resolveWorkspaceRoot } from './workspace-paths';
@@ -58,6 +21,68 @@ export type ProviderRegistryLike = {
   getModelIds: () => string[];
   getModelConfig: (modelId: string) => ProviderModelConfig;
   createFromEnv: (modelId: string, options?: Record<string, unknown>) => unknown;
+};
+type AgentToolConfirmDecision = {
+  approved: boolean;
+  message?: string;
+};
+type AgentToolConfirmRequest = {
+  toolCallId: string;
+  toolName: string;
+  arguments: string;
+  reason?: string;
+  metadata?: Record<string, unknown>;
+};
+type AgentMessage = {
+  messageId?: string;
+  role: string;
+  type?: string;
+  content: unknown;
+  timestamp?: number;
+};
+type AgentCliEvent = {
+  eventType: string;
+  data: unknown;
+  createdAt: number;
+};
+type AgentRunContextUsage = {
+  stepIndex: number;
+  messageCount: number;
+  contextTokens: number;
+  contextLimitTokens: number;
+  contextUsagePercent: number;
+};
+type TokenUsage = {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+};
+type AgentRunUsage = {
+  sequence: number;
+  stepIndex: number;
+  messageId: string;
+  usage: TokenUsage;
+  cumulativeUsage: TokenUsage;
+  contextTokens?: number;
+  contextLimitTokens?: number;
+  contextUsagePercent?: number;
+};
+type AgentRunResult = {
+  executionId: string;
+  conversationId: string;
+  messages: AgentMessage[];
+  events: AgentCliEvent[];
+  finishReason: 'stop' | 'max_steps' | 'error';
+  steps: number;
+  run: {
+    errorMessage?: string;
+    [key: string]: unknown;
+  };
+};
+type AgentLoggerApi = {
+  info?: (...args: unknown[]) => void;
+  warn?: (...args: unknown[]) => void;
+  error?: (...args: unknown[]) => void;
 };
 export type ToolDecisionLike = AgentToolConfirmDecision;
 export type ToolConfirmEventLike = AgentToolConfirmRequest & {
@@ -103,6 +128,7 @@ export type AgentAppServiceLike = {
     request: AgentAppRunRequestLike,
     callbacks?: AgentAppRunCallbacksLike
   ) => Promise<AgentAppRunResultLike>;
+  getRun: (executionId: string) => Promise<unknown>;
   appendUserInputToRun: (
     request: AgentAppAppendUserInputRequestLike
   ) => Promise<AgentAppAppendUserInputResultLike>;
@@ -113,11 +139,15 @@ export type StatelessAgentLike = {
   on: (eventName: 'tool_confirm', listener: (event: ToolConfirmEventLike) => void) => void;
   off: (eventName: 'tool_confirm', listener: (event: ToolConfirmEventLike) => void) => void;
 };
-export type ToolManagerLike = {
-  registerTool: (tool: unknown) => void;
-  registerTools: (tools: Iterable<unknown>) => void;
-  getTools: () => Array<{ name?: string; toToolSchema?: () => unknown }>;
-  getToolSchemas: () => Array<{ type: string; function: { name?: string } }>;
+export type ToolSchemaLike = {
+  type: string;
+  function: {
+    name?: string;
+    [key: string]: unknown;
+  };
+};
+export type ToolExecutorLike = {
+  getToolSchemas: () => ToolSchemaLike[];
 };
 export type AgentAppStoreLike = {
   close: () => Promise<void>;
@@ -126,7 +156,7 @@ export type AgentAppStoreLike = {
 
 type StatelessAgentCtor = new (
   provider: unknown,
-  toolExecutor: ToolManagerLike,
+  toolExecutor: ToolExecutorLike,
   config: Record<string, unknown>
 ) => StatelessAgentLike;
 type AgentAppServiceCtor = new (deps: {
@@ -135,16 +165,23 @@ type AgentAppServiceCtor = new (deps: {
   eventStore: AgentAppStoreLike;
   messageStore: AgentAppStoreLike;
 }) => AgentAppServiceLike;
-type ToolManagerCtor = new (config?: Record<string, unknown>) => ToolManagerLike;
-type ToolCtor = new (options?: Record<string, unknown>) => unknown;
-type TaskStoreCtor = new (options?: Record<string, unknown>) => unknown;
-type TaskRunnerCtor = new (options: Record<string, unknown>) => unknown;
+type ToolExecutorCtor = new (options: {
+  system: unknown;
+  workingDirectory?: string;
+  fileSystemPolicy?: unknown;
+  networkPolicy?: unknown;
+  approvalPolicy?: string;
+  trustLevel?: string;
+}) => ToolExecutorLike;
 
 export type SourceModules = {
   repoRoot: string;
+  buildSystemPrompt: (options: Record<string, unknown>) => string;
   ProviderRegistry: ProviderRegistryLike;
   loadEnvFiles: (cwd?: string) => Promise<string[]>;
   loadConfigToEnv: (options?: Record<string, unknown>) => string[];
+  resolveRenxDatabasePath: (env?: NodeJS.ProcessEnv) => string;
+  resolveRenxTaskDir: (env?: NodeJS.ProcessEnv) => string;
   createLoggerFromEnv: (env?: NodeJS.ProcessEnv, cwd?: string) => unknown;
   createAgentLoggerAdapter: (
     logger: Record<string, unknown>,
@@ -153,62 +190,44 @@ export type SourceModules = {
   StatelessAgent: StatelessAgentCtor;
   AgentAppService: AgentAppServiceCtor;
   createSqliteAgentAppStore: (dbPath: string) => AgentAppStoreLike;
-  DefaultToolManager: ToolManagerCtor;
-  BashTool: ToolCtor;
-  WriteFileTool: ToolCtor;
-  FileReadTool: ToolCtor;
-  FileEditTool: ToolCtor;
-  FileHistoryListTool: ToolCtor;
-  FileHistoryRestoreTool: ToolCtor;
-  GlobTool: ToolCtor;
-  GrepTool: ToolCtor;
-  SkillTool: ToolCtor;
-  TaskTool: ToolCtor;
-  TaskCreateTool: ToolCtor;
-  TaskGetTool: ToolCtor;
-  TaskListTool: ToolCtor;
-  TaskUpdateTool: ToolCtor;
-  TaskStopTool: ToolCtor;
-  TaskOutputTool: ToolCtor;
-  TaskStore: TaskStoreCtor;
-  RealSubagentRunnerAdapter: TaskRunnerCtor;
+  createEnterpriseToolSystemV2WithSubagents: (options: Record<string, unknown>) => unknown;
+  EnterpriseToolExecutor: ToolExecutorCtor;
+  createWorkspaceFileSystemPolicy: (workspaceRoot: string) => unknown;
+  createRestrictedNetworkPolicy: () => unknown;
+  getTaskStateStoreV2: (options?: Record<string, unknown>) => unknown;
 };
 
 let modulesPromise: Promise<SourceModules> | null = null;
 
 const loadSourceModules = async (): Promise<SourceModules> => {
   const repoRoot = resolveRepoRoot();
+  const coreEntry = pathToFileURL(path.join(repoRoot, 'packages/core/src/index.ts')).href;
+  const core = await import(coreEntry);
 
   return {
     repoRoot,
-    ProviderRegistry: ProviderRegistry as unknown as ProviderRegistryLike,
-    loadEnvFiles,
-    loadConfigToEnv,
-    createLoggerFromEnv,
+    buildSystemPrompt: core.buildSystemPrompt as SourceModules['buildSystemPrompt'],
+    ProviderRegistry: core.ProviderRegistry as ProviderRegistryLike,
+    loadEnvFiles: core.loadEnvFiles as SourceModules['loadEnvFiles'],
+    loadConfigToEnv: core.loadConfigToEnv as SourceModules['loadConfigToEnv'],
+    resolveRenxDatabasePath:
+      core.resolveRenxDatabasePath as SourceModules['resolveRenxDatabasePath'],
+    resolveRenxTaskDir: core.resolveRenxTaskDir as SourceModules['resolveRenxTaskDir'],
+    createLoggerFromEnv: core.createLoggerFromEnv as SourceModules['createLoggerFromEnv'],
     createAgentLoggerAdapter:
-      createAgentLoggerAdapter as unknown as SourceModules['createAgentLoggerAdapter'],
-    StatelessAgent: StatelessAgent as unknown as StatelessAgentCtor,
-    AgentAppService: AgentAppService as unknown as AgentAppServiceCtor,
-    createSqliteAgentAppStore,
-    DefaultToolManager: DefaultToolManager as unknown as ToolManagerCtor,
-    BashTool,
-    WriteFileTool,
-    FileReadTool,
-    FileEditTool,
-    FileHistoryListTool,
-    FileHistoryRestoreTool,
-    GlobTool,
-    GrepTool,
-    SkillTool,
-    TaskTool,
-    TaskCreateTool,
-    TaskGetTool,
-    TaskListTool,
-    TaskUpdateTool,
-    TaskStopTool,
-    TaskOutputTool,
-    TaskStore: TaskStore as unknown as TaskStoreCtor,
-    RealSubagentRunnerAdapter: RealSubagentRunnerAdapter as unknown as TaskRunnerCtor,
+      core.createAgentLoggerAdapter as SourceModules['createAgentLoggerAdapter'],
+    StatelessAgent: core.StatelessAgent as StatelessAgentCtor,
+    AgentAppService: core.AgentAppService as AgentAppServiceCtor,
+    createSqliteAgentAppStore:
+      core.createSqliteAgentAppStore as SourceModules['createSqliteAgentAppStore'],
+    createEnterpriseToolSystemV2WithSubagents:
+      core.createEnterpriseToolSystemV2WithSubagents as SourceModules['createEnterpriseToolSystemV2WithSubagents'],
+    EnterpriseToolExecutor: core.EnterpriseToolExecutor as ToolExecutorCtor,
+    createWorkspaceFileSystemPolicy:
+      core.createWorkspaceFileSystemPolicy as SourceModules['createWorkspaceFileSystemPolicy'],
+    createRestrictedNetworkPolicy:
+      core.createRestrictedNetworkPolicy as SourceModules['createRestrictedNetworkPolicy'],
+    getTaskStateStoreV2: core.getTaskStateStoreV2 as SourceModules['getTaskStateStoreV2'],
   };
 };
 

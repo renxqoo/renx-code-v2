@@ -11,6 +11,7 @@ vi.mock('./source-modules', () => ({
 
 import { disposeAgentRuntime, runAgentPrompt } from './runtime';
 import * as sourceModules from './source-modules';
+import type { ToolSchemaLike } from './source-modules';
 
 describe('runAgentPrompt error handling', () => {
   const mockGetSourceModules = sourceModules.getSourceModules as ReturnType<typeof vi.fn>;
@@ -25,6 +26,7 @@ describe('runAgentPrompt error handling', () => {
   let buildModules: (
     AppServiceClass: new () => {
       listContextMessages: () => Promise<unknown[]>;
+      getRun: (executionId: string) => Promise<unknown>;
       runForeground: (...args: any[]) => Promise<unknown>;
     }
   ) => Awaited<ReturnType<typeof sourceModules.getSourceModules>>;
@@ -33,23 +35,21 @@ describe('runAgentPrompt error handling', () => {
     vi.clearAllMocks();
     process.env.TEST_API_KEY = 'test-key';
     mockResolveWorkspaceRoot.mockReturnValue('/test/workspace');
+    const schemas: ToolSchemaLike[] = [
+      { type: 'function', function: { name: 'local_shell' } },
+      { type: 'function', function: { name: 'read_file' } },
+      { type: 'function', function: { name: 'file_edit' } },
+      { type: 'function', function: { name: 'write_file' } },
+    ];
 
-    class FakeToolManager {
-      registerTool = vi.fn();
-      registerTools = vi.fn();
-      getTools = vi.fn(() => []);
-      getToolSchemas = vi.fn(() => []);
-    }
+    class FakeToolExecutor {
+      private readonly schemas: ToolSchemaLike[];
 
-    class FakeTool {
-      toToolSchema() {
-        return {
-          type: 'function',
-          function: {
-            name: 'fake_tool',
-          },
-        };
+      constructor(options: { system?: { schemas?: ToolSchemaLike[] } }) {
+        this.schemas = options.system?.schemas || [];
       }
+
+      getToolSchemas = vi.fn(() => this.schemas);
     }
 
     class FakeAgent {
@@ -60,6 +60,10 @@ describe('runAgentPrompt error handling', () => {
     class FakeAppService {
       async listContextMessages() {
         return [];
+      }
+
+      async getRun() {
+        return null;
       }
 
       async runForeground(
@@ -109,25 +113,13 @@ describe('runAgentPrompt error handling', () => {
           prepare: vi.fn().mockResolvedValue(undefined),
           close: vi.fn().mockResolvedValue(undefined),
         }),
-        DefaultToolManager: FakeToolManager,
-        BashTool: FakeTool,
-        WriteFileTool: FakeTool,
-        FileReadTool: FakeTool,
-        FileEditTool: FakeTool,
-        FileHistoryListTool: FakeTool,
-        FileHistoryRestoreTool: FakeTool,
-        GlobTool: FakeTool,
-        GrepTool: FakeTool,
-        SkillTool: FakeTool,
-        TaskTool: FakeTool,
-        TaskCreateTool: FakeTool,
-        TaskGetTool: FakeTool,
-        TaskListTool: FakeTool,
-        TaskUpdateTool: FakeTool,
-        TaskStopTool: FakeTool,
-        TaskOutputTool: FakeTool,
-        TaskStore: class {},
-        RealSubagentRunnerAdapter: class {},
+        createEnterpriseToolSystemV2WithSubagents: vi.fn(() => ({
+          schemas,
+        })),
+        EnterpriseToolExecutor: FakeToolExecutor,
+        createWorkspaceFileSystemPolicy: vi.fn(() => ({ mode: 'restricted' })),
+        createRestrictedNetworkPolicy: vi.fn(() => ({ mode: 'restricted' })),
+        getTaskStateStoreV2: vi.fn(() => ({})),
       }) as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>;
 
     mockGetSourceModules.mockResolvedValue(buildModules(FakeAppService));
@@ -164,6 +156,10 @@ describe('runAgentPrompt error handling', () => {
     class FakeAppServiceWithRetryableError {
       async listContextMessages() {
         return [];
+      }
+
+      async getRun() {
+        return null;
       }
 
       async runForeground(

@@ -1,27 +1,32 @@
 export type ToolDisplayConfig = {
-  aliases?: string[];
   displayName?: string;
   icon?: string;
   hiddenArgumentKeys?: string[];
 };
 
 const TOOL_DISPLAY_CONFIG: Record<string, ToolDisplayConfig> = {
-  agent: {
-    aliases: ['task'],
-    displayName: 'task run',
+  spawn_agent: {
+    displayName: 'spawn agent',
     icon: '◉',
-    hiddenArgumentKeys: ['subagent_type', 'description'],
+    hiddenArgumentKeys: ['prompt', 'description', 'metadata'],
   },
-  task: {
-    displayName: 'task run',
+  agent_status: {
+    displayName: 'agent status',
     icon: '◉',
-    hiddenArgumentKeys: ['subagent_type', 'description'],
   },
-  bash: {
+  wait_agents: {
+    displayName: 'wait agents',
+    icon: '◉',
+  },
+  cancel_agent: {
+    displayName: 'cancel agent',
+    icon: '◉',
+  },
+  local_shell: {
     icon: '$',
     hiddenArgumentKeys: ['command', 'description'],
   },
-  file_read: {
+  read_file: {
     icon: '→',
     hiddenArgumentKeys: ['path'],
   },
@@ -41,7 +46,10 @@ const TOOL_DISPLAY_CONFIG: Record<string, ToolDisplayConfig> = {
     icon: '✱',
     hiddenArgumentKeys: ['pattern', 'path'],
   },
-  webfetch: {
+  web_fetch: {
+    icon: '%',
+  },
+  web_search: {
     icon: '%',
   },
 };
@@ -70,13 +78,6 @@ export function getToolDisplayName(toolName: string): string {
     }
   }
 
-  const aliased = Object.entries(TOOL_DISPLAY_CONFIG).find(([, config]) =>
-    (config.aliases ?? []).includes(toolName)
-  );
-  if (aliased?.[1].displayName) {
-    return aliased[1].displayName as string;
-  }
-
   return toolName;
 }
 
@@ -92,13 +93,6 @@ export function getToolDisplayIcon(toolName: string): string {
     }
   }
 
-  const aliased = Object.entries(TOOL_DISPLAY_CONFIG).find(([, config]) =>
-    (config.aliases ?? []).includes(toolName)
-  );
-  if (aliased?.[1].icon) {
-    return aliased[1].icon as string;
-  }
-
   return '⚙';
 }
 
@@ -106,13 +100,6 @@ export function getToolHiddenArgumentKeys(toolName: string): string[] {
   const direct = getToolDisplayConfig(toolName).hiddenArgumentKeys;
   if (direct) {
     return [...direct];
-  }
-
-  const aliased = Object.entries(TOOL_DISPLAY_CONFIG).find(([, config]) =>
-    (config.aliases ?? []).includes(toolName)
-  );
-  if (aliased?.[1].hiddenArgumentKeys) {
-    return [...(aliased[1].hiddenArgumentKeys as string[])];
   }
 
   return [];

@@ -1,21 +1,14 @@
 import type { Message } from '../types';
 import type { ToolCall } from '../../providers';
-import type { ToolResult } from '../tool/base-tool';
+import type { ToolCallResult } from '../tool-v2/contracts';
 
 import { hasNonEmptyText } from './shared';
 import { createToolResultMessage, type ToolExecutionLedgerRecord } from './tool-execution-ledger';
 
-export function resolveToolResultSummary(
-  toolCall: ToolCall,
-  toolResult: ToolResult,
-  toolOutput: string
-): string {
-  if (hasNonEmptyText(toolResult.summary)) {
-    return toolResult.summary;
-  }
-
+export function resolveToolResultSummary(toolCall: ToolCall, toolResult: ToolCallResult): string {
   const toolName = toolCall.function.name;
   const subject = toolName === 'bash' ? 'Command' : toolName;
+  const toolOutput = toolResult.output;
 
   if (toolResult.success) {
     if (hasNonEmptyText(toolOutput)) {
@@ -35,29 +28,32 @@ export function resolveToolResultSummary(
 export function buildToolResultMetadata(
   record: ToolExecutionLedgerRecord
 ): Record<string, unknown> | undefined {
+  const result = record.result;
   const error: Record<string, unknown> = {};
-  if (record.errorName) {
-    error.name = record.errorName;
-  }
-  if (record.errorMessage) {
-    error.message = record.errorMessage;
-  }
-  if (record.errorCode) {
-    error.code = record.errorCode;
+  if (!result.success) {
+    if (result.error?.name) {
+      error.name = result.error.name;
+    }
+    if (result.error?.message) {
+      error.message = result.error.message;
+    }
+    if (result.error?.errorCode) {
+      error.code = result.error.errorCode;
+    }
   }
 
   const toolResult: Record<string, unknown> = {
-    success: record.success,
+    success: result.success,
     summary: record.summary,
   };
-  if (hasNonEmptyText(record.output)) {
-    toolResult.output = record.output;
+  if (hasNonEmptyText(result.output)) {
+    toolResult.output = result.output;
   }
-  if (record.payload !== undefined) {
-    toolResult.payload = record.payload;
+  if (result.success && result.structured !== undefined) {
+    toolResult.structured = result.structured;
   }
-  if (record.metadata && Object.keys(record.metadata).length > 0) {
-    toolResult.metadata = record.metadata;
+  if (result.metadata && Object.keys(result.metadata).length > 0) {
+    toolResult.metadata = result.metadata;
   }
   if (Object.keys(error).length > 0) {
     toolResult.error = error;
@@ -75,7 +71,7 @@ export function createToolResultMessageFromLedger(
 ): Message {
   return createToolResultMessage({
     toolCallId,
-    content: hasNonEmptyText(record.output) ? record.output : record.summary,
+    content: hasNonEmptyText(record.result.output) ? record.result.output : record.summary,
     metadata: buildToolResultMetadata(record),
     createMessageId,
   });

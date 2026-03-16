@@ -12,6 +12,7 @@ vi.mock('./source-modules', () => ({
 import { disposeAgentRuntime, runAgentPrompt } from './runtime';
 import * as sourceModules from './source-modules';
 import type { AgentEventHandlers } from './types';
+import type { ToolSchemaLike } from './source-modules';
 
 describe('runAgentPrompt usage forwarding', () => {
   const mockGetSourceModules = sourceModules.getSourceModules as unknown as ReturnType<
@@ -43,26 +44,25 @@ describe('runAgentPrompt usage forwarding', () => {
     receivedAgentConfig = undefined;
     loggerFromEnv.calls.length = 0;
 
-    class FakeToolManager {
-      registerTool = vi.fn();
-      registerTools = vi.fn();
-      getTools = vi.fn(() => []);
-      getToolSchemas = vi.fn(() => []);
-    }
+    const schemas: ToolSchemaLike[] = [
+      { type: 'function', function: { name: 'local_shell' } },
+      { type: 'function', function: { name: 'read_file' } },
+      { type: 'function', function: { name: 'file_edit' } },
+      { type: 'function', function: { name: 'write_file' } },
+    ];
 
-    class FakeTool {
-      toToolSchema() {
-        return {
-          type: 'function',
-          function: {
-            name: 'fake_tool',
-          },
-        };
+    class FakeToolExecutor {
+      private readonly schemas: ToolSchemaLike[];
+
+      constructor(options: { system?: { schemas?: ToolSchemaLike[] } }) {
+        this.schemas = options.system?.schemas || [];
       }
+
+      getToolSchemas = vi.fn(() => this.schemas);
     }
 
     class FakeAgent {
-      constructor(_provider: unknown, _toolManager: unknown, config: Record<string, unknown>) {
+      constructor(_provider: unknown, _toolExecutor: unknown, config: Record<string, unknown>) {
         receivedAgentConfig = config;
       }
 
@@ -73,6 +73,10 @@ describe('runAgentPrompt usage forwarding', () => {
     class FakeAppService {
       async listContextMessages() {
         return [];
+      }
+
+      async getRun() {
+        return null;
       }
 
       async runForeground(
@@ -165,25 +169,13 @@ describe('runAgentPrompt usage forwarding', () => {
         prepare: vi.fn().mockResolvedValue(undefined),
         close: vi.fn().mockResolvedValue(undefined),
       }),
-      DefaultToolManager: FakeToolManager,
-      BashTool: FakeTool,
-      WriteFileTool: FakeTool,
-      FileReadTool: FakeTool,
-      FileEditTool: FakeTool,
-      FileHistoryListTool: FakeTool,
-      FileHistoryRestoreTool: FakeTool,
-      GlobTool: FakeTool,
-      GrepTool: FakeTool,
-      SkillTool: FakeTool,
-      TaskTool: FakeTool,
-      TaskCreateTool: FakeTool,
-      TaskGetTool: FakeTool,
-      TaskListTool: FakeTool,
-      TaskUpdateTool: FakeTool,
-      TaskStopTool: FakeTool,
-      TaskOutputTool: FakeTool,
-      TaskStore: class {},
-      RealSubagentRunnerAdapter: class {},
+      createEnterpriseToolSystemV2WithSubagents: vi.fn(() => ({
+        schemas,
+      })),
+      EnterpriseToolExecutor: FakeToolExecutor,
+      createWorkspaceFileSystemPolicy: vi.fn(() => ({ mode: 'restricted' })),
+      createRestrictedNetworkPolicy: vi.fn(() => ({ mode: 'restricted' })),
+      getTaskStateStoreV2: vi.fn(() => ({})),
     } as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>);
   });
 

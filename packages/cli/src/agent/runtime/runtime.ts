@@ -1,4 +1,3 @@
-import { buildSystemPrompt, resolveRenxDatabasePath, resolveRenxTaskDir } from '@renx-code/core';
 import type {
   AgentContextUsageEvent,
   AgentEventHandlers,
@@ -28,9 +27,11 @@ import {
   resolveWorkspaceRoot,
   type SourceModules,
   type StatelessAgentLike,
+  type ToolExecutorLike,
+  type ToolSchemaLike,
   type ToolConfirmEventLike,
 } from './source-modules';
-import { registerTaskTools, registerWorkspaceTools, resolveToolSchemas } from './tool-catalog';
+import { filterToolSchemas } from './tool-catalog';
 import { ToolCallBuffer } from './tool-call-buffer';
 import type { AttachmentModelCapabilities } from '../../files/attachment-capabilities';
 import { resolveAttachmentModelCapabilities } from '../../files/attachment-capabilities';
@@ -42,7 +43,7 @@ type RuntimeCore = {
   maxSteps: number;
   conversationId: string;
   workspaceRoot: string;
-  parentTools: Array<{ type: string; function: { name?: string } }>;
+  parentTools: ToolSchemaLike[];
   agent: StatelessAgentLike;
   appService: AgentAppServiceLike;
   appStore: AgentAppStoreLike;
@@ -148,8 +149,8 @@ const resolveConversationId = () => {
   return `opentui-${Date.now()}`;
 };
 
-const resolveDbPath = (): string => {
-  return resolveRenxDatabasePath(process.env);
+const resolveDbPath = (modules: SourceModules): string => {
+  return modules.resolveRenxDatabasePath(process.env);
 };
 
 const buildCliLoggerEnv = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => ({
@@ -368,6 +369,34 @@ const prepareRuntimeEnvironment = async (modules: SourceModules, workspaceRoot: 
   syncPreferredModelIdFromEnv();
 };
 
+const createDeferredSubagentAppService = () => {
+  let boundService: Pick<
+    AgentAppServiceLike,
+    'runForeground' | 'getRun' | 'listContextMessages'
+  > | null = null;
+
+  const requireBoundService = () => {
+    if (!boundService) {
+      throw new Error('CLI_SUBAGENT_APP_SERVICE_NOT_READY');
+    }
+    return boundService;
+  };
+
+  return {
+    service: {
+      runForeground: (...args: Parameters<AgentAppServiceLike['runForeground']>) =>
+        requireBoundService().runForeground(...args),
+      getRun: (...args: Parameters<AgentAppServiceLike['getRun']>) =>
+        requireBoundService().getRun(...args),
+      listContextMessages: (...args: Parameters<AgentAppServiceLike['listContextMessages']>) =>
+        requireBoundService().listContextMessages(...args),
+    },
+    bind(service: Pick<AgentAppServiceLike, 'runForeground' | 'getRun' | 'listContextMessages'>) {
+      boundService = service;
+    },
+  };
+};
+
 const createRuntime = async (): Promise<RuntimeCore> => {
   const modules = await getSourceModules();
   const workspaceRoot = resolveWorkspaceRoot();
@@ -385,19 +414,44 @@ const createRuntime = async (): Promise<RuntimeCore> => {
   const provider = modules.ProviderRegistry.createFromEnv(modelId, {
     logger: asRecord(coreLogger),
   });
-  const toolManager = new modules.DefaultToolManager();
-  const taskStore = new modules.TaskStore({
-    baseDir: resolveRenxTaskDir(process.env),
+  const taskStore = modules.getTaskStateStoreV2({
+    baseDir: modules.resolveRenxTaskDir(process.env),
   });
-  registerWorkspaceTools(toolManager, modules, workspaceRoot);
+  const deferredSubagentAppService = createDeferredSubagentAppService();
+  let toolExecutor: ToolExecutorLike | null = null;
+  const toolSystem = modules.createEnterpriseToolSystemV2WithSubagents({
+    appService: deferredSubagentAppService.service,
+    resolveTools: (allowedTools?: string[]) =>
+      filterToolSchemas(toolExecutor?.getToolSchemas() || [], { allowedTools }),
+    resolveModelId: () => modelConfig.model || modelId,
+    builtIns: {
+      skill: {
+        loaderOptions: {
+          workingDir: workspaceRoot,
+        },
+      },
+      task: {
+        store: taskStore,
+        defaultNamespace: conversationId,
+      },
+    },
+  });
+  toolExecutor = new modules.EnterpriseToolExecutor({
+    system: toolSystem,
+    workingDirectory: workspaceRoot,
+    fileSystemPolicy: modules.createWorkspaceFileSystemPolicy(workspaceRoot),
+    networkPolicy: modules.createRestrictedNetworkPolicy(),
+    approvalPolicy: 'on-request',
+    trustLevel: 'untrusted',
+  });
 
-  const agent = new modules.StatelessAgent(provider, toolManager, {
+  const agent = new modules.StatelessAgent(provider, toolExecutor, {
     maxRetryCount: parsePositiveInt(process.env.AGENT_MAX_RETRY_COUNT, DEFAULT_MAX_RETRY_COUNT),
     enableCompaction: true,
     logger: agentLogger,
   });
 
-  const appStore = modules.createSqliteAgentAppStore(resolveDbPath());
+  const appStore = modules.createSqliteAgentAppStore(resolveDbPath(modules));
   const preparableStore = appStore as AgentAppStoreLike & {
     prepare?: () => Promise<void>;
   };
@@ -411,28 +465,9 @@ const createRuntime = async (): Promise<RuntimeCore> => {
     eventStore: appStore,
     messageStore: appStore,
   });
+  deferredSubagentAppService.bind(appService);
 
-  const resolveSubagentToolSchemas = (allowedTools?: string[]) =>
-    resolveToolSchemas(toolManager, { allowedTools });
-
-  const taskRunner = new modules.RealSubagentRunnerAdapter({
-    store: taskStore,
-    appService,
-    resolveTools: resolveSubagentToolSchemas,
-    // Use provider-level model name (e.g. MiniMax-M2.5), not registry id (e.g. minimax-2.5),
-    // so subagent requests match the same backend model as parent agent.
-    resolveModelId: () => modelConfig.model || modelId,
-  });
-
-  registerTaskTools({
-    modules,
-    manager: toolManager,
-    taskStore,
-    taskRunner,
-    defaultNamespace: conversationId,
-  });
-
-  const parentTools = resolveToolSchemas(toolManager, {
+  const parentTools = filterToolSchemas(toolExecutor.getToolSchemas(), {
     hiddenToolNames: PARENT_HIDDEN_TOOL_NAMES,
   });
 
@@ -559,7 +594,12 @@ export const runAgentPrompt = async (
         conversationId: runtime.conversationId,
         userInput: prompt,
         historyMessages: historyMessages as AgentV4MessageLike[],
-        systemPrompt: buildSystemPrompt({ directory: runtime.workspaceRoot }),
+        systemPrompt: runtime.modules.buildSystemPrompt({
+          directory: runtime.workspaceRoot,
+          runtimeToolNames: runtime.parentTools
+            .map((tool) => tool.function?.name)
+            .filter((name): name is string => typeof name === 'string'),
+        }),
         tools: runtime.parentTools,
         config: resolvePromptCacheConfig(runtime.conversationId),
         maxSteps: runtime.maxSteps,

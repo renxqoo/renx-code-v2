@@ -8,8 +8,12 @@ import {
 
 function makeRecord(output: string): ToolExecutionLedgerRecord {
   return {
-    success: true,
-    output,
+    result: {
+      callId: 'call_1',
+      toolName: 'test_tool',
+      success: true,
+      output,
+    },
     summary: output || 'no output',
     recordedAt: Date.now(),
   };
@@ -28,8 +32,8 @@ describe('tool-execution-ledger', () => {
       });
 
     const [resultA, resultB] = await Promise.all([run(), run()]);
-    expect(resultA.record.output).toBe('ok');
-    expect(resultB.record.output).toBe('ok');
+    expect(resultA.record.result.output).toBe('ok');
+    expect(resultB.record.result.output).toBe('ok');
     expect(executionCount).toBe(1);
   });
 
@@ -47,8 +51,8 @@ describe('tool-execution-ledger', () => {
     const second = await run();
     expect(first.fromCache).toBe(false);
     expect(second.fromCache).toBe(false);
-    expect(first.record.output).toBe('ok_1');
-    expect(second.record.output).toBe('ok_2');
+    expect(first.record.result.output).toBe('ok_1');
+    expect(second.record.result.output).toBe('ok_2');
   });
 
   it('executeToolCallWithLedger bypasses cache when executionId is empty', async () => {
@@ -70,7 +74,7 @@ describe('tool-execution-ledger', () => {
     const second = await run();
     expect(first.fromCache).toBe(false);
     expect(second.fromCache).toBe(false);
-    expect(first.record.output).toBe('result_1');
-    expect(second.record.output).toBe('result_2');
+    expect(first.record.result.output).toBe('result_1');
+    expect(second.record.result.output).toBe('result_2');
   });
 });

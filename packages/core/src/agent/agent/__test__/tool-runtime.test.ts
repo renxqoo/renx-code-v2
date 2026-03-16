@@ -9,10 +9,10 @@ import type {
   StreamEvent,
   ToolPolicyCheckInfo,
 } from '../../types';
-import type { ToolManager } from '../../tool/tool-manager';
 import type { ToolConcurrencyPolicy } from '../../tool/types';
 import type { ToolCall } from '../../../providers';
 import { InMemoryToolExecutionLedger, NoopToolExecutionLedger } from '../tool-execution-ledger';
+import type { AgentToolExecutor } from '../tool-executor';
 import {
   executeTool,
   processToolCalls,
@@ -21,6 +21,7 @@ import {
 } from '../tool-runtime';
 import { throwIfAborted } from '../abort-runtime';
 import { createNoopObservation } from '../runtime-hooks';
+import { ToolSessionState } from '../../tool-v2/context';
 
 type MetricRecord = AgentMetric[];
 
@@ -32,11 +33,11 @@ function createToolManager() {
     getTools: vi.fn(() => []),
     getToolSchemas: vi.fn(() => []),
     getConcurrencyPolicy: vi.fn(() => ({ mode: 'exclusive' as const })),
-  } as unknown as ToolManager;
+  } as unknown as AgentToolExecutor;
 }
 
 function createToolRuntime(options?: {
-  manager?: ToolManager;
+  manager?: AgentToolExecutor;
   emitter?: EventEmitter;
   metrics?: MetricRecord;
   maxConcurrentToolCalls?: number;
@@ -50,7 +51,8 @@ function createToolRuntime(options?: {
   const runtime: ToolRuntime = {
     agentRef: {},
     execution: {
-      manager,
+      executor: manager,
+      sessionState: new ToolSessionState(),
       ledger: options?.toolExecutionLedger ?? new NoopToolExecutionLedger(),
       maxConcurrentToolCalls: options?.maxConcurrentToolCalls ?? 1,
       resolveConcurrencyPolicy: options?.toolConcurrencyPolicyResolver,
@@ -157,13 +159,13 @@ describe('tool-runtime', () => {
     const toolChunkSpy = vi.fn();
 
     manager.execute = vi.fn().mockImplementation(async (_toolCall, options) => {
-      options.onChunk?.({ type: 'stdout', data: 'chunk-1' });
-      const decision = await options.onConfirm?.({
-        toolCallId: 'call_2',
+      await options.onStreamEvent?.({ type: 'stdout', message: 'chunk-1' });
+      const decision = await options.onApproval?.({
         toolName: 'bash',
-        arguments: '{}',
+        callId: 'call_2',
+        reason: 'run bash',
       });
-      expect(decision).toEqual({ approved: true, message: 'approved' });
+      expect(decision).toEqual({ approved: true, scope: 'once', reason: 'approved' });
       return { success: false };
     });
 
@@ -257,11 +259,11 @@ describe('tool-runtime', () => {
     const toolChunkSpy = vi.fn();
 
     manager.execute = vi.fn().mockImplementation(async (_toolCall, options) => {
-      options.onChunk?.({ type: 'stdout', data: 'chunk-2' });
-      const decision = await options.onConfirm?.({
-        toolCallId: 'call_3',
+      await options.onStreamEvent?.({ type: 'stdout', message: 'chunk-2' });
+      const decision = await options.onApproval?.({
         toolName: 'bash',
-        arguments: '{}',
+        callId: 'call_3',
+        reason: 'run bash',
       });
       return decision?.approved ? { success: true, output: 'approved-output' } : { success: false };
     });
@@ -301,15 +303,15 @@ describe('tool-runtime', () => {
 
     manager.execute = vi.fn().mockImplementation(async (_toolCall, options) => {
       abortController.abort();
-      const decision = await options.onConfirm?.({
-        toolCallId: 'call_abort_confirm',
+      const decision = await options.onApproval?.({
         toolName: 'bash',
-        arguments: '{}',
+        callId: 'call_abort_confirm',
+        reason: 'run bash',
       });
-      expect(decision).toEqual({ approved: false, message: 'Operation aborted' });
+      expect(decision).toEqual({ approved: false, scope: 'once', reason: 'Operation aborted' });
       return {
         success: false,
-        error: { message: decision?.message || 'Operation aborted' },
+        error: { message: decision?.reason || 'Operation aborted' },
       };
     });
 

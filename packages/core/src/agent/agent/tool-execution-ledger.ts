@@ -1,14 +1,9 @@
 import type { Message } from '../types';
+import type { ToolCallResult } from '../tool-v2/contracts';
 
 export interface ToolExecutionLedgerRecord {
-  success: boolean;
-  output: string;
+  result: ToolCallResult;
   summary: string;
-  payload?: unknown;
-  metadata?: Record<string, unknown>;
-  errorName?: string;
-  errorMessage?: string;
-  errorCode?: string;
   recordedAt: number;
 }
 

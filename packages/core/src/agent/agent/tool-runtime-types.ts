@@ -1,16 +1,18 @@
 import type { ToolCall } from '../../providers';
-import type { ToolManager } from '../tool/tool-manager';
 import type { ToolConcurrencyPolicy } from '../tool/types';
 import type { AgentCallbacks, Message, StreamEvent } from '../types';
 
 import type { AgentRuntimeLifecycleHooks } from './runtime-hooks';
+import type { AgentToolExecutor } from './tool-executor';
 import type { ToolExecutionLedger } from './tool-execution-ledger';
 import type { WriteBufferRuntime } from './write-file-session';
+import type { ToolSessionState } from '../tool-v2/context';
 
 export type ToolRuntime = {
   agentRef: unknown;
   execution: {
-    manager: ToolManager;
+    executor: AgentToolExecutor;
+    sessionState: ToolSessionState;
     ledger: ToolExecutionLedger;
     maxConcurrentToolCalls: number;
     resolveConcurrencyPolicy?: (toolCall: ToolCall) => ToolConcurrencyPolicy;

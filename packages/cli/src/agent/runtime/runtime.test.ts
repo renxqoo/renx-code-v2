@@ -21,43 +21,43 @@ import {
 } from './runtime';
 import * as sourceModules from './source-modules';
 import type { AgentEventHandlers } from './types';
+import type { ToolSchemaLike } from './source-modules';
 
 const buildMockModules = (
   overrides?: Partial<Awaited<ReturnType<typeof sourceModules.getSourceModules>>>
 ) => {
-  class FakeToolManager {
-    private readonly tools: unknown[] = [];
+  const renxHome = process.env.RENX_HOME || path.join(process.cwd(), '.tmp-renx-home');
+  const schemas: ToolSchemaLike[] = [
+    { type: 'function', function: { name: 'local_shell' } },
+    { type: 'function', function: { name: 'write_file' } },
+    { type: 'function', function: { name: 'read_file' } },
+    { type: 'function', function: { name: 'file_edit' } },
+    { type: 'function', function: { name: 'file_history_list' } },
+    { type: 'function', function: { name: 'file_history_restore' } },
+    { type: 'function', function: { name: 'glob' } },
+    { type: 'function', function: { name: 'grep' } },
+    { type: 'function', function: { name: 'skill' } },
+    { type: 'function', function: { name: 'spawn_agent' } },
+    { type: 'function', function: { name: 'agent_status' } },
+    { type: 'function', function: { name: 'wait_agents' } },
+    { type: 'function', function: { name: 'cancel_agent' } },
+    { type: 'function', function: { name: 'task_create' } },
+    { type: 'function', function: { name: 'task_get' } },
+    { type: 'function', function: { name: 'task_list' } },
+    { type: 'function', function: { name: 'task_update' } },
+    { type: 'function', function: { name: 'task_stop' } },
+    { type: 'function', function: { name: 'task_output' } },
+  ];
 
-    registerTool = vi.fn((tool: unknown) => {
-      this.tools.push(tool);
-    });
+  class FakeToolExecutor {
+    private readonly schemas: ToolSchemaLike[];
 
-    registerTools = vi.fn((tools: Iterable<unknown>) => {
-      for (const tool of tools) {
-        this.tools.push(tool);
-      }
-    });
+    constructor(options: { system?: { schemas?: ToolSchemaLike[] } }) {
+      this.schemas = options.system?.schemas || [];
+    }
 
-    getTools = vi.fn(() => this.tools);
-
-    getToolSchemas = vi.fn(() =>
-      this.tools
-        .map((tool) => (tool as { toToolSchema?: () => unknown }).toToolSchema?.())
-        .filter(Boolean)
-    );
+    getToolSchemas = vi.fn(() => this.schemas);
   }
-
-  const createNamedTool = (name: string) =>
-    class NamedFakeTool {
-      toToolSchema() {
-        return {
-          type: 'function',
-          function: {
-            name,
-          },
-        };
-      }
-    };
 
   class FakeAgent {
     on = vi.fn();
@@ -71,6 +71,10 @@ const buildMockModules = (
 
     async listContextMessages() {
       return [];
+    }
+
+    async getRun() {
+      return null;
     }
 
     async runForeground(request: unknown) {
@@ -129,8 +133,11 @@ const buildMockModules = (
       }),
       createFromEnv: () => ({}),
     },
+    buildSystemPrompt: vi.fn(() => 'Test system prompt'),
     loadEnvFiles: vi.fn().mockResolvedValue([]),
     loadConfigToEnv: vi.fn().mockReturnValue([]),
+    resolveRenxDatabasePath: vi.fn(() => path.join(renxHome, 'data.db')),
+    resolveRenxTaskDir: vi.fn(() => path.join(renxHome, 'task')),
     createLoggerFromEnv: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() })),
     createAgentLoggerAdapter: vi.fn((logger: Record<string, unknown>) => ({
       info: typeof logger.info === 'function' ? logger.info.bind(logger) : undefined,
@@ -140,25 +147,13 @@ const buildMockModules = (
     StatelessAgent: FakeAgent,
     AgentAppService: FakeAppService,
     createSqliteAgentAppStore: (dbPath: string) => new FakeAppStore(dbPath),
-    DefaultToolManager: FakeToolManager,
-    BashTool: createNamedTool('bash'),
-    WriteFileTool: createNamedTool('write_file'),
-    FileReadTool: createNamedTool('file_read'),
-    FileEditTool: createNamedTool('file_edit'),
-    FileHistoryListTool: createNamedTool('file_history_list'),
-    FileHistoryRestoreTool: createNamedTool('file_history_restore'),
-    GlobTool: createNamedTool('glob'),
-    GrepTool: createNamedTool('grep'),
-    SkillTool: createNamedTool('skill'),
-    TaskTool: createNamedTool('agent'),
-    TaskCreateTool: createNamedTool('task_create'),
-    TaskGetTool: createNamedTool('task_get'),
-    TaskListTool: createNamedTool('task_list'),
-    TaskUpdateTool: createNamedTool('task_update'),
-    TaskStopTool: createNamedTool('task_stop'),
-    TaskOutputTool: createNamedTool('task_output'),
-    TaskStore: class {},
-    RealSubagentRunnerAdapter: class {},
+    createEnterpriseToolSystemV2WithSubagents: vi.fn(() => ({
+      schemas,
+    })),
+    EnterpriseToolExecutor: FakeToolExecutor,
+    createWorkspaceFileSystemPolicy: vi.fn(() => ({ mode: 'restricted' })),
+    createRestrictedNetworkPolicy: vi.fn(() => ({ mode: 'restricted' })),
+    getTaskStateStoreV2: vi.fn(() => ({})),
     ...overrides,
   };
 };
@@ -352,7 +347,7 @@ describe('runtime', () => {
     const toolNames =
       appServiceClass.lastRequest?.tools?.map((tool) => tool.function?.name).filter(Boolean) || [];
 
-    expect(toolNames).toContain('file_read');
+    expect(toolNames).toContain('read_file');
     expect(toolNames).toContain('file_edit');
     expect(toolNames).not.toContain('file_history_list');
     expect(toolNames).not.toContain('file_history_restore');
@@ -395,6 +390,10 @@ describe('runtime', () => {
 
         async listContextMessages() {
           return [];
+        }
+
+        async getRun() {
+          return null;
         }
 
         async runForeground(request: unknown) {

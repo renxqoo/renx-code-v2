@@ -74,4 +74,5 @@ export { TaskStopTool } from './agent/tool/task-stop';
 export { TaskStore } from './agent/tool/task-store';
 export { TaskUpdateTool } from './agent/tool/task-update';
 export { WriteFileTool } from './agent/tool/write-file';
+export * from './agent/tool-v2';
 export * from './cli-contracts';

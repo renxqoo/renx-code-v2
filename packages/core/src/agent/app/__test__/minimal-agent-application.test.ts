@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ToolManager } from '../../tool/tool-manager';
 import { StatelessAgent } from '../../agent';
+import type { AgentToolExecutor } from '../../agent/tool-executor';
 import { MinimalStatelessAgentApplication } from '../minimal-agent-application';
 import type { Chunk, LLMProvider } from '../../../providers';
 
@@ -40,7 +40,7 @@ function createToolManager() {
     getTools: vi.fn(() => []),
     getToolSchemas: vi.fn(() => []),
     getConcurrencyPolicy: vi.fn(() => ({ mode: 'exclusive' as const })),
-  } as unknown as ToolManager;
+  } as unknown as AgentToolExecutor;
 }
 
 describe('MinimalStatelessAgentApplication', () => {
@@ -134,7 +134,7 @@ describe('MinimalStatelessAgentApplication', () => {
       );
 
     manager.execute = vi.fn().mockImplementation(async (_toolCall, options) => {
-      options.onChunk?.({ type: 'stdout', data: 'streamed-output' });
+      await options.onStreamEvent?.({ type: 'stdout', message: 'streamed-output' });
       return { success: true, output: 'ok' };
     });
 

@@ -1,3 +1,6 @@
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { resolveRepoRoot } from './source-modules';
@@ -12,16 +15,22 @@ afterEach(() => {
 });
 
 describe('resolveRepoRoot', () => {
-  it('uses the current working directory by default', () => {
-    vi.spyOn(process, 'cwd').mockReturnValue('D:\\temp\\example-workspace');
+  it('resolves the monorepo root from a nested cli cwd by default', () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'renx-cli-repo-root-'));
+    mkdirSync(join(repoRoot, 'packages', 'core', 'src'), { recursive: true });
+    mkdirSync(join(repoRoot, 'packages', 'cli'), { recursive: true });
+    writeFileSync(join(repoRoot, 'pnpm-workspace.yaml'), 'packages:\n  - packages/*\n');
+    writeFileSync(join(repoRoot, 'packages', 'core', 'src', 'index.ts'), 'export {};\n');
+    writeFileSync(join(repoRoot, 'packages', 'cli', 'package.json'), '{"name":"cli"}\n');
+    vi.spyOn(process, 'cwd').mockReturnValue(join(repoRoot, 'packages', 'cli'));
 
-    expect(resolveRepoRoot()).toBe('D:\\temp\\example-workspace');
+    expect(resolveRepoRoot()).toBe(repoRoot);
   });
 
   it('respects AGENT_REPO_ROOT when provided', () => {
-    process.env.AGENT_REPO_ROOT = 'D:\\work\\coding-agent-v2';
-    vi.spyOn(process, 'cwd').mockReturnValue('D:\\temp\\example-workspace');
+    process.env.AGENT_REPO_ROOT = '/tmp/coding-agent-v2';
+    vi.spyOn(process, 'cwd').mockReturnValue('/tmp/example-workspace');
 
-    expect(resolveRepoRoot()).toBe('D:\\work\\coding-agent-v2');
+    expect(resolveRepoRoot()).toBe('/tmp/coding-agent-v2');
   });
 });

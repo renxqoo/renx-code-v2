@@ -1,7 +1,7 @@
 import type { AgentCallbacks, AgentInput, ErrorDecision, Message, StreamEvent } from '../types';
 import type { Tool, ToolCall } from '../../providers';
-import type { ToolManager } from '../tool/tool-manager';
 import type { ToolConcurrencyPolicy } from '../tool/types';
+import type { ToolSessionState } from '../tool-v2/context';
 
 import { processToolCalls as processToolCallsRuntime, type ToolRuntime } from './tool-runtime';
 import {
@@ -13,6 +13,7 @@ import type { AbortScope, TimeoutBudgetState, TimeoutStage } from './timeout-bud
 import type { ToolExecutionLedger } from './tool-execution-ledger';
 import type { AgentError, TimeoutBudgetExceededError } from './error';
 import type { AgentRuntimeLifecycleHooks } from './runtime-hooks';
+import type { AgentToolExecutor } from './tool-executor';
 
 type SafeCallback = <T>(
   callback: ((arg: T) => void | Promise<void>) | undefined,
@@ -54,7 +55,11 @@ export interface RunLoopRuntimeFactoryDeps {
     ) => AgentInput['config'];
   };
   createLLMStreamRuntimeDeps: () => LLMStreamRuntimeDeps;
-  createToolRuntime: (hooks?: AgentRuntimeLifecycleHooks) => ToolRuntime;
+  createToolRuntime: (
+    sessionState: ToolSessionState,
+    hooks?: AgentRuntimeLifecycleHooks
+  ) => ToolRuntime;
+  toolSessionState: ToolSessionState;
   stream: {
     progress: (
       executionId: string | undefined,
@@ -136,18 +141,27 @@ export function createRunLoopRuntime(
         parentSpanId,
         writeBufferSessions
       ) =>
-        processToolCallsRuntime(deps.createToolRuntime(hooks), {
-          toolCalls,
-          messages,
-          stepIndex,
-          callbacks,
-          abortSignal,
-          executionId,
-          traceId,
-          parentSpanId,
-          writeBufferSessions,
-          emitProgress: deps.stream.progress,
-        }),
+        (async function* () {
+          try {
+            return yield* processToolCallsRuntime(
+              deps.createToolRuntime(deps.toolSessionState, hooks),
+              {
+                toolCalls,
+                messages,
+                stepIndex,
+                callbacks,
+                abortSignal,
+                executionId,
+                traceId,
+                parentSpanId,
+                writeBufferSessions,
+                emitProgress: deps.stream.progress,
+              }
+            );
+          } finally {
+            deps.toolSessionState.clearTurn();
+          }
+        })(),
     },
     stream: deps.stream,
     resilience: deps.resilience,
@@ -159,7 +173,8 @@ export function createRunLoopRuntime(
 export interface ToolRuntimeFactoryDeps {
   agentRef: unknown;
   execution: {
-    manager: ToolManager;
+    executor: AgentToolExecutor;
+    sessionState: ToolSessionState;
     ledger: ToolExecutionLedger;
     maxConcurrentToolCalls: number;
     resolveConcurrencyPolicy?: (toolCall: ToolCall) => ToolConcurrencyPolicy;
@@ -221,12 +236,12 @@ export function createLLMStreamRuntimeDeps(
 }
 
 /**
- * Normalize manager-owned tool schemas at one boundary so the run loop never
+ * Normalize executor-owned tool schemas at one boundary so the run loop never
  * needs to know whether tool definitions came from input overrides or the
  * shared tool registry.
  */
-export function resolveLLMToolsFromManager(
-  toolExecutor: Pick<ToolManager, 'getToolSchemas'>,
+export function resolveLLMToolsFromExecutor(
+  toolExecutor: Pick<AgentToolExecutor, 'getToolSchemas'>,
   inputTools?: Tool[]
 ): Tool[] | undefined {
   if (typeof inputTools !== 'undefined') {
