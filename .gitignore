@@ -1,6 +1,8 @@
 node_modules/
 dist/
 coverage/
+.vitest-cache/
 .DS_Store
 *.log
+*.swp
 .husky/_/
