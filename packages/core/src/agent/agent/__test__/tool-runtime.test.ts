@@ -2,14 +2,9 @@ import { EventEmitter } from 'node:events';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type {
-  AgentCallbacks,
-  AgentMetric,
-  Message,
-  StreamEvent,
-  ToolPolicyCheckInfo,
-} from '../../types';
-import type { ToolConcurrencyPolicy } from '../../tool/types';
+import type { AgentCallbacks, AgentMetric, Message, StreamEvent } from '../../types';
+import { createSystemPrincipal } from '../../auth/principal';
+import type { ToolConcurrencyPolicy, ToolPolicyCheckInfo } from '../../tool-v2/contracts';
 import type { ToolCall } from '../../../providers';
 import { InMemoryToolExecutionLedger, NoopToolExecutionLedger } from '../tool-execution-ledger';
 import type { AgentToolExecutor } from '../tool-executor';
@@ -52,6 +47,7 @@ function createToolRuntime(options?: {
     agentRef: {},
     execution: {
       executor: manager,
+      principal: createSystemPrincipal('tool-runtime-test'),
       sessionState: new ToolSessionState(),
       ledger: options?.toolExecutionLedger ?? new NoopToolExecutionLedger(),
       maxConcurrentToolCalls: options?.maxConcurrentToolCalls ?? 1,
@@ -162,7 +158,7 @@ describe('tool-runtime', () => {
       await options.onStreamEvent?.({ type: 'stdout', message: 'chunk-1' });
       const decision = await options.onApproval?.({
         toolName: 'bash',
-        callId: 'call_2',
+        toolCallId: 'call_2',
         reason: 'run bash',
       });
       expect(decision).toEqual({ approved: true, scope: 'once', reason: 'approved' });
@@ -264,7 +260,7 @@ describe('tool-runtime', () => {
       await options.onStreamEvent?.({ type: 'stdout', message: 'chunk-2' });
       const decision = await options.onApproval?.({
         toolName: 'bash',
-        callId: 'call_3',
+        toolCallId: 'call_3',
         reason: 'run bash',
       });
       return decision?.approved ? { success: true, output: 'approved-output' } : { success: false };
@@ -305,7 +301,7 @@ describe('tool-runtime', () => {
     manager.execute = vi.fn().mockImplementation(async (_toolCall, options) => {
       const grant = await options.onPermissionRequest?.({
         toolName: 'read_file',
-        callId: 'call_perm_1',
+        toolCallId: 'call_perm_1',
         requestedScope: 'turn',
         permissions: {
           fileSystem: {
@@ -365,7 +361,7 @@ describe('tool-runtime', () => {
       abortController.abort();
       const decision = await options.onApproval?.({
         toolName: 'bash',
-        callId: 'call_abort_confirm',
+        toolCallId: 'call_abort_confirm',
         reason: 'run bash',
       });
       expect(decision).toEqual({ approved: false, scope: 'once', reason: 'Operation aborted' });
@@ -395,42 +391,26 @@ describe('tool-runtime', () => {
     });
   });
 
-  it('executeTool auto-finalizes write_file buffered responses before returning the final tool result', async () => {
+  it('executeTool leaves staged write_file protocol responses to the executor layer', async () => {
     const { runtime, manager } = createToolRuntime();
-    manager.execute = vi
-      .fn()
-      .mockImplementationOnce(async (toolCall: ToolCall) => {
-        expect(toolCall.id).toBe('call_write_file');
-        return {
-          success: false,
-          output: JSON.stringify({
-            ok: false,
-            code: 'WRITE_FILE_PARTIAL_BUFFERED',
-            nextAction: 'finalize',
-            buffer: {
-              bufferId: 'buffer_1',
-              path: 'D:\\tmp\\out.txt',
-            },
-            nextArgs: {
-              mode: 'finalize',
-              bufferId: 'buffer_1',
-              path: 'D:\\tmp\\out.txt',
-            },
-          }),
-        };
-      })
-      .mockImplementationOnce(async (toolCall: ToolCall) => {
-        expect(toolCall.id).toBe('call_write_file__finalize');
-        expect(JSON.parse(toolCall.function.arguments)).toEqual({
-          mode: 'finalize',
-          bufferId: 'buffer_1',
-          path: 'D:\\tmp\\out.txt',
-        });
-        return {
-          success: true,
-          output: 'file committed',
-        };
-      });
+    const stagedWriteOutput = JSON.stringify({
+      ok: false,
+      code: 'WRITE_FILE_PARTIAL_BUFFERED',
+      nextAction: 'finalize',
+      buffer: {
+        bufferId: 'buffer_1',
+        path: 'D:\\tmp\\out.txt',
+      },
+      nextArgs: {
+        mode: 'finalize',
+        bufferId: 'buffer_1',
+        path: 'D:\\tmp\\out.txt',
+      },
+    });
+    manager.execute = vi.fn().mockResolvedValue({
+      success: false,
+      output: stagedWriteOutput,
+    });
 
     const events = await collectEvents(
       executeTool(runtime, {
@@ -451,11 +431,11 @@ describe('tool-runtime', () => {
     expect(events[0]).toMatchObject({
       type: 'tool_result',
       data: {
-        content: 'file committed',
+        content: stagedWriteOutput,
         tool_call_id: 'call_write_file',
       },
     });
-    expect(manager.execute).toHaveBeenCalledTimes(2);
+    expect(manager.execute).toHaveBeenCalledTimes(1);
   });
 
   it('processToolCalls executes a single tool and appends the result message', async () => {

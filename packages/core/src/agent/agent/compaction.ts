@@ -9,9 +9,9 @@
 import { getEncoding } from 'js-tiktoken';
 import type { LLMGenerateOptions, LLMProvider, LLMResponse } from '../../providers';
 import type { LLMRequestMessage } from '../../providers';
+import type { Tool } from '../../providers';
 import type { Message } from '../types';
 import { contentToText } from '../utils/message';
-import type { LLMTool } from '../tool/types';
 import type { AgentLogger } from './logger';
 import { resolveCompactionSystemPrompt, type CompactionPromptVersion } from './compaction-prompt';
 import { selectCompactionWindow } from './compaction-selection';
@@ -121,7 +121,7 @@ export function estimateTokens(text: string): number {
  * stays explicit and slightly conservative instead of chasing every provider's
  * private accounting rule.
  */
-export function estimateMessagesTokens(messages: Message[], tools?: LLMTool[]): number {
+export function estimateMessagesTokens(messages: Message[], tools?: Tool[]): number {
   return estimateMessageCollectionTokens(messages, tools);
 }
 
@@ -131,7 +131,7 @@ function estimateRequestMessagesTokens(messages: LLMRequestMessage[]): number {
 
 function estimateMessageCollectionTokens(
   messages: TokenCountableMessage[],
-  tools?: LLMTool[]
+  tools?: Tool[]
 ): number {
   let total = ASSISTANT_PRIMING_TOKENS;
 

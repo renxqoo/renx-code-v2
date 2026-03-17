@@ -19,11 +19,7 @@ export type {
   StorageConfig,
   FileHistoryConfig,
   AgentConfig,
-  AgentToolApprovalPolicy,
-  AgentToolFileSystemMode,
-  AgentToolNetworkMode,
-  AgentToolRuntimeConfig,
-  AgentToolTrustLevel,
+  AgentPermissionsConfig,
   ConfigModelDefinition,
 } from './types';
 

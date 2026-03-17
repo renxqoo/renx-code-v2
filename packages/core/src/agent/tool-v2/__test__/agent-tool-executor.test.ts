@@ -1,6 +1,10 @@
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { promises as fs } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ToolCall } from '../../../providers';
+import { createSystemPrincipal } from '../../auth/principal';
 import type { ToolHandler } from '../registry';
 import { ToolSessionState } from '../context';
 import { EnterpriseToolExecutor } from '../agent-tool-executor';
@@ -69,6 +73,7 @@ describe('EnterpriseToolExecutor', () => {
     const result = await executor.execute(createToolCall('local_shell', { command: 'rm -rf /' }), {
       stepIndex: 1,
       agent: {},
+      principal: createSystemPrincipal('executor-test'),
       sessionState: new ToolSessionState(),
       onPolicyCheck: async () => ({
         allowed: false,
@@ -84,7 +89,7 @@ describe('EnterpriseToolExecutor', () => {
     if (result.success) {
       throw new Error('expected failure');
     }
-    expect(result.error.errorCode).toBe('TOOL_POLICY_DENIED');
+    expect(result.error.errorCode).toBe('TOOL_V2_POLICY_DENIED');
   });
 
   it('derives concurrency policy from handler parallel capability', () => {
@@ -191,6 +196,7 @@ describe('EnterpriseToolExecutor', () => {
       {
         stepIndex: 1,
         agent: {},
+        principal: createSystemPrincipal('executor-test'),
         sessionState: new ToolSessionState(),
       }
     );
@@ -205,10 +211,164 @@ describe('EnterpriseToolExecutor', () => {
     if (!result.success) {
       throw new Error('expected success');
     }
-    expect(result.callId).toBe('call_1');
+    expect(result.toolCallId).toBe('call_1');
     expect(result.metadata).toMatchObject({
       autoFinalized: true,
       bufferId: 'buffer-1',
     });
+  });
+
+  it('applies organization environment deny rules before tool execution', async () => {
+    const execute = vi.fn();
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'renx-org-deny-'));
+    try {
+      const system = new EnterpriseToolSystem([
+        {
+          spec: {
+            name: 'deploy_release',
+            description: 'Deploy release',
+            inputSchema: { type: 'object' },
+            supportsParallel: false,
+            mutating: true,
+          },
+          parseArguments: vi.fn((raw: string) => JSON.parse(raw)),
+          plan: vi.fn(() => ({
+            mutating: true,
+            writePaths: [path.join(workspaceDir, 'artifact.txt')],
+            riskLevel: 'high',
+          })),
+          execute,
+        } satisfies ToolHandler,
+      ]);
+
+      const executor = new EnterpriseToolExecutor({
+        system,
+        workingDirectory: workspaceDir,
+        organizationPolicy: {
+          environments: {
+            production: {
+              rules: [
+                {
+                  id: 'prod-deploy-deny',
+                  effect: 'deny',
+                  reason: 'production environment blocks deploy_release by policy',
+                  match: {
+                    toolNames: ['deploy_release'],
+                  },
+                },
+              ],
+            },
+          },
+        },
+      });
+
+      const result = await executor.execute(createToolCall('deploy_release', {}), {
+        stepIndex: 1,
+        agent: {},
+        principal: {
+          ...createSystemPrincipal('executor-test'),
+          workspaceId: 'workspace-prod',
+          attributes: {
+            environment: 'production',
+          },
+        },
+        sessionState: new ToolSessionState(),
+      });
+
+      expect(result.success).toBe(false);
+      expect(execute).not.toHaveBeenCalled();
+      if (result.success) {
+        throw new Error('expected failure');
+      }
+      expect(result.error.errorCode).toBe('TOOL_V2_POLICY_DENIED');
+      expect(result.output).toContain('prod-deploy-deny');
+    } finally {
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it('injects organization approval requirements for matched workspaces', async () => {
+    const execute = vi.fn(async () => ({
+      output: 'ok',
+    }));
+    const approvals: Array<{ toolName: string; reason: string; key?: string }> = [];
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'renx-org-approval-'));
+    try {
+      const system = new EnterpriseToolSystem([
+        {
+          spec: {
+            name: 'publish_docs',
+            description: 'Publish docs',
+            inputSchema: { type: 'object' },
+            supportsParallel: false,
+            mutating: true,
+          },
+          parseArguments: vi.fn((raw: string) => JSON.parse(raw)),
+          plan: vi.fn(() => ({
+            mutating: true,
+            writePaths: [path.join(workspaceDir, 'docs', 'site.html')],
+          })),
+          execute,
+        } satisfies ToolHandler,
+      ]);
+
+      const executor = new EnterpriseToolExecutor({
+        system,
+        workingDirectory: workspaceDir,
+        trustLevel: 'trusted',
+        organizationPolicy: {
+          workspaces: [
+            {
+              rootPath: workspaceDir,
+              rules: [
+                {
+                  id: 'workspace-publish-approval',
+                  effect: 'require_approval',
+                  reason: 'workspace publishing requires manual approval',
+                  approvalKey: 'workspace:publish_docs',
+                  match: {
+                    toolNames: ['publish_docs'],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      });
+
+      const result = await executor.execute(createToolCall('publish_docs', {}), {
+        stepIndex: 1,
+        agent: {},
+        principal: {
+          ...createSystemPrincipal('executor-test'),
+          workspaceId: 'workspace-docs',
+        },
+        sessionState: new ToolSessionState(),
+        onApproval: async (request) => {
+          approvals.push({
+            toolName: request.toolName,
+            reason: request.reason,
+            key: request.key,
+          });
+          return {
+            approved: true,
+            scope: 'once',
+            approverId: 'approver-1',
+          };
+        },
+      });
+
+      expect(result.success).toBe(true);
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(approvals).toEqual([
+        {
+          toolName: 'publish_docs',
+          reason: 'workspace publishing requires manual approval',
+          key: 'workspace:publish_docs',
+        },
+      ]);
+    } finally {
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
   });
 });

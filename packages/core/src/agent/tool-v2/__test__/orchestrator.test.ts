@@ -2,6 +2,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { AuthorizationService } from '../../auth/authorization-service';
+import { createSystemPrincipal } from '../../auth/principal';
 import { ToolSessionState, type ToolExecutionContext } from '../context';
 import type { ToolApprovalRequest, ToolExecutionEvent, ToolPermissionRequest } from '../contracts';
 import { ReadFileToolV2 } from '../handlers/read-file';
@@ -50,7 +52,7 @@ describe('tool-v2 orchestrator', () => {
 
     const first = await system.execute(
       {
-        callId: 'shell-1',
+        toolCallId: 'shell-1',
         toolName: 'local_shell',
         arguments: JSON.stringify({
           command: 'ls',
@@ -60,7 +62,7 @@ describe('tool-v2 orchestrator', () => {
     );
     const second = await system.execute(
       {
-        callId: 'shell-2',
+        toolCallId: 'shell-2',
         toolName: 'local_shell',
         arguments: JSON.stringify({
           command: 'ls',
@@ -88,7 +90,7 @@ describe('tool-v2 orchestrator', () => {
 
     const result = await system.execute(
       {
-        callId: 'perm-123',
+        toolCallId: 'perm-123',
         toolName: 'request_permissions',
         arguments: JSON.stringify({
           scope: 'turn',
@@ -113,7 +115,7 @@ describe('tool-v2 orchestrator', () => {
 
     expect(result.success).toBe(true);
     expect(requests).toHaveLength(1);
-    expect(requests[0]?.callId).toBe('perm-123');
+    expect(requests[0]?.toolCallId).toBe('perm-123');
     expect(requests[0]?.requestedScope).toBe('turn');
   });
 
@@ -127,7 +129,7 @@ describe('tool-v2 orchestrator', () => {
 
     const result = await system.execute(
       {
-        callId: 'read-outside',
+        toolCallId: 'read-outside',
         toolName: 'read_file',
         arguments: JSON.stringify({
           path: targetFile,
@@ -173,7 +175,7 @@ describe('tool-v2 orchestrator', () => {
 
     const first = await system.execute(
       {
-        callId: 'read-first',
+        toolCallId: 'read-first',
         toolName: 'read_file',
         arguments: JSON.stringify({ path: firstFile }),
       },
@@ -189,7 +191,7 @@ describe('tool-v2 orchestrator', () => {
     );
     const second = await system.execute(
       {
-        callId: 'read-second',
+        toolCallId: 'read-second',
         toolName: 'read_file',
         arguments: JSON.stringify({ path: secondFile }),
       },
@@ -222,7 +224,7 @@ describe('tool-v2 orchestrator', () => {
 
     const result = await system.execute(
       {
-        callId: 'perm-scope',
+        toolCallId: 'perm-scope',
         toolName: 'request_permissions',
         arguments: JSON.stringify({
           scope: 'turn',
@@ -263,7 +265,7 @@ describe('tool-v2 orchestrator', () => {
 
     const result = await system.execute(
       {
-        callId: 'shell-policy',
+        toolCallId: 'shell-policy',
         toolName: 'local_shell',
         arguments: JSON.stringify({
           command: 'ls',
@@ -305,18 +307,31 @@ class RecordingShellRuntime implements ShellRuntime {
 function createContext(
   workspaceDir: string,
   sessionState: ToolSessionState,
-  overrides: Partial<ToolExecutionContext> = {}
+  overrides: Partial<Omit<ToolExecutionContext, 'authorization'>> & {
+    approve?: ToolExecutionContext['authorization']['requestApproval'];
+    requestPermissions?: ToolExecutionContext['authorization']['requestPermissions'];
+    onPolicyCheck?: ToolExecutionContext['authorization']['evaluatePolicy'];
+  } = {}
 ): ToolExecutionContext {
+  const { approve, requestPermissions, onPolicyCheck, ...contextOverrides } = overrides;
   return {
     workingDirectory: workspaceDir,
     sessionState,
+    authorization: {
+      service: new AuthorizationService(),
+      principal: createSystemPrincipal('tool-v2-orchestrator-test'),
+      requestApproval:
+        approve ||
+        (async () => ({
+          approved: true,
+          scope: 'turn',
+        })),
+      requestPermissions,
+      evaluatePolicy: onPolicyCheck,
+    },
     fileSystemPolicy: createWorkspaceFileSystemPolicy(workspaceDir),
     networkPolicy: createRestrictedNetworkPolicy(),
     approvalPolicy: 'on-request',
-    approve: async () => ({
-      approved: true,
-      scope: 'turn',
-    }),
-    ...overrides,
+    ...contextOverrides,
   };
 }

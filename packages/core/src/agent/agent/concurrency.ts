@@ -1,5 +1,5 @@
 import type { ToolCall } from '../../providers';
-import type { ToolConcurrencyPolicy } from '../tool/types';
+import type { ToolConcurrencyPolicy } from '../tool-v2/contracts';
 
 export interface ToolExecutionPlan {
   toolCall: ToolCall;

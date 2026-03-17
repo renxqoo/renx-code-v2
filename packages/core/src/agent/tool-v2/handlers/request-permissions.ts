@@ -114,25 +114,27 @@ export class RequestPermissionsToolV2 extends StructuredToolHandler<typeof schem
     args: z.infer<typeof schema>,
     context: ToolExecutionContext
   ): Promise<ToolHandlerResult> {
-    if (!context.requestPermissions) {
+    if (!context.authorization.requestPermissions) {
       throw new ToolV2ExecutionError('Permission request resolver is not configured', {
         toolName: this.spec.name,
       });
     }
 
     const requestedScope = args.scope || 'turn';
-    const grant = await context.requestPermissions({
+    const grant = await context.authorization.service.requestPermissions({
+      runtime: context.authorization,
+      sessionState: context.sessionState,
+      toolCallId: context.activeCall?.toolCallId || this.spec.name,
       toolName: this.spec.name,
-      callId: context.activeCall?.callId || this.spec.name,
-      reason: args.reason,
+      workingDirectory: context.workingDirectory,
       requestedScope,
+      reason: args.reason,
       permissions: args.permissions as ToolPermissionProfile,
     });
     const normalizedGrant: ToolPermissionGrant = {
       granted: grant.granted,
       scope: normalizeGrantScope(requestedScope, grant.scope),
     };
-    context.sessionState.grantPermissions(normalizedGrant);
 
     return {
       output: JSON.stringify(normalizedGrant),

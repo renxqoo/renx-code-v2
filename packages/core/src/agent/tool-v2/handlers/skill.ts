@@ -4,9 +4,9 @@ import type { ToolExecutionPlan, ToolHandlerResult } from '../contracts';
 import { ToolV2ExecutionError } from '../errors';
 import { arraySchema, objectSchema, stringSchema, unknownSchema } from '../output-schema';
 import { StructuredToolHandler } from '../registry';
-import { formatSkillForContext } from '../../tool/skill/parser';
-import { getSkillLoader, initializeSkillLoader } from '../../tool/skill/loader';
-import type { SkillLoaderOptions } from '../../tool/skill/types';
+import { formatSkillForContext } from '../skill/parser';
+import { getSkillLoader, initializeSkillLoader } from '../skill/loader';
+import type { SkillLoaderOptions } from '../skill/types';
 import { SKILL_TOOL_BASE_DESCRIPTION } from '../tool-prompts';
 
 const schema = z
@@ -68,7 +68,7 @@ export class SkillToolV2 extends StructuredToolHandler<typeof schema> {
       const loader = getSkillLoader(this.loaderOptions);
 
       if (!loader.hasSkill(args.name)) {
-        const availableSkills = loader.getAllMetadata().map((item) => item.name);
+        const availableSkills = loader.getAllMetadata().map((item: { name: string }) => item.name);
         const suggestion =
           availableSkills.length > 0
             ? `Available skills: ${availableSkills.join(', ')}`
@@ -129,6 +129,8 @@ function buildDescription(includeSkillList: boolean, loaderOptions?: SkillLoader
     return `${base}No skills are currently available.`;
   }
 
-  const lines = skills.map((skill) => `- ${skill.name}: ${skill.description}`);
+  const lines = skills.map(
+    (skill: { name: string; description: string }) => `- ${skill.name}: ${skill.description}`
+  );
   return `${base}Available skills:\n${lines.join('\n')}`;
 }

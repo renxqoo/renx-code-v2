@@ -61,5 +61,5 @@ All surfaced errors should be serializable to the same envelope:
 ## Policy Hook
 
 - `AgentCallbacks.onToolPolicy` can be provided by the outer layer.
-- `DefaultToolManager` calls `onPolicyCheck` before confirmation and tool execution.
-- When denied, manager returns `ToolPolicyDeniedError` with standardized reason code/message.
+- `EnterpriseToolExecutor` calls `onPolicyCheck` before confirmation and tool execution.
+- When denied, executor returns `ToolPolicyDeniedError` with standardized reason code/message.

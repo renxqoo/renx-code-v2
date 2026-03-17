@@ -18,12 +18,7 @@ import {
   shellBackgroundRecordSchema,
   stringSchema,
 } from '../output-schema';
-import {
-  applyPermissionProfile,
-  assertReadAccess,
-  isPermissionProfileSatisfied,
-  resolveToolPath,
-} from '../permissions';
+import { assertReadAccess, resolveToolPath } from '../permissions';
 import { StructuredToolHandler } from '../registry';
 import {
   LocalProcessShellRuntime,
@@ -123,7 +118,7 @@ export class LocalShellToolV2 extends StructuredToolHandler<typeof schema> {
   private readonly backgroundService?: ShellBackgroundExecutionService;
 
   constructor(options: LocalShellToolV2Options = {}) {
-    const profile = options.profile || SHELL_POLICY_PROFILES.standard;
+    const profile = options.profile || SHELL_POLICY_PROFILES.workspaceGuarded;
     const sandboxProfile = options.sandboxProfile || profile.sandboxProfile;
     super({
       name: 'local_shell',
@@ -212,6 +207,9 @@ export class LocalShellToolV2 extends StructuredToolHandler<typeof schema> {
     return {
       mutating: true,
       readPaths: [workdir],
+      requestedPermissions: assessment.requestedPermissions,
+      riskLevel: assessment.requiresApproval ? 'high' : 'medium',
+      sensitivity: assessment.executionMode === 'escalated' ? 'restricted' : 'sensitive',
       approval: approvalRequired
         ? {
             required: true,
@@ -239,43 +237,6 @@ export class LocalShellToolV2 extends StructuredToolHandler<typeof schema> {
         command: args.command,
         segments: assessment.segments.map((segment) => segment.segment),
       });
-    }
-    let effectivePermissions = {
-      fileSystem: context.fileSystemPolicy,
-      network: context.networkPolicy,
-    };
-    let grantedPermissions: ToolPermissionProfile | undefined;
-    if (
-      assessment.requestedPermissions &&
-      !isPermissionProfileSatisfied(effectivePermissions, assessment.requestedPermissions)
-    ) {
-      if (!context.requestPermissions) {
-        throw new ToolV2ExecutionError(
-          'Shell command requires additional sandbox permissions but no permissions resolver is configured',
-          {
-            command: args.command,
-            requestedPermissions: assessment.requestedPermissions,
-            policyProfile: this.policyProfileName,
-          }
-        );
-      }
-
-      const grant = await context.requestPermissions({
-        toolName: this.spec.name,
-        callId: context.activeCall?.callId || this.spec.name,
-        reason:
-          assessment.reason ||
-          `Shell command requires additional sandbox permissions in ${workdir}`,
-        requestedScope: 'turn',
-        permissions: assessment.requestedPermissions,
-      });
-      const normalizedGrant = {
-        ...grant,
-        scope: 'turn' as const,
-      };
-      context.sessionState.grantPermissions(normalizedGrant);
-      grantedPermissions = normalizedGrant.granted;
-      effectivePermissions = applyPermissionProfile(effectivePermissions, normalizedGrant.granted);
     }
 
     const sandboxMode = assessment.preferredSandbox || this.sandboxProfile.mode;
@@ -319,8 +280,8 @@ export class LocalShellToolV2 extends StructuredToolHandler<typeof schema> {
     }
     const sandboxPolicy = createShellSandboxPolicy({
       type: sandboxMode,
-      fileSystemPolicy: effectivePermissions.fileSystem,
-      networkPolicy: effectivePermissions.network,
+      fileSystemPolicy: context.fileSystemPolicy,
+      networkPolicy: context.networkPolicy,
       runtimeTag: sandboxedExecution ? sandboxMode : `${sandboxMode}-escalated`,
     });
     await syncShellRuntimeSandboxPolicy(this.runtime, sandboxPolicy);
@@ -401,7 +362,6 @@ export class LocalShellToolV2 extends StructuredToolHandler<typeof schema> {
           executionMode: segment.decision.executionMode || 'sandboxed',
           matchedRule: segment.decision.matchedRule,
         })),
-        grantedPermissions,
       },
       metadata: {
         exitCode: result.exitCode,
@@ -417,7 +377,6 @@ export class LocalShellToolV2 extends StructuredToolHandler<typeof schema> {
             ? assessment.matchedRules[0]
             : assessment.matchedRules,
         requestedPermissions: assessment.requestedPermissions,
-        grantedPermissions,
       },
     };
   }

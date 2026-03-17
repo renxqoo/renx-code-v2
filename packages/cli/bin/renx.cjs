@@ -29,6 +29,32 @@ function run(target, args, env = process.env) {
   process.exit(typeof result.status === 'number' ? result.status : 0);
 }
 
+function getBundledRipgrepEnv(baseEnv = process.env) {
+  const targetByPlatform = {
+    'darwin:arm64': 'aarch64-apple-darwin',
+    'darwin:x64': 'x86_64-apple-darwin',
+    'linux:arm64': 'aarch64-unknown-linux-musl',
+    'linux:x64': 'x86_64-unknown-linux-musl',
+    'win32:arm64': 'aarch64-pc-windows-msvc',
+    'win32:x64': 'x86_64-pc-windows-msvc',
+  };
+  const target = targetByPlatform[`${process.platform}:${process.arch}`];
+  if (!target) {
+    return {};
+  }
+
+  const dir = path.join(packageRoot, 'vendor', 'ripgrep', target, 'path');
+  const binary = path.join(dir, process.platform === 'win32' ? 'rg.exe' : 'rg');
+  if (!fs.existsSync(binary)) {
+    return {};
+  }
+
+  return {
+    RENX_BUNDLED_RG_DIR: baseEnv.RENX_BUNDLED_RG_DIR || dir,
+    RIPGREP_PATH: baseEnv.RIPGREP_PATH || binary,
+  };
+}
+
 function resolveBunExecutable() {
   if (process.env.RENX_BUN_PATH) {
     return process.env.RENX_BUN_PATH;
@@ -68,6 +94,7 @@ for (const candidate of binaryCandidates) {
     run(candidate, cliArgs, {
       ...process.env,
       RENX_VERSION: process.env.RENX_VERSION || packageJson.version || '0.0.0',
+      ...getBundledRipgrepEnv(process.env),
     });
   }
 }
@@ -91,6 +118,7 @@ if (fs.existsSync(sourceEntry)) {
       RENX_VERSION: process.env.RENX_VERSION || packageJson.version || '0.0.0',
       AGENT_WORKDIR: process.env.AGENT_WORKDIR || process.cwd(),
       ...(resolvedRepoRoot ? { AGENT_REPO_ROOT: resolvedRepoRoot } : {}),
+      ...getBundledRipgrepEnv(process.env),
     });
   }
 }

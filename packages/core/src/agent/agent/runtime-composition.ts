@@ -1,6 +1,7 @@
 import type { AgentCallbacks, AgentInput, ErrorDecision, Message, StreamEvent } from '../types';
 import type { Tool, ToolCall } from '../../providers';
-import type { ToolConcurrencyPolicy } from '../tool/types';
+import type { PrincipalContext } from '../auth/contracts';
+import type { ToolConcurrencyPolicy } from '../tool-v2/contracts';
 import type { ToolSessionState } from '../tool-v2/context';
 
 import { processToolCalls as processToolCallsRuntime, type ToolRuntime } from './tool-runtime';
@@ -57,9 +58,11 @@ export interface RunLoopRuntimeFactoryDeps {
   createLLMStreamRuntimeDeps: () => LLMStreamRuntimeDeps;
   createToolRuntime: (
     sessionState: ToolSessionState,
+    principal: PrincipalContext,
     hooks?: AgentRuntimeLifecycleHooks
   ) => ToolRuntime;
   toolSessionState: ToolSessionState;
+  principal: PrincipalContext;
   stream: {
     progress: (
       executionId: string | undefined,
@@ -144,7 +147,7 @@ export function createRunLoopRuntime(
         (async function* () {
           try {
             return yield* processToolCallsRuntime(
-              deps.createToolRuntime(deps.toolSessionState, hooks),
+              deps.createToolRuntime(deps.toolSessionState, deps.principal, hooks),
               {
                 toolCalls,
                 messages,
@@ -174,6 +177,7 @@ export interface ToolRuntimeFactoryDeps {
   agentRef: unknown;
   execution: {
     executor: AgentToolExecutor;
+    principal: PrincipalContext;
     sessionState: ToolSessionState;
     ledger: ToolExecutionLedger;
     maxConcurrentToolCalls: number;

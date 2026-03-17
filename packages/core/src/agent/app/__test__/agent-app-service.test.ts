@@ -2,7 +2,6 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DefaultToolManager } from '../../tool/tool-manager';
 import type { Chunk, LLMProvider } from '../../../providers';
 import { LLMRateLimitError } from '../../../providers';
 import { LLMRetryableError } from '../../../providers';
@@ -10,7 +9,9 @@ import { StatelessAgent } from '../../agent';
 import type { AgentToolExecutor } from '../../agent/tool-executor';
 import { AgentAppService } from '../agent-app-service';
 import { SqliteAgentAppStore } from '../sqlite-agent-app-store';
-import { WriteFileTool } from '../../tool/write-file';
+import { EnterpriseToolExecutor } from '../../tool-v2/agent-tool-executor';
+import { EnterpriseToolSystem } from '../../tool-v2/tool-system';
+import { WriteFileToolV2 } from '../../tool-v2/handlers/write-file';
 
 type ChunkDelta = NonNullable<NonNullable<Chunk['choices']>[number]>['delta'];
 type TestDelta = Partial<ChunkDelta> & { finish_reason?: string };
@@ -51,6 +52,24 @@ function createToolManager(): AgentToolExecutor {
   } as unknown as AgentToolExecutor;
 }
 
+function createEnterpriseToolExecutor(options: {
+  workingDirectory: string;
+  bufferBaseDir: string;
+  maxChunkBytes: number;
+}): AgentToolExecutor {
+  return new EnterpriseToolExecutor({
+    system: new EnterpriseToolSystem([
+      new WriteFileToolV2({
+        bufferBaseDir: options.bufferBaseDir,
+        maxChunkBytes: options.maxChunkBytes,
+      }),
+    ]),
+    workingDirectory: options.workingDirectory,
+    approvalPolicy: 'unless-trusted',
+    trustLevel: 'trusted',
+  });
+}
+
 async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -70,58 +89,6 @@ async function waitForRunStatus(
     await delay(10);
   }
   throw new Error(`Timed out waiting for run ${executionId} to reach status ${status}`);
-}
-
-function extractJsonStringFieldPrefix(raw: string, fieldName: string): string {
-  const marker = `"${fieldName}":"`;
-  const start = raw.indexOf(marker);
-  if (start === -1) {
-    return '';
-  }
-
-  let cursor = start + marker.length;
-  let output = '';
-  while (cursor < raw.length) {
-    const ch = raw[cursor];
-    if (ch === '"') {
-      return output;
-    }
-    if (ch !== '\\') {
-      output += ch;
-      cursor += 1;
-      continue;
-    }
-    if (cursor + 1 >= raw.length) {
-      return output;
-    }
-
-    const esc = raw[cursor + 1];
-    if (esc === 'n') {
-      output += '\n';
-      cursor += 2;
-      continue;
-    }
-    if (esc === 'r') {
-      output += '\r';
-      cursor += 2;
-      continue;
-    }
-    if (esc === 't') {
-      output += '\t';
-      cursor += 2;
-      continue;
-    }
-    if (esc === '"' || esc === '\\' || esc === '/') {
-      output += esc;
-      cursor += 2;
-      continue;
-    }
-
-    output += esc;
-    cursor += 2;
-  }
-
-  return output;
 }
 
 describe('AgentAppService', () => {
@@ -534,28 +501,25 @@ describe('AgentAppService', () => {
     expect(persistedEvents.some((event) => event.eventType === 'tool_stream')).toBe(true);
   });
 
-  it('auto-finalizes a truncated write_file direct call by recovering buffered session metadata', async () => {
+  it('auto-finalizes a buffered write_file direct call inside one foreground run', async () => {
     const provider = createProvider();
     const allowedDir = await fs.mkdtemp(path.join(os.tmpdir(), 'renx-app-service-write-'));
     const bufferDir = await fs.mkdtemp(path.join(os.tmpdir(), 'renx-app-service-buffer-'));
     const targetPath = path.join(allowedDir, 'nodejs-sandbox-implementation.md');
     const directToolCallId = 'wf_resume_direct_1';
 
-    const manager = new DefaultToolManager();
-    manager.registerTool(
-      new WriteFileTool({
-        allowedDirectories: [allowedDir],
-        bufferBaseDir: bufferDir,
-        maxChunkBytes: 8,
-      })
-    );
+    const manager = createEnterpriseToolExecutor({
+      workingDirectory: allowedDir,
+      bufferBaseDir: bufferDir,
+      maxChunkBytes: 8,
+    });
 
-    const truncatedDirectArgs = JSON.stringify({
+    const fullContent = '# Repro\n\n' + 'a'.repeat(64);
+    const directArgs = JSON.stringify({
       mode: 'direct',
       path: targetPath,
-      content: '# Repro\n\n' + 'a'.repeat(64),
-    }).slice(0, -6);
-    const expectedBufferedContent = extractJsonStringFieldPrefix(truncatedDirectArgs, 'content');
+      content: fullContent,
+    });
     provider.generateStream = vi.fn().mockReturnValueOnce(
       toStream([
         {
@@ -571,7 +535,7 @@ describe('AgentAppService', () => {
                     index: 0,
                     function: {
                       name: 'write_file',
-                      arguments: truncatedDirectArgs,
+                      arguments: directArgs,
                     },
                   },
                 ],
@@ -615,7 +579,7 @@ describe('AgentAppService', () => {
         nextAction: 'none',
       });
 
-      expect(await fs.readFile(targetPath, 'utf8')).toBe(expectedBufferedContent);
+      expect(await fs.readFile(targetPath, 'utf8')).toBe(fullContent);
 
       await expect(
         fs.access(path.join(bufferDir, `${directToolCallId}.pointer.json`))

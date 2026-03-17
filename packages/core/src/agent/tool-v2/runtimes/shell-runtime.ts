@@ -14,6 +14,7 @@ import {
   createWindowsForegroundShellInvocation,
   resolvePreferredWindowsShell,
 } from './shell-runtime-windows';
+import { resolveBundledRipgrepPathEntries } from './bundled-ripgrep';
 import type { ToolSandboxMode } from '../contracts';
 import type { ShellExecutionMode } from '../shell-policy';
 import type { ShellSandboxPolicy } from '../shell-sandbox';
@@ -115,25 +116,28 @@ export interface ResolvedShell {
 export type ShellPathExists = (candidate: string) => boolean;
 export type ShellCommandWorks = (candidate: string, args: string[]) => boolean;
 
+export interface LocalProcessShellRuntimeOptions {
+  readonly backgroundBaseDir?: string;
+  readonly now?: () => number;
+  readonly maxBackgroundOutputBytes?: number;
+  readonly extraPathEntries?: readonly string[];
+}
+
 export class LocalProcessShellRuntime implements ShellRuntime {
   private readonly backgroundBaseDir: string;
   private readonly now: () => number;
   private readonly maxBackgroundOutputBytes: number;
   private readonly preferredShell: ResolvedShell;
+  private readonly extraPathEntries: readonly string[];
 
-  constructor(
-    options: {
-      backgroundBaseDir?: string;
-      now?: () => number;
-      maxBackgroundOutputBytes?: number;
-    } = {}
-  ) {
+  constructor(options: LocalProcessShellRuntimeOptions = {}) {
     this.backgroundBaseDir = path.resolve(
       options.backgroundBaseDir || path.join(os.tmpdir(), 'renx-tool-v2-shell-bg')
     );
     this.now = options.now || Date.now;
     this.maxBackgroundOutputBytes = options.maxBackgroundOutputBytes ?? 30000;
     this.preferredShell = resolvePreferredShell();
+    this.extraPathEntries = options.extraPathEntries || resolveBundledRipgrepPathEntries();
   }
 
   getCapabilities(): ShellRuntimeCapabilities {
@@ -170,10 +174,7 @@ export class LocalProcessShellRuntime implements ShellRuntime {
     return new Promise((resolve, reject) => {
       const child = spawn(shellPath, shellArgs, {
         cwd: path.resolve(request.cwd),
-        env: {
-          ...process.env,
-          ...(request.environment || {}),
-        },
+        env: buildShellEnvironment(request.environment, this.extraPathEntries),
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
       });
@@ -246,10 +247,7 @@ export class LocalProcessShellRuntime implements ShellRuntime {
     );
     const child = spawn(shellPath, shellArgs, {
       cwd: path.resolve(request.cwd),
-      env: {
-        ...process.env,
-        ...(request.environment || {}),
-      },
+      env: buildShellEnvironment(request.environment, this.extraPathEntries),
       detached: true,
       stdio: ['ignore', outputFd, outputFd],
       windowsHide: true,
@@ -450,6 +448,38 @@ function resolveBackgroundShell(
   }
 
   return createWindowsBackgroundShellInvocation(shell, command, statusPath);
+}
+
+function buildShellEnvironment(
+  environment: Record<string, string> | undefined,
+  extraPathEntries: readonly string[]
+): NodeJS.ProcessEnv {
+  const mergedEnvironment: NodeJS.ProcessEnv = {
+    ...process.env,
+    ...(environment || {}),
+  };
+  if (extraPathEntries.length === 0) {
+    return mergedEnvironment;
+  }
+
+  const pathKey = getPathKey(mergedEnvironment);
+  for (const candidate of Object.keys(mergedEnvironment)) {
+    if (candidate !== pathKey && candidate.toLowerCase() === 'path') {
+      delete mergedEnvironment[candidate];
+    }
+  }
+  const pathSeparator = process.platform === 'win32' ? ';' : ':';
+  const existingPath = mergedEnvironment[pathKey] || '';
+  const entries = [
+    ...extraPathEntries.filter((entry) => entry.length > 0),
+    ...existingPath.split(pathSeparator).filter((entry) => entry.length > 0),
+  ];
+  mergedEnvironment[pathKey] = Array.from(new Set(entries)).join(pathSeparator);
+  return mergedEnvironment;
+}
+
+function getPathKey(environment: NodeJS.ProcessEnv): string {
+  return Object.keys(environment).find((candidate) => candidate.toLowerCase() === 'path') || 'PATH';
 }
 
 async function readBackgroundOutput(

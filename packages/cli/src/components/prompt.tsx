@@ -19,6 +19,7 @@ type PromptProps = {
   isThinking: boolean;
   disabled?: boolean;
   modelLabel: string;
+  isFullAccessMode?: boolean;
   contextUsagePercent: number | null;
   value: string;
   selectedFiles: PromptFileSelection[];
@@ -33,6 +34,7 @@ export const Prompt = ({
   isThinking,
   disabled = false,
   modelLabel,
+  isFullAccessMode = false,
   contextUsagePercent,
   value,
   selectedFiles,
@@ -223,6 +225,19 @@ export const Prompt = ({
               <text fg={uiTheme.muted} attributes={uiTheme.typography.muted}>
                 Coding Agent
               </text>
+              {isFullAccessMode ? (
+                <box
+                  paddingLeft={1}
+                  paddingRight={1}
+                  backgroundColor="#ffb347"
+                  border={['top', 'bottom', 'left', 'right']}
+                  borderColor="#ffb347"
+                >
+                  <text fg="#2a1600" attributes={uiTheme.typography.muted}>
+                    FULL ACCESS MODE
+                  </text>
+                </box>
+              ) : null}
             </box>
           </box>
         </box>

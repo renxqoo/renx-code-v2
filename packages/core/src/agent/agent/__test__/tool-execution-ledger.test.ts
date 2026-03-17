@@ -9,7 +9,7 @@ import {
 function makeRecord(output: string): ToolExecutionLedgerRecord {
   return {
     result: {
-      callId: 'call_1',
+      toolCallId: 'call_1',
       toolName: 'test_tool',
       success: true,
       output,

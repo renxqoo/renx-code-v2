@@ -2,11 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { AuthorizationService } from '../../auth/authorization-service';
+import { createSystemPrincipal } from '../../auth/principal';
 import { EnterpriseToolSystem } from '../tool-system';
 import { SkillToolV2 } from '../handlers/skill';
 import { ToolSessionState, type ToolExecutionContext } from '../context';
 import { createRestrictedNetworkPolicy, createWorkspaceFileSystemPolicy } from '../permissions';
-import { initializeSkillLoader, resetSkillLoader } from '../../tool/skill/loader';
+import { initializeSkillLoader, resetSkillLoader } from '../skill/loader';
 
 describe('SkillToolV2', () => {
   let rootDir: string;
@@ -55,7 +57,7 @@ This is a plain skill without frontmatter.`,
 
     const result = await system.execute(
       {
-        callId: 'skill-1',
+        toolCallId: 'skill-1',
         toolName: 'skill',
         arguments: JSON.stringify({ name: 'test-skill' }),
       },
@@ -82,7 +84,7 @@ This is a plain skill without frontmatter.`,
 
     const result = await system.execute(
       {
-        callId: 'skill-2',
+        toolCallId: 'skill-2',
         toolName: 'skill',
         arguments: JSON.stringify({ name: 'missing-skill' }),
       },
@@ -114,12 +116,12 @@ function createContext(workspaceDir: string): ToolExecutionContext {
   return {
     workingDirectory: workspaceDir,
     sessionState: new ToolSessionState(),
+    authorization: {
+      service: new AuthorizationService(),
+      principal: createSystemPrincipal('tool-v2-skill-test'),
+    },
     fileSystemPolicy: createWorkspaceFileSystemPolicy(workspaceDir),
     networkPolicy: createRestrictedNetworkPolicy(),
     approvalPolicy: 'on-request',
-    approve: async () => ({
-      approved: true,
-      scope: 'turn',
-    }),
   };
 }

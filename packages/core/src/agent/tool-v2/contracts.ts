@@ -1,6 +1,6 @@
 export type ToolApprovalPolicy = 'never' | 'on-request' | 'on-failure' | 'unless-trusted';
 
-export type ToolTrustLevel = 'trusted' | 'untrusted';
+export type ToolTrustLevel = 'unknown' | 'trusted' | 'untrusted';
 
 export type ToolApprovalScope = 'once' | 'turn' | 'session';
 
@@ -26,7 +26,7 @@ export interface ToolSpec {
 }
 
 export interface ToolCallRequest {
-  readonly callId: string;
+  readonly toolCallId: string;
   readonly toolName: string;
   readonly arguments: string;
   readonly toolNamespace?: string;
@@ -34,7 +34,7 @@ export interface ToolCallRequest {
 
 export interface ToolApprovalRequest {
   readonly toolName: string;
-  readonly callId: string;
+  readonly toolCallId: string;
   readonly reason: string;
   readonly key?: string;
   readonly commandPreview?: string;
@@ -46,11 +46,12 @@ export interface ToolApprovalDecision {
   readonly approved: boolean;
   readonly scope: ToolApprovalScope;
   readonly reason?: string;
+  readonly approverId?: string;
 }
 
 export interface ToolPermissionRequest {
   readonly toolName: string;
-  readonly callId: string;
+  readonly toolCallId: string;
   readonly reason?: string;
   readonly requestedScope?: ToolPermissionScope;
   readonly permissions: ToolPermissionProfile;
@@ -59,10 +60,11 @@ export interface ToolPermissionRequest {
 export interface ToolPermissionGrant {
   readonly granted: ToolPermissionProfile;
   readonly scope: ToolPermissionScope;
+  readonly grantedBy?: string;
 }
 
 export interface ToolPolicyCheckInfo {
-  readonly callId: string;
+  readonly toolCallId: string;
   readonly toolName: string;
   readonly arguments: string;
   readonly parsedArguments: Record<string, unknown>;
@@ -80,6 +82,15 @@ export interface ToolExecutionPlan {
   readonly readPaths?: string[];
   readonly writePaths?: string[];
   readonly networkTargets?: string[];
+  readonly requestedPermissions?: ToolPermissionProfile;
+  readonly resources?: Array<{
+    readonly resourceType: 'filesystem' | 'network' | 'tool';
+    readonly action: 'read' | 'write' | 'connect' | 'execute';
+    readonly value: string;
+    readonly attributes?: Record<string, unknown>;
+  }>;
+  readonly riskLevel?: 'low' | 'medium' | 'high' | 'critical';
+  readonly sensitivity?: 'normal' | 'sensitive' | 'restricted';
   readonly concurrency?: ToolConcurrencyPolicy;
   readonly preferredSandbox?: ToolSandboxMode;
   readonly approval?: {
@@ -97,7 +108,7 @@ export interface ToolHandlerResult {
 }
 
 export interface ToolCallSuccess {
-  readonly callId: string;
+  readonly toolCallId: string;
   readonly toolName: string;
   readonly success: true;
   readonly output: string;
@@ -106,7 +117,7 @@ export interface ToolCallSuccess {
 }
 
 export interface ToolCallFailure {
-  readonly callId: string;
+  readonly toolCallId: string;
   readonly toolName: string;
   readonly success: false;
   readonly output: string;
@@ -131,7 +142,7 @@ export type ToolExecutionEventStage =
 export interface ToolExecutionEvent {
   readonly stage: ToolExecutionEventStage;
   readonly toolName: string;
-  readonly callId: string;
+  readonly toolCallId: string;
   readonly toolNamespace?: string;
   readonly timestamp: number;
   readonly metadata?: Record<string, unknown>;

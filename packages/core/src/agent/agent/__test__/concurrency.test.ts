@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { buildExecutionWaves, runWithConcurrencyAndLock } from '../concurrency';
 import type { ToolCall } from '../../../providers';
-import type { ToolConcurrencyPolicy } from '../../tool/types';
+import type { ToolConcurrencyPolicy } from '../../tool-v2/contracts';
 
 function createToolCall(name: string, id: string = `call_${name}`): ToolCall {
   return {

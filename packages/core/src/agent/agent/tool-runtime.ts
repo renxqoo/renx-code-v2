@@ -1,6 +1,6 @@
 import type { Message, StreamEvent } from '../types';
-import type { ToolConcurrencyPolicy } from '../tool/types';
 import type { ToolCall } from '../../providers';
+import type { ToolConcurrencyPolicy } from '../tool-v2/contracts';
 
 import { generateId } from './shared';
 import {

@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import type { LLMGenerateOptions, MessageContent, Tool, Usage } from '../../providers';
 import { StatelessAgent } from '../agent';
 import type { AgentLogContext, AgentLogger } from '../agent/logger';
-import type { AgentCallbacks, Message } from '../types';
+import type { AgentCallbacks, AgentInput, Message } from '../types';
 import type {
   CliEventEnvelope,
   CompactionDroppedMessageRecord,
@@ -38,6 +38,7 @@ export interface RunForegroundRequest {
   conversationId: string;
   userInput: MessageContent;
   executionId?: string;
+  principal?: AgentInput['principal'];
   historyMessages?: Message[];
   systemPrompt?: string;
   tools?: Tool[];
@@ -337,6 +338,7 @@ export class AgentAppService {
                 executionId,
                 conversationId: request.conversationId,
                 messages: inputMessages,
+                principal: request.principal,
                 systemPrompt: request.systemPrompt,
                 tools: request.tools,
                 config: request.config,

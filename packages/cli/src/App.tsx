@@ -37,6 +37,11 @@ const appendFileTokens = (currentValue: string, files: PromptFileSelection[]) =>
   return `${trimmed}${separator}${newTokens.join(' ')} `;
 };
 
+const isFullAccessModeEnabled = (): boolean => {
+  const raw = process.env.AGENT_FULL_ACCESS?.trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+};
+
 export const App = () => {
   const {
     turns,
@@ -69,6 +74,7 @@ export const App = () => {
   const [copyToastVisible, setCopyToastVisible] = useState(false);
   const selectionCopyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copyToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fullAccessModeEnabled = isFullAccessModeEnabled();
 
   useEffect(() => {
     const handleSelection = (selection: Selection) => {
@@ -232,6 +238,7 @@ export const App = () => {
         isThinking={isThinking}
         disabled={modelPicker.visible || filePicker.visible || Boolean(pendingToolConfirm)}
         modelLabel={modelLabel}
+        isFullAccessMode={fullAccessModeEnabled}
         contextUsagePercent={contextUsagePercent}
         value={inputValue}
         selectedFiles={selectedFiles}

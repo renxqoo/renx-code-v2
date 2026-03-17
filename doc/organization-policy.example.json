@@ -1,0 +1,121 @@
+{
+  "version": "org-policy-v1",
+  "defaults": {
+    "network": {
+      "mode": "restricted",
+      "allowedHosts": ["api.github.com", "registry.npmjs.org"]
+    },
+    "approvalPolicy": "on-request",
+    "trustLevel": "untrusted",
+    "rules": [
+      {
+        "id": "default-high-risk-approval",
+        "effect": "require_approval",
+        "reason": "高风险操作默认需要人工审批",
+        "priority": 10,
+        "match": {
+          "riskLevels": ["high", "critical"]
+        },
+        "tags": ["default", "high-risk"]
+      }
+    ]
+  },
+  "environments": {
+    "production": {
+      "approvalPolicy": "on-request",
+      "trustLevel": "untrusted",
+      "rules": [
+        {
+          "id": "prod-deploy-deny",
+          "effect": "deny",
+          "reason": "生产环境禁止直接执行 deploy_release",
+          "priority": 100,
+          "match": {
+            "toolNames": ["deploy_release"]
+          },
+          "tags": ["production", "deploy"]
+        },
+        {
+          "id": "prod-write-approval",
+          "effect": "require_approval",
+          "reason": "生产环境文件写入需要审批",
+          "priority": 90,
+          "approvalKey": "production:filesystem-write",
+          "match": {
+            "mutating": true,
+            "sensitivities": ["restricted"]
+          },
+          "tags": ["production", "filesystem"]
+        }
+      ]
+    },
+    "staging": {
+      "approvalPolicy": "unless-trusted",
+      "trustLevel": "trusted"
+    }
+  },
+  "workspaces": [
+    {
+      "workspaceId": "docs-workspace",
+      "rootPath": "D:/work/renx-code",
+      "rules": [
+        {
+          "id": "docs-publish-approval",
+          "effect": "require_approval",
+          "reason": "文档站点发布需要人工审批",
+          "priority": 80,
+          "approvalKey": "workspace:docs-publish",
+          "match": {
+            "toolNames": ["publish_docs"]
+          },
+          "tags": ["workspace", "docs"]
+        }
+      ],
+      "environments": {
+        "production": {
+          "rules": [
+            {
+              "id": "docs-prod-shell-approval",
+              "effect": "require_approval",
+              "reason": "生产文档工作区执行 shell 命令需要审批",
+              "priority": 85,
+              "approvalKey": "workspace:docs:shell",
+              "match": {
+                "toolNames": ["local_shell"]
+              },
+              "tags": ["workspace", "production", "shell"]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "workspaceId": "backend-workspace",
+      "rootPath": "D:/work/backend-service",
+      "fileSystem": {
+        "mode": "restricted",
+        "readRoots": ["D:/work/backend-service"],
+        "writeRoots": ["D:/work/backend-service"]
+      },
+      "network": {
+        "mode": "restricted",
+        "allowedHosts": ["registry.npmjs.org", "pypi.org"]
+      },
+      "rules": [
+        {
+          "id": "backend-sensitive-path-deny",
+          "effect": "deny",
+          "reason": "禁止直接操作敏感配置目录",
+          "priority": 95,
+          "match": {
+            "pathPrefixes": [
+              "D:/work/backend-service/secrets",
+              "D:/work/backend-service/.env.production"
+            ]
+          },
+          "tags": ["workspace", "sensitive-path"]
+        }
+      ]
+    }
+  ]
+}

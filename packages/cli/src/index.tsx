@@ -7,6 +7,7 @@ import { createRoot } from '@opentui/react';
 
 import { App } from './App';
 import { applyCliArgsToEnv } from './runtime/cli-args';
+import { configureBundledRipgrepEnv } from './runtime/bundled-ripgrep';
 import {
   bindExitGuards,
   hardResetTerminal,
@@ -54,6 +55,7 @@ const resolveCliVersion = (): string => {
 };
 
 const cliVersion = resolveCliVersion();
+configureBundledRipgrepEnv();
 const cliArgsResult = applyCliArgsToEnv(undefined, process.env, cliVersion);
 if (!cliArgsResult.ok) {
   console.error(cliArgsResult.error);

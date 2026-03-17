@@ -5,8 +5,7 @@ import type {
   RunForegroundUsage,
 } from './agent/app/agent-app-service';
 import type { CliEventEnvelope } from './agent/app/contracts';
-import type { ToolConfirmInfo, ToolDecision } from './agent/tool/types';
-import type { AgentContextUsage, Message } from './agent/types';
+import type { AgentContextUsage, Message, ToolConfirmInfo, ToolDecision } from './agent/types';
 import { ProviderRegistry } from './providers';
 import type { ModelConfig } from './providers/types';
 

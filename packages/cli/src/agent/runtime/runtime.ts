@@ -92,6 +92,7 @@ const DEFAULT_MODEL = 'qwen3.5-plus';
 const DEFAULT_MAX_STEPS = 10000;
 const DEFAULT_MAX_RETRY_COUNT = 10;
 const PARENT_HIDDEN_TOOL_NAMES = new Set(['file_history_list', 'file_history_restore']);
+const AGENT_FULL_ACCESS_ENV = 'AGENT_FULL_ACCESS';
 
 const parsePositiveInt = (raw: string | undefined, fallback: number): number => {
   if (!raw || raw.trim().length === 0) {
@@ -104,61 +105,9 @@ const parsePositiveInt = (raw: string | undefined, fallback: number): number => 
   return value;
 };
 
-const parseToolApprovalPolicy = (
-  raw: string | undefined
-): 'never' | 'on-request' | 'on-failure' | 'unless-trusted' => {
-  const normalized = raw?.trim().toLowerCase().replace(/_/g, '-');
-  if (
-    normalized === 'never' ||
-    normalized === 'on-request' ||
-    normalized === 'on-failure' ||
-    normalized === 'unless-trusted'
-  ) {
-    return normalized;
-  }
-  return 'unless-trusted';
-};
-
-const parseToolTrustLevel = (raw: string | undefined): 'trusted' | 'untrusted' => {
-  const normalized = raw?.trim().toLowerCase();
-  if (normalized === 'trusted' || normalized === 'untrusted') {
-    return normalized;
-  }
-  return 'trusted';
-};
-
-const parseToolFileSystemMode = (raw: string | undefined): 'workspace' | 'unrestricted' => {
-  const normalized = raw?.trim().toLowerCase().replace(/_/g, '-');
-  if (normalized === 'workspace' || normalized === 'unrestricted') {
-    return normalized;
-  }
-  return 'unrestricted';
-};
-
-const parseToolNetworkMode = (raw: string | undefined): 'restricted' | 'enabled' => {
-  const normalized = raw?.trim().toLowerCase().replace(/_/g, '-');
-  if (normalized === 'restricted' || normalized === 'enabled') {
-    return normalized;
-  }
-  return 'enabled';
-};
-
-const resolveToolExecutorPolicies = (modules: SourceModules, workspaceRoot: string) => {
-  const fileSystemMode = parseToolFileSystemMode(process.env.AGENT_TOOL_FILESYSTEM_MODE);
-  const networkMode = parseToolNetworkMode(process.env.AGENT_TOOL_NETWORK_MODE);
-
-  return {
-    approvalPolicy: parseToolApprovalPolicy(process.env.AGENT_TOOL_APPROVAL_POLICY),
-    trustLevel: parseToolTrustLevel(process.env.AGENT_TOOL_TRUST_LEVEL),
-    fileSystemPolicy:
-      fileSystemMode === 'unrestricted'
-        ? modules.createUnrestrictedFileSystemPolicy()
-        : modules.createWorkspaceFileSystemPolicy(workspaceRoot),
-    networkPolicy:
-      networkMode === 'enabled'
-        ? modules.createEnabledNetworkPolicy()
-        : modules.createRestrictedNetworkPolicy(),
-  };
+const isFullAccessEnabled = (env: NodeJS.ProcessEnv = process.env): boolean => {
+  const raw = env[AGENT_FULL_ACCESS_ENV]?.trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
 };
 
 const resolvePromptCacheConfig = (conversationId: string): Record<string, unknown> | undefined => {
@@ -476,15 +425,31 @@ const createRuntime = async (): Promise<RuntimeCore> => {
   const taskStore = modules.getTaskStateStoreV2({
     baseDir: modules.resolveRenxTaskDir(process.env),
   });
-  const toolExecutorPolicies = resolveToolExecutorPolicies(modules, workspaceRoot);
+  const fullAccessEnabled = isFullAccessEnabled(process.env);
   const deferredSubagentAppService = createDeferredSubagentAppService();
-  let toolExecutor: ToolExecutorLike | null = null;
+  const runtimeCompositionRef: {
+    current?:
+      | {
+          agent: StatelessAgentLike;
+          appService: AgentAppServiceLike;
+          toolExecutor: ToolExecutorLike;
+          store?: AgentAppStoreLike;
+        }
+      | undefined;
+  } = {};
   const toolSystem = modules.createEnterpriseToolSystemV2WithSubagents({
     appService: deferredSubagentAppService.service,
     resolveTools: (allowedTools?: string[]) =>
-      filterToolSchemas(toolExecutor?.getToolSchemas() || [], { allowedTools }),
+      filterToolSchemas(runtimeCompositionRef.current?.toolExecutor?.getToolSchemas?.() || [], {
+        allowedTools,
+      }),
     resolveModelId: () => modelConfig.model || modelId,
     builtIns: {
+      shell: fullAccessEnabled
+        ? {
+            profile: modules.SHELL_POLICY_PROFILES.fullAccess,
+          }
+        : undefined,
       skill: {
         loaderOptions: {
           workingDir: workspaceRoot,
@@ -496,38 +461,46 @@ const createRuntime = async (): Promise<RuntimeCore> => {
       },
     },
   });
-  toolExecutor = new modules.EnterpriseToolExecutor({
-    system: toolSystem,
-    workingDirectory: workspaceRoot,
-    fileSystemPolicy: toolExecutorPolicies.fileSystemPolicy,
-    networkPolicy: toolExecutorPolicies.networkPolicy,
-    approvalPolicy: toolExecutorPolicies.approvalPolicy,
-    trustLevel: toolExecutorPolicies.trustLevel,
+  const runtimeComposition = modules.createEnterpriseAgentAppService({
+    llmProvider: provider,
+    toolSystem,
+    projectRoot: workspaceRoot,
+    env: process.env,
+    toolExecutorOptions: {
+      workingDirectory: workspaceRoot,
+      ...(fullAccessEnabled
+        ? {
+            fileSystemPolicy: { mode: 'unrestricted', readRoots: [], writeRoots: [] },
+            networkPolicy: { mode: 'enabled', allowedHosts: [], deniedHosts: [] },
+            approvalPolicy: 'unless-trusted',
+            trustLevel: 'trusted',
+          }
+        : {}),
+    },
+    agentConfig: {
+      maxRetryCount: parsePositiveInt(process.env.AGENT_MAX_RETRY_COUNT, DEFAULT_MAX_RETRY_COUNT),
+      enableCompaction: true,
+      logger: agentLogger,
+    },
+    storePath: resolveDbPath(modules),
   });
+  runtimeCompositionRef.current = runtimeComposition;
 
-  const agent = new modules.StatelessAgent(provider, toolExecutor, {
-    maxRetryCount: parsePositiveInt(process.env.AGENT_MAX_RETRY_COUNT, DEFAULT_MAX_RETRY_COUNT),
-    enableCompaction: true,
-    logger: agentLogger,
-  });
-
-  const appStore = modules.createSqliteAgentAppStore(resolveDbPath(modules));
+  const appStore = runtimeComposition.store;
+  if (!appStore) {
+    throw new Error('CLI_RUNTIME_STORE_NOT_CREATED');
+  }
   const preparableStore = appStore as AgentAppStoreLike & {
     prepare?: () => Promise<void>;
   };
   if (typeof preparableStore.prepare === 'function') {
     await preparableStore.prepare();
   }
-
-  const appService = new modules.AgentAppService({
-    agent,
-    executionStore: appStore,
-    eventStore: appStore,
-    messageStore: appStore,
-  });
+  const agent = runtimeComposition.agent;
+  const appService = runtimeComposition.appService;
   deferredSubagentAppService.bind(appService);
 
-  const parentTools = filterToolSchemas(toolExecutor.getToolSchemas(), {
+  const parentTools = filterToolSchemas(runtimeComposition.toolExecutor.getToolSchemas(), {
     hiddenToolNames: PARENT_HIDDEN_TOOL_NAMES,
   });
 

@@ -2,6 +2,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AuthorizationService } from '../../auth/authorization-service';
+import { createSystemPrincipal } from '../../auth/principal';
 import { ToolSessionState, type ToolExecutionContext } from '../context';
 import type { ToolApprovalRequest } from '../contracts';
 import { createBuiltInToolHandlersV2 } from '../builtins';
@@ -45,14 +47,14 @@ describe('local_shell v2', () => {
 
     const result = await system.execute(
       {
-        callId: 'shell-safe',
+        toolCallId: 'shell-safe',
         toolName: 'local_shell',
         arguments: JSON.stringify({
           command: 'ls',
         }),
       },
       createContext(workspaceDir, {
-        approve: approve as ToolExecutionContext['approve'],
+        approve: approve as ToolExecutionContext['authorization']['requestApproval'],
       })
     );
 
@@ -73,19 +75,48 @@ describe('local_shell v2', () => {
 
     const result = await system.execute(
       {
-        callId: 'shell-powershell-safe',
+        toolCallId: 'shell-powershell-safe',
         toolName: 'local_shell',
         arguments: JSON.stringify({
           command: `Get-ChildItem -Path src -Recurse | Select-String -Pattern 'TODO'`,
         }),
       },
       createContext(workspaceDir, {
-        approve: approve as ToolExecutionContext['approve'],
+        approve: approve as ToolExecutionContext['authorization']['requestApproval'],
       })
     );
 
     expect(result.success).toBe(true);
     expect(runtime.requests).toHaveLength(1);
+    expect(approve).not.toHaveBeenCalled();
+  });
+
+  it('allows command-policy denied commands when full access profile is enabled', async () => {
+    const runtime = new RecordingShellRuntime();
+    const approve = vi.fn();
+    const system = new EnterpriseToolSystem([
+      new LocalShellToolV2({
+        runtime,
+        profile: SHELL_POLICY_PROFILES.fullAccess,
+      }),
+    ]);
+
+    const result = await system.execute(
+      {
+        toolCallId: 'shell-full-access',
+        toolName: 'local_shell',
+        arguments: JSON.stringify({
+          command: `node -e "console.log('full access')"`,
+        }),
+      },
+      createContext(workspaceDir, {
+        approve: approve as ToolExecutionContext['authorization']['requestApproval'],
+      })
+    );
+
+    expect(result.success).toBe(true);
+    expect(runtime.requests).toHaveLength(1);
+    expect(runtime.requests[0]?.sandbox).toBe('full-access');
     expect(approve).not.toHaveBeenCalled();
   });
 
@@ -101,7 +132,7 @@ describe('local_shell v2', () => {
 
     const result = await system.execute(
       {
-        callId: 'shell-unknown',
+        toolCallId: 'shell-unknown',
         toolName: 'local_shell',
         arguments: JSON.stringify({
           command: 'customcmd --help',
@@ -150,7 +181,7 @@ describe('local_shell v2', () => {
 
     const result = await system.execute(
       {
-        callId: 'shell-git-commit',
+        toolCallId: 'shell-git-commit',
         toolName: 'local_shell',
         arguments: JSON.stringify({
           command: 'git commit -m "test"',
@@ -192,7 +223,7 @@ describe('local_shell v2', () => {
 
     const result = await system.execute(
       {
-        callId: 'shell-git',
+        toolCallId: 'shell-git',
         toolName: 'local_shell',
         arguments: JSON.stringify({
           command: 'git status --short',
@@ -224,7 +255,7 @@ describe('local_shell v2', () => {
 
     const result = await system.execute(
       {
-        callId: 'shell-workspace',
+        toolCallId: 'shell-workspace',
         toolName: 'local_shell',
         arguments: JSON.stringify({
           command: 'ls',
@@ -243,6 +274,32 @@ describe('local_shell v2', () => {
     expect(runtime.requests[0]?.environment?.CODEX_SANDBOX_NETWORK_DISABLED).toBe('1');
   });
 
+  it('uses the workspace-guarded profile by default', async () => {
+    const runtime = new RecordingShellRuntime();
+    const system = new EnterpriseToolSystem([
+      new LocalShellToolV2({
+        runtime,
+      }),
+    ]);
+
+    const result = await system.execute(
+      {
+        toolCallId: 'shell-default-profile',
+        toolName: 'local_shell',
+        arguments: JSON.stringify({
+          command: 'ls',
+        }),
+      },
+      createContext(workspaceDir)
+    );
+
+    expect(result.success).toBe(true);
+    expect(runtime.requests).toHaveLength(1);
+    expect(runtime.requests[0]?.sandbox).toBe('workspace-write');
+    expect(runtime.requests[0]?.sandboxProfile).toBe('workspace-write');
+    expect(runtime.requests[0]?.policyProfile).toBe('workspace-guarded');
+  });
+
   it('allows PowerShell read commands under the workspace policy profile', async () => {
     const runtime = new RecordingShellRuntime();
     const approve = vi.fn();
@@ -255,14 +312,14 @@ describe('local_shell v2', () => {
 
     const result = await system.execute(
       {
-        callId: 'shell-workspace-powershell-read',
+        toolCallId: 'shell-workspace-powershell-read',
         toolName: 'local_shell',
         arguments: JSON.stringify({
           command: 'Get-Content -Raw package.json',
         }),
       },
       createContext(workspaceDir, {
-        approve: approve as ToolExecutionContext['approve'],
+        approve: approve as ToolExecutionContext['authorization']['requestApproval'],
       })
     );
 
@@ -285,14 +342,14 @@ describe('local_shell v2', () => {
 
     const result = await system.execute(
       {
-        callId: 'shell-pnpm-install',
+        toolCallId: 'shell-pnpm-install',
         toolName: 'local_shell',
         arguments: JSON.stringify({
           command: 'pnpm install',
         }),
       },
       createContext(workspaceDir, {
-        approve: approve as ToolExecutionContext['approve'],
+        approve: approve as ToolExecutionContext['authorization']['requestApproval'],
         requestPermissions: async (request) => {
           permissionRequests.push(request as unknown as Record<string, unknown>);
           return {
@@ -310,9 +367,7 @@ describe('local_shell v2', () => {
     expect(runtime.requests[0]?.sandboxPolicy?.networkAccess).toBe(true);
     expect(runtime.requests[0]?.environment?.CODEX_SANDBOX_NETWORK_DISABLED).toBeUndefined();
     if (result.success) {
-      expect(
-        (result.structured as { grantedPermissions: unknown }).grantedPermissions
-      ).toMatchObject({
+      expect(result.metadata?.requestedPermissions).toMatchObject({
         network: {
           enabled: true,
         },
@@ -347,7 +402,7 @@ describe('local_shell v2', () => {
 
     const result = await system.execute(
       {
-        callId: 'shell-segmented',
+        toolCallId: 'shell-segmented',
         toolName: 'local_shell',
         arguments: JSON.stringify({
           command: 'ls && git commit -m "test"',
@@ -395,7 +450,7 @@ describe('local_shell v2', () => {
 
     const result = await system.execute(
       {
-        callId: 'shell-restricted',
+        toolCallId: 'shell-restricted',
         toolName: 'local_shell',
         arguments: JSON.stringify({
           command: 'ls',
@@ -436,7 +491,7 @@ describe('local_shell v2', () => {
 
     const result = await system.execute(
       {
-        callId: 'shell-restricted-enforced',
+        toolCallId: 'shell-restricted-enforced',
         toolName: 'local_shell',
         arguments: JSON.stringify({
           command: 'ls',
@@ -484,7 +539,7 @@ describe('local_shell v2', () => {
 
     const result = await system.execute(
       {
-        callId: 'shell-escalation-unsupported',
+        toolCallId: 'shell-escalation-unsupported',
         toolName: 'local_shell',
         arguments: JSON.stringify({
           command: 'git commit -m "test"',
@@ -510,7 +565,7 @@ describe('local_shell v2', () => {
 
     const result = await system.execute(
       {
-        callId: 'shell-deny',
+        toolCallId: 'shell-deny',
         toolName: 'local_shell',
         arguments: JSON.stringify({
           command: 'rm -rf /',
@@ -545,7 +600,7 @@ describe('local_shell v2', () => {
 
       const result = await system.execute(
         {
-          callId: `shell-deny-${command}`,
+          toolCallId: `shell-deny-${command}`,
           toolName: 'local_shell',
           arguments: JSON.stringify({
             command,
@@ -607,7 +662,7 @@ describe('local_shell v2', () => {
 
       const result = await system.execute(
         {
-          callId: `shell-compat-${index}`,
+          toolCallId: `shell-compat-${index}`,
           toolName: 'local_shell',
           arguments: JSON.stringify({
             command,
@@ -646,7 +701,7 @@ describe('local_shell v2', () => {
     try {
       const started = await system.execute(
         {
-          callId: 'shell-background-start',
+          toolCallId: 'shell-background-start',
           toolName: 'local_shell',
           arguments: JSON.stringify({
             command: 'pnpm dev',
@@ -666,7 +721,7 @@ describe('local_shell v2', () => {
 
       const output = await system.execute(
         {
-          callId: 'shell-background-output',
+          toolCallId: 'shell-background-output',
           toolName: 'task_output',
           arguments: JSON.stringify({
             taskId,
@@ -692,7 +747,7 @@ describe('local_shell v2', () => {
 
       const startedSecond = await system.execute(
         {
-          callId: 'shell-background-start-2',
+          toolCallId: 'shell-background-start-2',
           toolName: 'local_shell',
           arguments: JSON.stringify({
             command: 'pnpm test --watch',
@@ -710,7 +765,7 @@ describe('local_shell v2', () => {
       const secondTaskId = (startedSecond.structured as { taskId: string }).taskId;
       const stopped = await system.execute(
         {
-          callId: 'shell-background-stop',
+          toolCallId: 'shell-background-stop',
           toolName: 'task_stop',
           arguments: JSON.stringify({
             taskId: secondTaskId,
@@ -757,7 +812,7 @@ describe('local_shell v2', () => {
       const events: string[] = [];
       const started = await system.execute(
         {
-          callId: 'shell-background-parent-abort',
+          toolCallId: 'shell-background-parent-abort',
           toolName: 'local_shell',
           arguments: JSON.stringify({
             command: 'pnpm dev',
@@ -786,7 +841,7 @@ describe('local_shell v2', () => {
       await waitUntil(async () => {
         const stopped = await system.execute(
           {
-            callId: 'shell-background-parent-output',
+            toolCallId: 'shell-background-parent-output',
             toolName: 'task_output',
             arguments: JSON.stringify({
               taskId,
@@ -935,19 +990,32 @@ class BackgroundRecordingShellRuntime extends RecordingShellRuntime {
 
 function createContext(
   workspaceDir: string,
-  overrides: Partial<ToolExecutionContext> = {}
+  overrides: Partial<Omit<ToolExecutionContext, 'authorization'>> & {
+    approve?: ToolExecutionContext['authorization']['requestApproval'];
+    requestPermissions?: ToolExecutionContext['authorization']['requestPermissions'];
+    onPolicyCheck?: ToolExecutionContext['authorization']['evaluatePolicy'];
+  } = {}
 ): ToolExecutionContext {
+  const { approve, requestPermissions, onPolicyCheck, ...contextOverrides } = overrides;
   return {
     workingDirectory: workspaceDir,
     sessionState: new ToolSessionState(),
+    authorization: {
+      service: new AuthorizationService(),
+      principal: createSystemPrincipal('tool-v2-shell-test'),
+      requestApproval:
+        approve ||
+        (async () => ({
+          approved: true,
+          scope: 'turn',
+        })),
+      requestPermissions,
+      evaluatePolicy: onPolicyCheck,
+    },
     fileSystemPolicy: createWorkspaceFileSystemPolicy(workspaceDir),
     networkPolicy: createRestrictedNetworkPolicy(),
     approvalPolicy: 'on-request',
-    approve: async () => ({
-      approved: true,
-      scope: 'turn',
-    }),
-    ...overrides,
+    ...contextOverrides,
   };
 }
 

@@ -19,26 +19,18 @@ export interface StorageConfig {
   fileHistory?: FileHistoryConfig;
 }
 
-export type AgentToolApprovalPolicy = 'never' | 'on-request' | 'on-failure' | 'unless-trusted';
-
-export type AgentToolTrustLevel = 'trusted' | 'untrusted';
-
-export type AgentToolFileSystemMode = 'workspace' | 'unrestricted';
-
-export type AgentToolNetworkMode = 'restricted' | 'enabled';
-
-export interface AgentToolRuntimeConfig {
-  approvalPolicy?: AgentToolApprovalPolicy;
-  trustLevel?: AgentToolTrustLevel;
-  fileSystemMode?: AgentToolFileSystemMode;
-  networkMode?: AgentToolNetworkMode;
-}
-
 export interface AgentConfig {
   maxSteps?: number;
-  confirmationMode?: 'manual' | 'auto-approve' | 'auto-deny';
   defaultModel?: string;
-  toolRuntime?: AgentToolRuntimeConfig;
+  permissions?: AgentPermissionsConfig;
+}
+
+export interface AgentPermissionsConfig {
+  fullAccess?: boolean;
+  approvalPolicy?: 'never' | 'on-request' | 'on-failure' | 'unless-trusted';
+  trustLevel?: 'unknown' | 'trusted' | 'untrusted';
+  fileSystemMode?: 'read-only' | 'workspace-write' | 'unrestricted';
+  networkMode?: 'restricted' | 'enabled';
 }
 
 export interface ConfigModelDefinition {
@@ -94,13 +86,13 @@ export interface ResolvedConfig {
   };
   agent: {
     maxSteps: number;
-    confirmationMode: 'manual' | 'auto-approve' | 'auto-deny';
     defaultModel: string;
-    toolRuntime: {
-      approvalPolicy: AgentToolApprovalPolicy;
-      trustLevel: AgentToolTrustLevel;
-      fileSystemMode: AgentToolFileSystemMode;
-      networkMode: AgentToolNetworkMode;
+    permissions: {
+      fullAccess: boolean;
+      approvalPolicy?: 'never' | 'on-request' | 'on-failure' | 'unless-trusted';
+      trustLevel?: 'unknown' | 'trusted' | 'untrusted';
+      fileSystemMode?: 'read-only' | 'workspace-write' | 'unrestricted';
+      networkMode?: 'restricted' | 'enabled';
     };
   };
   models: Record<string, ConfigModelDefinition>;

@@ -1,6 +1,5 @@
 import type { AgentContextUsage, Message } from '../types';
 import type { Tool } from '../../providers';
-import type { LLMTool } from '../tool/types';
 
 import { estimateMessagesTokens } from './compaction';
 
@@ -20,8 +19,7 @@ export function calculateContextUsage(
   tools: Tool[] | undefined,
   contextLimitTokens: number
 ): Pick<AgentContextUsage, 'contextTokens' | 'contextLimitTokens' | 'contextUsagePercent'> {
-  const llmTools = tools as unknown as LLMTool[] | undefined;
-  const contextTokens = estimateMessagesTokens(messages, llmTools);
+  const contextTokens = estimateMessagesTokens(messages, tools);
 
   return {
     contextTokens,

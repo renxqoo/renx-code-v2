@@ -6,6 +6,8 @@
  */
 
 import { LLMGenerateOptions, MessageContent, Tool, ToolCall, Usage } from '../providers';
+import type { PrincipalContext } from './auth/contracts';
+import type { ToolPolicyCheckInfo, ToolPolicyDecision } from './tool-v2/contracts';
 
 // ============================================================
 // 消息类型
@@ -41,6 +43,7 @@ export interface AgentInput {
   executionId: string;
   conversationId: string;
   messages: Message[];
+  principal?: PrincipalContext;
   systemPrompt?: string;
   tools?: Tool[];
   config?: LLMGenerateOptions;
@@ -152,20 +155,6 @@ export interface ToolConfirmInfo {
 export interface ToolDecision {
   approved: boolean;
   message?: string;
-}
-
-export interface ToolPolicyCheckInfo {
-  toolCallId: string;
-  toolName: string;
-  arguments: string;
-  parsedArguments: Record<string, unknown>;
-}
-
-export interface ToolPolicyDecision {
-  allowed: boolean;
-  code?: string;
-  message?: string;
-  audit?: Record<string, unknown>;
 }
 
 // ============================================================

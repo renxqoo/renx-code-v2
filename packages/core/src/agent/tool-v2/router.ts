@@ -2,7 +2,7 @@ import type { ToolCallRequest } from './contracts';
 import { ToolRegistry } from './registry';
 
 export interface RoutedToolCall {
-  readonly callId: string;
+  readonly toolCallId: string;
   readonly toolName: string;
   readonly arguments: string;
   readonly handler: ReturnType<ToolRegistry['get']>;
@@ -13,7 +13,7 @@ export class ToolRouter {
 
   route(call: ToolCallRequest): RoutedToolCall {
     return {
-      callId: call.callId,
+      toolCallId: call.toolCallId,
       toolName: call.toolName,
       arguments: call.arguments,
       handler: this.registry.get(call.toolName),

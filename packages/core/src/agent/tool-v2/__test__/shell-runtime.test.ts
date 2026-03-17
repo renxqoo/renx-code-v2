@@ -2,10 +2,13 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { AuthorizationService } from '../../auth/authorization-service';
+import { createSystemPrincipal } from '../../auth/principal';
 import { ToolSessionState, type ToolExecutionContext } from '../context';
 import { LocalShellToolV2 } from '../handlers/shell';
 import { createRestrictedNetworkPolicy, createWorkspaceFileSystemPolicy } from '../permissions';
 import { BrokeredShellRuntime } from '../runtimes/brokered-shell-runtime';
+import { resolveBundledRipgrepPathEntries } from '../runtimes/bundled-ripgrep';
 import type {
   LocalProcessShellRuntime,
   ShellRuntime,
@@ -129,7 +132,7 @@ describe('shell runtime adapters', () => {
 
     const sandboxedResult = await system.execute(
       {
-        callId: 'sandboxed',
+        toolCallId: 'sandboxed',
         toolName: 'local_shell',
         arguments: JSON.stringify({
           command: 'pwd',
@@ -139,7 +142,7 @@ describe('shell runtime adapters', () => {
     );
     const escalatedResult = await system.execute(
       {
-        callId: 'escalated',
+        toolCallId: 'escalated',
         toolName: 'local_shell',
         arguments: JSON.stringify({
           command: 'git commit -m "x"',
@@ -172,7 +175,7 @@ describe('shell runtime adapters', () => {
 
     const result = await system.execute(
       {
-        callId: 'sandbox-state',
+        toolCallId: 'sandbox-state',
         toolName: 'local_shell',
         arguments: JSON.stringify({
           command: 'ls',
@@ -215,7 +218,7 @@ describe('shell runtime adapters', () => {
     const command = process.platform === 'win32' ? 'type sample.txt' : 'cat sample.txt';
     const result = await system.execute(
       {
-        callId: 'local-process-compatible',
+        toolCallId: 'local-process-compatible',
         toolName: 'local_shell',
         arguments: JSON.stringify({
           command,
@@ -259,7 +262,7 @@ describe('shell runtime adapters', () => {
 
     const result = await system.execute(
       {
-        callId: 'local-process-powershell-native',
+        toolCallId: 'local-process-powershell-native',
         toolName: 'local_shell',
         arguments: JSON.stringify({
           command: 'Get-Content -Raw sample.txt',
@@ -304,10 +307,10 @@ describe('shell runtime adapters', () => {
 
     const result = await system.execute(
       {
-        callId: 'local-process-powershell-utf8',
+        toolCallId: 'local-process-powershell-utf8',
         toolName: 'local_shell',
         arguments: JSON.stringify({
-          command: "Write-Output '中文输出'",
+          command: "Write-Output '涓枃杈撳嚭'",
         }),
       },
       createContext(workspaceDir)
@@ -316,8 +319,78 @@ describe('shell runtime adapters', () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect((result.structured as { exitCode: number }).exitCode).toBe(0);
-      expect(result.output).toContain('中文输出');
+      expect(result.output).toContain('涓枃杈撳嚭');
     }
+  });
+  it('prepends configured path entries before launching shell commands', async () => {
+    const injectedDir = path.join(workspaceDir, 'vendor-bin');
+    await fs.mkdir(injectedDir, { recursive: true });
+
+    const runtime: LocalProcessShellRuntime = new LocalProcessShellRuntimeImpl({
+      extraPathEntries: [injectedDir],
+    });
+    const system = new EnterpriseToolSystem([
+      new LocalShellToolV2({
+        runtime,
+        approvalMode: 'policy',
+        policy: createRuleBasedShellCommandPolicy({
+          rules: [],
+          fallback: {
+            evaluate(command) {
+              return {
+                effect: 'allow',
+                commands: [command],
+                preferredSandbox: 'workspace-write',
+                executionMode: 'sandboxed',
+              };
+            },
+          },
+        }),
+      }),
+    ]);
+
+    const command =
+      process.platform === 'win32'
+        ? `[Environment]::GetEnvironmentVariable('PATH')`
+        : 'printf %s "$PATH"';
+    const result = await system.execute(
+      {
+        toolCallId: 'local-process-path-injection',
+        toolName: 'local_shell',
+        arguments: JSON.stringify({
+          command,
+        }),
+      },
+      createContext(workspaceDir)
+    );
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.output.split(path.delimiter)[0]).toBe(injectedDir);
+    }
+  });
+
+  it('resolves the bundled ripgrep vendor path from CLI-provided env overrides', () => {
+    const expectedDir = path.join(
+      workspaceDir,
+      'vendor',
+      'ripgrep',
+      'x86_64-pc-windows-msvc',
+      'path'
+    );
+    const expectedBinary = path.join(expectedDir, 'rg.exe');
+
+    const entries = resolveBundledRipgrepPathEntries({
+      platform: 'win32',
+      arch: 'x64',
+      env: {
+        RENX_BUNDLED_RG_DIR: expectedDir,
+        RIPGREP_PATH: expectedBinary,
+      },
+      pathExists: (candidate) => candidate === expectedBinary,
+    });
+
+    expect(entries).toEqual([expectedDir]);
   });
 });
 
@@ -352,18 +425,31 @@ class SandboxStateRecordingRuntime extends RecordingRuntime {
 
 function createContext(
   workspaceDir: string,
-  overrides: Partial<ToolExecutionContext> = {}
+  overrides: Partial<Omit<ToolExecutionContext, 'authorization'>> & {
+    approve?: ToolExecutionContext['authorization']['requestApproval'];
+    requestPermissions?: ToolExecutionContext['authorization']['requestPermissions'];
+    onPolicyCheck?: ToolExecutionContext['authorization']['evaluatePolicy'];
+  } = {}
 ): ToolExecutionContext {
+  const { approve, requestPermissions, onPolicyCheck, ...contextOverrides } = overrides;
   return {
     workingDirectory: workspaceDir,
     sessionState: new ToolSessionState(),
+    authorization: {
+      service: new AuthorizationService(),
+      principal: createSystemPrincipal('tool-v2-shell-runtime-test'),
+      requestApproval:
+        approve ||
+        (async () => ({
+          approved: true,
+          scope: 'turn',
+        })),
+      requestPermissions,
+      evaluatePolicy: onPolicyCheck,
+    },
     fileSystemPolicy: createWorkspaceFileSystemPolicy(workspaceDir),
     networkPolicy: createRestrictedNetworkPolicy(),
     approvalPolicy: 'on-request',
-    approve: async () => ({
-      approved: true,
-      scope: 'turn',
-    }),
-    ...overrides,
+    ...contextOverrides,
   };
 }

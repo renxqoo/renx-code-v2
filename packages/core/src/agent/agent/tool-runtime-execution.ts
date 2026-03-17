@@ -113,6 +113,7 @@ async function buildRecordedToolResult(
     executionId,
     stepIndex,
     agent: runtime.agentRef,
+    principal: runtime.execution.principal,
     sessionState: runtime.execution.sessionState,
     abortSignal,
     onStreamEvent: async (event) => {
@@ -127,7 +128,7 @@ async function buildRecordedToolResult(
     onExecutionEvent: undefined,
     onApproval: async (request) => {
       const decision = await confirm({
-        toolCallId: request.callId,
+        toolCallId: request.toolCallId,
         toolName: request.toolName,
         arguments: toolCall.function.arguments,
         reason: request.reason,
@@ -145,7 +146,7 @@ async function buildRecordedToolResult(
     },
     onPermissionRequest: async (request) =>
       requestPermissions({
-        toolCallId: request.callId,
+        toolCallId: request.toolCallId,
         toolName: request.toolName,
         reason: request.reason,
         requestedScope: request.requestedScope,
@@ -166,27 +167,17 @@ async function buildRecordedToolResult(
     writeBufferSessions,
   });
 
-  const finalizedResult = await maybeAutoFinalizeWriteFileResult(runtime, {
-    toolCall,
-    toolExecResult: enrichedResult,
-    stepIndex,
-    callbacks,
-    abortSignal,
-    executionId,
-    confirm,
-  });
-
   await maybeCleanupWriteFileBuffer({
     toolCall,
-    result: finalizedResult,
+    result: enrichedResult,
     stepIndex,
     executionId,
     writeBufferSessions,
   });
 
   return {
-    result: finalizedResult,
-    summary: resolveToolResultSummary(toolCall, finalizedResult),
+    result: enrichedResult,
+    summary: resolveToolResultSummary(toolCall, enrichedResult),
     recordedAt: Date.now(),
   };
 }
@@ -221,102 +212,6 @@ async function maybeEnrichWriteFileFailureResult(params: {
   return {
     ...toolExecResult,
     output: enrichedOutput,
-  };
-}
-
-async function maybeAutoFinalizeWriteFileResult(
-  runtime: ToolRuntime,
-  params: {
-    toolCall: ToolCall;
-    toolExecResult: Awaited<ReturnType<ToolRuntime['execution']['executor']['execute']>>;
-    stepIndex: number;
-    callbacks: ExecuteToolArgs['callbacks'];
-    abortSignal: AbortSignal | undefined;
-    executionId: string | undefined;
-    confirm: ReturnType<typeof buildToolConfirmPromise>;
-  }
-) {
-  const protocol = parseWriteFileProtocolOutput(params.toolExecResult.output);
-  const onToolPolicy = params.callbacks?.onToolPolicy;
-  const requestPermissions = buildToolPermissionPromise(runtime, params.abortSignal);
-  if (
-    params.toolCall.function.name !== 'write_file' ||
-    !protocol ||
-    protocol.nextAction !== 'finalize' ||
-    !protocol.nextArgs
-  ) {
-    return params.toolExecResult;
-  }
-
-  const finalizeResult = await runtime.execution.executor.execute(
-    {
-      ...params.toolCall,
-      id: `${params.toolCall.id}__finalize`,
-      function: {
-        ...params.toolCall.function,
-        arguments: JSON.stringify(protocol.nextArgs),
-      },
-    },
-    {
-      executionId: params.executionId,
-      stepIndex: params.stepIndex,
-      agent: runtime.agentRef,
-      sessionState: runtime.execution.sessionState,
-      abortSignal: params.abortSignal,
-      onStreamEvent: async (event) => {
-        runtime.events.emit('tool_chunk', {
-          toolCallId: params.toolCall.id,
-          toolName: params.toolCall.function.name,
-          arguments: params.toolCall.function.arguments,
-          chunk: event.message,
-          chunkType: event.type,
-        });
-      },
-      onExecutionEvent: undefined,
-      onApproval: async (request) => {
-        const decision = await params.confirm({
-          toolCallId: request.callId,
-          toolName: request.toolName,
-          arguments: JSON.stringify(protocol.nextArgs),
-          reason: request.reason,
-          metadata: {
-            commandPreview: request.commandPreview,
-            readPaths: request.readPaths,
-            writePaths: request.writePaths,
-          },
-        });
-        return {
-          approved: decision.approved,
-          scope: 'once',
-          reason: decision.message,
-        };
-      },
-      onPermissionRequest: async (request) =>
-        requestPermissions({
-          toolCallId: request.callId,
-          toolName: request.toolName,
-          reason: request.reason,
-          requestedScope: request.requestedScope,
-          permissions: request.permissions as Record<string, unknown>,
-        }),
-      onPolicyCheck: onToolPolicy
-        ? async (info) => {
-            const decision = await onToolPolicy(info);
-            return decision || { allowed: true };
-          }
-        : undefined,
-    }
-  );
-
-  const finalizeProtocol = parseWriteFileProtocolOutput(finalizeResult.output);
-  if (!finalizeResult.success && !finalizeProtocol) {
-    return params.toolExecResult;
-  }
-
-  return {
-    ...finalizeResult,
-    callId: params.toolCall.id,
-    toolName: params.toolCall.function.name,
   };
 }
 

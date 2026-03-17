@@ -11,9 +11,10 @@ import type {
   Message,
   StreamEvent,
 } from '../../types';
-import { DefaultToolManager } from '../../tool/tool-manager';
-import { BashTool } from '../../tool/bash';
-import { WriteFileTool } from '../../tool/write-file';
+import { EnterpriseToolExecutor } from '../../tool-v2/agent-tool-executor';
+import { EnterpriseToolSystem } from '../../tool-v2/tool-system';
+import { LocalShellToolV2 } from '../../tool-v2/handlers/shell';
+import { WriteFileToolV2 } from '../../tool-v2/handlers/write-file';
 import type { Chunk, LLMProvider, ToolCall } from '../../../providers';
 import { LLMAuthError, LLMBadRequestError, LLMRetryableError } from '../../../providers';
 import { AgentError } from '../error';
@@ -116,6 +117,20 @@ function createToolManager() {
     getToolSchemas: vi.fn(() => []),
     getConcurrencyPolicy: vi.fn(() => ({ mode: 'exclusive' as const })),
   } as unknown as AgentToolExecutor;
+}
+
+function createEnterpriseToolExecutor(
+  handlers: ConstructorParameters<typeof EnterpriseToolSystem>[0],
+  options?: {
+    workingDirectory?: string;
+  }
+): AgentToolExecutor {
+  return new EnterpriseToolExecutor({
+    system: new EnterpriseToolSystem(handlers),
+    workingDirectory: options?.workingDirectory,
+    approvalPolicy: 'unless-trusted',
+    trustLevel: 'trusted',
+  });
 }
 
 function createInput() {
@@ -785,8 +800,7 @@ describe('StatelessAgent', () => {
 
   it('uses toolManager schemas when input.tools is omitted', async () => {
     const provider = createProvider();
-    const manager = new DefaultToolManager();
-    manager.registerTool(new BashTool());
+    const manager = createEnterpriseToolExecutor([new LocalShellToolV2()]);
     provider.generateStream = vi.fn().mockReturnValue(
       toStream([
         {
@@ -820,7 +834,7 @@ describe('StatelessAgent', () => {
     const callConfig = generateStreamCalls[0]?.[1] as {
       tools?: Array<{ function?: { name?: string } }>;
     };
-    expect(callConfig.tools?.some((tool) => tool.function?.name === 'bash')).toBe(true);
+    expect(callConfig.tools?.some((tool) => tool.function?.name === 'local_shell')).toBe(true);
   });
 
   it('injects systemPrompt as system message when input has no system role message', async () => {
@@ -1630,7 +1644,7 @@ describe('StatelessAgent', () => {
 
     expect(compactSpy).toHaveBeenCalledOnce();
     expect(compactSpy.mock.calls[0]?.[1]).toMatchObject({
-      keepMessagesNum: 6,
+      keepMessagesNum: 0,
       promptVersion: 'v1',
     });
     const firstCallArgs = (provider.generateStream as unknown as { mock: { calls: unknown[][] } })
@@ -1842,7 +1856,7 @@ describe('StatelessAgent', () => {
       await options.onStreamEvent?.({ type: 'stdout', message: 'streamed' });
       const decision = await options.onApproval?.({
         toolName: 'bash',
-        callId: 'call_1',
+        toolCallId: 'call_1',
         reason: 'run bash',
       });
       expect(decision).toEqual({ approved: true, scope: 'once', reason: 'ok' });
@@ -1959,13 +1973,16 @@ describe('StatelessAgent', () => {
     const fullContent = 'abcdefghijklmnop';
 
     try {
-      const manager = new DefaultToolManager();
-      manager.registerTool(
-        new WriteFileTool({
-          allowedDirectories: [allowedDir],
-          bufferBaseDir: bufferDir,
-          maxChunkBytes: 8,
-        })
+      const manager = createEnterpriseToolExecutor(
+        [
+          new WriteFileToolV2({
+            bufferBaseDir: bufferDir,
+            maxChunkBytes: 8,
+          }),
+        ],
+        {
+          workingDirectory: allowedDir,
+        }
       );
 
       const buildToolCallStream = (toolCallId: string, args: Record<string, unknown>) => {
@@ -2080,13 +2097,16 @@ describe('StatelessAgent', () => {
     const fullContent = 'abcdefghijklmnop';
 
     try {
-      const manager = new DefaultToolManager();
-      manager.registerTool(
-        new WriteFileTool({
-          allowedDirectories: [allowedDir],
-          bufferBaseDir: bufferDir,
-          maxChunkBytes: 8,
-        })
+      const manager = createEnterpriseToolExecutor(
+        [
+          new WriteFileToolV2({
+            bufferBaseDir: bufferDir,
+            maxChunkBytes: 8,
+          }),
+        ],
+        {
+          workingDirectory: allowedDir,
+        }
       );
 
       const buildToolCallStream = (toolCallId: string, args: Record<string, unknown>) => {

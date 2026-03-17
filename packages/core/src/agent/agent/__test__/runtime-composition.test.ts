@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { Tool } from '../../../providers';
+import { createSystemPrincipal } from '../../auth/principal';
 import type { AgentToolExecutor } from '../tool-executor';
 import {
   createLLMStreamRuntimeDeps,
@@ -70,6 +71,7 @@ describe('runtime-composition', () => {
         agentRef: {},
         execution: {
           executor: {} as AgentToolExecutor,
+          principal: createSystemPrincipal('test-runtime'),
           sessionState: new ToolSessionState(),
           ledger: {} as never,
           maxConcurrentToolCalls: 1,
@@ -105,6 +107,7 @@ describe('runtime-composition', () => {
       agentRef: {},
       execution: {
         executor: {} as AgentToolExecutor,
+        principal: createSystemPrincipal('test-runtime'),
         sessionState: new ToolSessionState(),
         ledger: {} as never,
         maxConcurrentToolCalls: 1,
@@ -142,10 +145,11 @@ describe('runtime-composition', () => {
           logError: () => undefined,
         }) as never
     );
-    const createToolRuntimeFn = vi.fn((_sessionState) => ({
+    const createToolRuntimeFn = vi.fn((_sessionState, principal) => ({
       agentRef: {},
       execution: {
         executor: {} as AgentToolExecutor,
+        principal,
         sessionState: new ToolSessionState(),
         ledger: {} as never,
         maxConcurrentToolCalls: 1,
@@ -179,6 +183,7 @@ describe('runtime-composition', () => {
         createLLMStreamRuntimeDeps: createLLMDeps,
         createToolRuntime: createToolRuntimeFn,
         toolSessionState: new ToolSessionState(),
+        principal: createSystemPrincipal('test-runtime'),
         stream: { progress, checkpoint, done, error, maxRetries },
         resilience: {
           createStageAbortScope,

@@ -1,8 +1,7 @@
 import { ToolApprovalStore } from './approval-store';
+import type { ToolAuthorizationContext } from '../auth/contracts';
 import type {
-  ToolApprovalDecision,
   ToolApprovalPolicy,
-  ToolApprovalRequest,
   ToolCallRequest,
   ToolExecutionEvent,
   ToolExecutionStreamEvent,
@@ -10,9 +9,6 @@ import type {
   ToolNetworkPolicy,
   ToolPermissionGrant,
   ToolPermissionProfile,
-  ToolPermissionRequest,
-  ToolPolicyCheckInfo,
-  ToolPolicyDecision,
   ToolTrustLevel,
 } from './contracts';
 import { mergePermissionProfiles } from './permissions';
@@ -52,6 +48,7 @@ export interface ToolExecutionContext {
   readonly activeCall?: ToolCallRequest;
   readonly workingDirectory: string;
   readonly sessionState: ToolSessionState;
+  readonly authorization: ToolAuthorizationContext;
   readonly fileSystemPolicy: ToolFileSystemPolicy;
   readonly networkPolicy: ToolNetworkPolicy;
   readonly approvalPolicy: ToolApprovalPolicy;
@@ -59,10 +56,5 @@ export interface ToolExecutionContext {
   readonly signal?: AbortSignal;
   readonly emit?: (event: ToolExecutionStreamEvent) => void | Promise<void>;
   readonly onEvent?: (event: ToolExecutionEvent) => void | Promise<void>;
-  readonly approve?: (request: ToolApprovalRequest) => Promise<ToolApprovalDecision>;
-  readonly requestPermissions?: (request: ToolPermissionRequest) => Promise<ToolPermissionGrant>;
-  readonly onPolicyCheck?: (
-    info: ToolPolicyCheckInfo
-  ) => ToolPolicyDecision | Promise<ToolPolicyDecision>;
   readonly now?: () => number;
 }

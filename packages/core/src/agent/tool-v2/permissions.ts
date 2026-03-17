@@ -69,6 +69,17 @@ export function createWorkspaceFileSystemPolicy(
   };
 }
 
+export function createReadOnlyFileSystemPolicy(
+  workspaceRoot = process.cwd()
+): ToolFileSystemPolicy {
+  const normalized = normalizeRoot(workspaceRoot);
+  return {
+    mode: 'restricted',
+    readRoots: [normalized],
+    writeRoots: [],
+  };
+}
+
 export function createUnrestrictedFileSystemPolicy(): ToolFileSystemPolicy {
   return {
     mode: 'unrestricted',
@@ -242,6 +253,16 @@ export function isPermissionProfileSatisfied(
     return true;
   }
 
+  if (normalizedFileSystem.mode === 'unrestricted') {
+    if (
+      normalizedRequested.network?.enabled !== true &&
+      (normalizedRequested.network?.allowedHosts || []).length === 0 &&
+      (normalizedRequested.network?.deniedHosts || []).length === 0
+    ) {
+      return true;
+    }
+  }
+
   const readableRoots = Array.from(
     new Set([...normalizedFileSystem.readRoots, ...normalizedFileSystem.writeRoots])
   );
@@ -291,23 +312,29 @@ export function collectMissingPermissionProfile(
   const normalizedFileSystem = normalizeFileSystemPolicy(base.fileSystem);
   const normalizedNetwork = normalizeNetworkPolicy(base.network);
   const readableRoots = Array.from(
-    new Set([...normalizedFileSystem.readRoots, ...normalizedFileSystem.writeRoots])
+    new Set(
+      normalizedFileSystem.mode === 'unrestricted'
+        ? []
+        : [...normalizedFileSystem.readRoots, ...normalizedFileSystem.writeRoots]
+    )
   );
   const missingRead = new Set<string>();
   const missingWrite = new Set<string>();
   const missingHosts = new Set<string>();
 
-  for (const readPath of plan.readPaths || []) {
-    const resolvedPath = resolveToolPath(readPath, workingDirectory);
-    if (!readableRoots.some((root) => isWithinRoot(resolvedPath, root))) {
-      missingRead.add(resolvePermissionRoot(resolvedPath));
+  if (normalizedFileSystem.mode !== 'unrestricted') {
+    for (const readPath of plan.readPaths || []) {
+      const resolvedPath = resolveToolPath(readPath, workingDirectory);
+      if (!readableRoots.some((root) => isWithinRoot(resolvedPath, root))) {
+        missingRead.add(resolvePermissionRoot(resolvedPath));
+      }
     }
-  }
 
-  for (const writePath of plan.writePaths || []) {
-    const resolvedPath = resolveToolPath(writePath, workingDirectory);
-    if (!normalizedFileSystem.writeRoots.some((root) => isWithinRoot(resolvedPath, root))) {
-      missingWrite.add(resolvePermissionRoot(resolvedPath));
+    for (const writePath of plan.writePaths || []) {
+      const resolvedPath = resolveToolPath(writePath, workingDirectory);
+      if (!normalizedFileSystem.writeRoots.some((root) => isWithinRoot(resolvedPath, root))) {
+        missingWrite.add(resolvePermissionRoot(resolvedPath));
+      }
     }
   }
 

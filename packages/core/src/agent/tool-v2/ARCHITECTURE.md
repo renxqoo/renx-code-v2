@@ -109,7 +109,7 @@ The permission model is intentionally explicit:
 
 Grants are merged into the effective execution environment at dispatch time.
 
-The effective execution context also receives the active tool call metadata so handlers can safely reference the real `callId` without re-threading it manually.
+The effective execution context also receives the active tool call metadata so handlers can safely reference the real `toolCallId` without re-threading it manually.
 
 ### 5. Handlers
 

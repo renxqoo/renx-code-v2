@@ -1,15 +1,18 @@
 import type { Tool, ToolCall } from '../../providers';
-import type { ToolConcurrencyPolicy, ToolPolicyCheckInfo, ToolPolicyDecision } from '../tool/types';
+import type { PrincipalContext } from '../auth/contracts';
 import type {
   ToolApprovalDecision,
   ToolApprovalRequest,
   ToolCallResult,
+  ToolConcurrencyPolicy,
   ToolExecutionEvent,
   ToolExecutionStreamEvent,
   ToolFileSystemPolicy,
   ToolNetworkPolicy,
   ToolPermissionGrant,
   ToolPermissionRequest,
+  ToolPolicyCheckInfo,
+  ToolPolicyDecision,
   ToolTrustLevel,
 } from '../tool-v2/contracts';
 import type { ToolApprovalPolicy } from '../tool-v2/contracts';
@@ -19,6 +22,7 @@ export interface AgentToolExecutionContext {
   readonly executionId?: string;
   readonly stepIndex: number;
   readonly agent: unknown;
+  readonly principal: PrincipalContext;
   readonly sessionState: ToolSessionState;
   readonly abortSignal?: AbortSignal;
   readonly workingDirectory?: string;

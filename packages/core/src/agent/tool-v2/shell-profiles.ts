@@ -73,6 +73,20 @@ export const SHELL_SANDBOX_PROFILES = {
 } as const;
 
 export const SHELL_POLICY_PROFILES = {
+  fullAccess: createShellPolicyProfile({
+    name: 'full-access',
+    description: 'Explicit full access shell profile with no command-level deny or approval gates.',
+    approvalMode: 'policy',
+    sandboxProfile: SHELL_SANDBOX_PROFILES.fullAccess,
+    policy: createDefaultShellCommandPolicy({
+      safeCommands: [],
+      approvalRequiredCommands: [],
+      deniedPatterns: [],
+      approvalPatterns: [],
+      defaultEffect: 'allow',
+      preferredSandbox: 'full-access',
+    }),
+  }),
   standard: createShellPolicyProfile({
     name: 'standard',
     description: 'Balanced default shell profile with explicit approval for every command.',

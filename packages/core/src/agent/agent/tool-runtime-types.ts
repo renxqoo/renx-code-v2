@@ -1,6 +1,7 @@
 import type { ToolCall } from '../../providers';
-import type { ToolConcurrencyPolicy } from '../tool/types';
+import type { PrincipalContext } from '../auth/contracts';
 import type { AgentCallbacks, Message, StreamEvent } from '../types';
+import type { ToolConcurrencyPolicy } from '../tool-v2/contracts';
 
 import type { AgentRuntimeLifecycleHooks } from './runtime-hooks';
 import type { AgentToolExecutor } from './tool-executor';
@@ -12,6 +13,7 @@ export type ToolRuntime = {
   agentRef: unknown;
   execution: {
     executor: AgentToolExecutor;
+    principal: PrincipalContext;
     sessionState: ToolSessionState;
     ledger: ToolExecutionLedger;
     maxConcurrentToolCalls: number;

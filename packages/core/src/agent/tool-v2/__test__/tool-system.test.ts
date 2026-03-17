@@ -2,6 +2,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AuthorizationService } from '../../auth/authorization-service';
+import { createSystemPrincipal } from '../../auth/principal';
 import { EnterpriseToolSystem } from '../tool-system';
 import { ToolSessionState, type ToolExecutionContext } from '../context';
 import { createRestrictedNetworkPolicy, createWorkspaceFileSystemPolicy } from '../permissions';
@@ -42,7 +44,7 @@ describe('tool-v2 enterprise system', () => {
 
     const writeResult = await system.execute(
       {
-        callId: 'write-1',
+        toolCallId: 'write-1',
         toolName: 'write_file',
         arguments: JSON.stringify({
           path: targetFile,
@@ -56,7 +58,7 @@ describe('tool-v2 enterprise system', () => {
 
     const editResult = await system.execute(
       {
-        callId: 'edit-1',
+        toolCallId: 'edit-1',
         toolName: 'file_edit',
         arguments: JSON.stringify({
           path: targetFile,
@@ -75,7 +77,7 @@ describe('tool-v2 enterprise system', () => {
 
     const historyResult = await system.execute(
       {
-        callId: 'history-1',
+        toolCallId: 'history-1',
         toolName: 'file_history_list',
         arguments: JSON.stringify({
           path: targetFile,
@@ -96,7 +98,7 @@ describe('tool-v2 enterprise system', () => {
 
     const restoreResult = await system.execute(
       {
-        callId: 'restore-1',
+        toolCallId: 'restore-1',
         toolName: 'file_history_restore',
         arguments: JSON.stringify({
           path: targetFile,
@@ -119,7 +121,7 @@ describe('tool-v2 enterprise system', () => {
 
     const result = await system.execute(
       {
-        callId: 'perm-1',
+        toolCallId: 'perm-1',
         toolName: 'request_permissions',
         arguments: JSON.stringify({
           scope: 'turn',
@@ -180,7 +182,7 @@ describe('tool-v2 enterprise system', () => {
     try {
       const directResult = await localSystem.execute(
         {
-          callId: 'write-large',
+          toolCallId: 'write-large',
           toolName: 'write_file',
           arguments: JSON.stringify({
             path: targetFile,
@@ -205,7 +207,7 @@ describe('tool-v2 enterprise system', () => {
 
       const finalizeResult = await localSystem.execute(
         {
-          callId: 'write-large-finalize',
+          toolCallId: 'write-large-finalize',
           toolName: 'write_file',
           arguments: JSON.stringify({
             mode: 'finalize',
@@ -235,7 +237,7 @@ describe('tool-v2 enterprise system', () => {
 
     const result = await system.execute(
       {
-        callId: 'edit-conflict',
+        toolCallId: 'edit-conflict',
         toolName: 'file_edit',
         arguments: JSON.stringify({
           path: targetFile,
@@ -266,7 +268,7 @@ describe('tool-v2 enterprise system', () => {
   it('returns validation errors to the model when write_file is called without a path in direct mode', async () => {
     const result = await system.execute(
       {
-        callId: 'write-missing-path',
+        toolCallId: 'write-missing-path',
         toolName: 'write_file',
         arguments: JSON.stringify({
           content: 'hello',
@@ -290,7 +292,7 @@ describe('tool-v2 enterprise system', () => {
 
     const result = await system.execute(
       {
-        callId: 'restore-missing-history',
+        toolCallId: 'restore-missing-history',
         toolName: 'file_history_restore',
         arguments: JSON.stringify({
           path: missingFile,
@@ -312,7 +314,7 @@ describe('tool-v2 enterprise system', () => {
     const lspSystem = new EnterpriseToolSystem([new LspToolV2()]);
     const result = await lspSystem.execute(
       {
-        callId: 'lsp-missing-file',
+        toolCallId: 'lsp-missing-file',
         toolName: 'lsp',
         arguments: JSON.stringify({
           operation: 'documentSymbols',
@@ -335,7 +337,7 @@ describe('tool-v2 enterprise system', () => {
     const webSystem = new EnterpriseToolSystem([new WebFetchToolV2()]);
     const result = await webSystem.execute(
       {
-        callId: 'web-local',
+        toolCallId: 'web-local',
         toolName: 'web_fetch',
         arguments: JSON.stringify({
           url: 'http://127.0.0.1/test',
@@ -378,7 +380,7 @@ describe('tool-v2 enterprise system', () => {
       const webSystem = new EnterpriseToolSystem([new WebFetchToolV2()]);
       const result = await webSystem.execute(
         {
-          callId: 'web-html',
+          toolCallId: 'web-html',
           toolName: 'web_fetch',
           arguments: JSON.stringify({
             url: 'https://example.com/page',
@@ -421,7 +423,7 @@ describe('tool-v2 enterprise system', () => {
       const webSystem = new EnterpriseToolSystem([new WebSearchToolV2()]);
       const result = await webSystem.execute(
         {
-          callId: 'web-search-restricted',
+          toolCallId: 'web-search-restricted',
           toolName: 'web_search',
           arguments: JSON.stringify({
             query: 'production readiness',
@@ -452,18 +454,31 @@ describe('tool-v2 enterprise system', () => {
 function createContext(
   workspaceDir: string,
   sessionState: ToolSessionState,
-  overrides: Partial<ToolExecutionContext> = {}
+  overrides: Partial<Omit<ToolExecutionContext, 'authorization'>> & {
+    approve?: ToolExecutionContext['authorization']['requestApproval'];
+    requestPermissions?: ToolExecutionContext['authorization']['requestPermissions'];
+    onPolicyCheck?: ToolExecutionContext['authorization']['evaluatePolicy'];
+  } = {}
 ): ToolExecutionContext {
+  const { approve, requestPermissions, onPolicyCheck, ...contextOverrides } = overrides;
   return {
     workingDirectory: workspaceDir,
     sessionState,
+    authorization: {
+      service: new AuthorizationService(),
+      principal: createSystemPrincipal('tool-v2-tool-system-test'),
+      requestApproval:
+        approve ||
+        (async () => ({
+          approved: true,
+          scope: 'turn',
+        })),
+      requestPermissions,
+      evaluatePolicy: onPolicyCheck,
+    },
     fileSystemPolicy: createWorkspaceFileSystemPolicy(workspaceDir),
     networkPolicy: createRestrictedNetworkPolicy(),
     approvalPolicy: 'on-request',
-    approve: async () => ({
-      approved: true,
-      scope: 'turn',
-    }),
-    ...overrides,
+    ...contextOverrides,
   };
 }

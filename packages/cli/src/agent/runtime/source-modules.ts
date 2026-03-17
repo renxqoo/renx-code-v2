@@ -171,6 +171,13 @@ export type AgentAppStoreLike = {
   prepare?: () => Promise<void>;
 };
 
+type EnterpriseAgentAppCompositionLike = {
+  agent: StatelessAgentLike;
+  appService: AgentAppServiceLike;
+  toolExecutor: ToolExecutorLike;
+  store?: AgentAppStoreLike;
+};
+
 type StatelessAgentCtor = new (
   provider: unknown,
   toolExecutor: ToolExecutorLike,
@@ -185,11 +192,22 @@ type AgentAppServiceCtor = new (deps: {
 type ToolExecutorCtor = new (options: {
   system: unknown;
   workingDirectory?: string;
-  fileSystemPolicy?: unknown;
-  networkPolicy?: unknown;
-  approvalPolicy?: string;
-  trustLevel?: string;
 }) => ToolExecutorLike;
+type CreateEnterpriseAgentAppServiceFn = (options: {
+  llmProvider: unknown;
+  toolSystem?: unknown;
+  toolExecutorOptions?: Record<string, unknown>;
+  toolSystemOptions?: Record<string, unknown>;
+  organizationPolicy?: Record<string, unknown>;
+  organizationPolicyFilePath?: string;
+  projectRoot?: string;
+  env?: NodeJS.ProcessEnv;
+  agentConfig?: Record<string, unknown>;
+  storePath?: string;
+}) => EnterpriseAgentAppCompositionLike;
+type ShellPolicyProfilesLike = {
+  fullAccess: unknown;
+};
 
 export type SourceModules = {
   repoRoot: string;
@@ -207,12 +225,10 @@ export type SourceModules = {
   StatelessAgent: StatelessAgentCtor;
   AgentAppService: AgentAppServiceCtor;
   createSqliteAgentAppStore: (dbPath: string) => AgentAppStoreLike;
+  createEnterpriseAgentAppService: CreateEnterpriseAgentAppServiceFn;
   createEnterpriseToolSystemV2WithSubagents: (options: Record<string, unknown>) => unknown;
+  SHELL_POLICY_PROFILES: ShellPolicyProfilesLike;
   EnterpriseToolExecutor: ToolExecutorCtor;
-  createWorkspaceFileSystemPolicy: (workspaceRoot: string) => unknown;
-  createUnrestrictedFileSystemPolicy: () => unknown;
-  createRestrictedNetworkPolicy: () => unknown;
-  createEnabledNetworkPolicy: () => unknown;
   getTaskStateStoreV2: (options?: Record<string, unknown>) => unknown;
 };
 
@@ -239,17 +255,12 @@ const loadSourceModules = async (): Promise<SourceModules> => {
     AgentAppService: core.AgentAppService as AgentAppServiceCtor,
     createSqliteAgentAppStore:
       core.createSqliteAgentAppStore as SourceModules['createSqliteAgentAppStore'],
+    createEnterpriseAgentAppService:
+      core.createEnterpriseAgentAppService as SourceModules['createEnterpriseAgentAppService'],
     createEnterpriseToolSystemV2WithSubagents:
       core.createEnterpriseToolSystemV2WithSubagents as SourceModules['createEnterpriseToolSystemV2WithSubagents'],
+    SHELL_POLICY_PROFILES: core.SHELL_POLICY_PROFILES as SourceModules['SHELL_POLICY_PROFILES'],
     EnterpriseToolExecutor: core.EnterpriseToolExecutor as ToolExecutorCtor,
-    createWorkspaceFileSystemPolicy:
-      core.createWorkspaceFileSystemPolicy as SourceModules['createWorkspaceFileSystemPolicy'],
-    createUnrestrictedFileSystemPolicy:
-      core.createUnrestrictedFileSystemPolicy as SourceModules['createUnrestrictedFileSystemPolicy'],
-    createRestrictedNetworkPolicy:
-      core.createRestrictedNetworkPolicy as SourceModules['createRestrictedNetworkPolicy'],
-    createEnabledNetworkPolicy:
-      core.createEnabledNetworkPolicy as SourceModules['createEnabledNetworkPolicy'],
     getTaskStateStoreV2: core.getTaskStateStoreV2 as SourceModules['getTaskStateStoreV2'],
   };
 };

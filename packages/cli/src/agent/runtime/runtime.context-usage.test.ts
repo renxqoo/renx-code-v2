@@ -143,14 +143,24 @@ describe('runAgentPrompt context usage forwarding', () => {
         prepare: vi.fn().mockResolvedValue(undefined),
         close: vi.fn().mockResolvedValue(undefined),
       }),
+      createEnterpriseAgentAppService: vi.fn(
+        (options: { toolSystem?: { schemas?: ToolSchemaLike[] } }) => ({
+          toolExecutor: new FakeToolExecutor({ system: options.toolSystem }),
+          agent: new FakeAgent(),
+          appService: new FakeAppService(),
+          store: {
+            prepare: vi.fn().mockResolvedValue(undefined),
+            close: vi.fn().mockResolvedValue(undefined),
+          },
+        })
+      ),
       createEnterpriseToolSystemV2WithSubagents: vi.fn(() => ({
         schemas,
       })),
+      SHELL_POLICY_PROFILES: {
+        fullAccess: { name: 'full-access-profile' },
+      },
       EnterpriseToolExecutor: FakeToolExecutor,
-      createWorkspaceFileSystemPolicy: vi.fn(() => ({ mode: 'restricted' })),
-      createUnrestrictedFileSystemPolicy: vi.fn(() => ({ mode: 'unrestricted' })),
-      createRestrictedNetworkPolicy: vi.fn(() => ({ mode: 'restricted' })),
-      createEnabledNetworkPolicy: vi.fn(() => ({ mode: 'enabled' })),
       getTaskStateStoreV2: vi.fn(() => ({})),
     } as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>);
   });

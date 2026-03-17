@@ -2,6 +2,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { AuthorizationService } from '../../auth/authorization-service';
+import { createSystemPrincipal } from '../../auth/principal';
 import { ToolSessionState, type ToolExecutionContext } from '../context';
 import { createBuiltInToolHandlersV2 } from '../builtins';
 import { createRestrictedNetworkPolicy, createWorkspaceFileSystemPolicy } from '../permissions';
@@ -40,7 +42,7 @@ describe('tool-v2 task tools', () => {
 
     const created = await system.execute(
       {
-        callId: 'task-create',
+        toolCallId: 'task-create',
         toolName: 'task_create',
         arguments: JSON.stringify({
           namespace: 'alpha',
@@ -61,7 +63,7 @@ describe('tool-v2 task tools', () => {
 
     const updated = await system.execute(
       {
-        callId: 'task-update',
+        toolCallId: 'task-update',
         toolName: 'task_update',
         arguments: JSON.stringify({
           namespace: 'alpha',
@@ -87,7 +89,7 @@ describe('tool-v2 task tools', () => {
 
     const detail = await system.execute(
       {
-        callId: 'task-get',
+        toolCallId: 'task-get',
         toolName: 'task_get',
         arguments: JSON.stringify({
           namespace: 'alpha',
@@ -113,7 +115,7 @@ describe('tool-v2 task tools', () => {
 
     const listed = await system.execute(
       {
-        callId: 'task-list',
+        toolCallId: 'task-list',
         toolName: 'task_list',
         arguments: JSON.stringify({
           namespace: 'alpha',
@@ -149,7 +151,7 @@ describe('tool-v2 task tools', () => {
 
     await system.execute(
       {
-        callId: 'task-create-1',
+        toolCallId: 'task-create-1',
         toolName: 'task_create',
         arguments: JSON.stringify({
           namespace: 'beta',
@@ -162,7 +164,7 @@ describe('tool-v2 task tools', () => {
 
     const duplicate = await system.execute(
       {
-        callId: 'task-create-2',
+        toolCallId: 'task-create-2',
         toolName: 'task_create',
         arguments: JSON.stringify({
           namespace: 'beta',
@@ -191,7 +193,7 @@ describe('tool-v2 task tools', () => {
 
     const critical = await system.execute(
       {
-        callId: 'task-create-critical',
+        toolCallId: 'task-create-critical',
         toolName: 'task_create',
         arguments: JSON.stringify({
           namespace: 'gamma',
@@ -204,7 +206,7 @@ describe('tool-v2 task tools', () => {
     );
     const taskA = await system.execute(
       {
-        callId: 'task-create-a',
+        toolCallId: 'task-create-a',
         toolName: 'task_create',
         arguments: JSON.stringify({
           namespace: 'gamma',
@@ -216,7 +218,7 @@ describe('tool-v2 task tools', () => {
     );
     const taskB = await system.execute(
       {
-        callId: 'task-create-b',
+        toolCallId: 'task-create-b',
         toolName: 'task_create',
         arguments: JSON.stringify({
           namespace: 'gamma',
@@ -240,7 +242,7 @@ describe('tool-v2 task tools', () => {
 
     const dependency = await system.execute(
       {
-        callId: 'task-dependency',
+        toolCallId: 'task-dependency',
         toolName: 'task_update',
         arguments: JSON.stringify({
           namespace: 'gamma',
@@ -255,7 +257,7 @@ describe('tool-v2 task tools', () => {
 
     const cycle = await system.execute(
       {
-        callId: 'task-cycle',
+        toolCallId: 'task-cycle',
         toolName: 'task_update',
         arguments: JSON.stringify({
           namespace: 'gamma',
@@ -273,7 +275,7 @@ describe('tool-v2 task tools', () => {
 
     const list = await system.execute(
       {
-        callId: 'task-list-gamma',
+        toolCallId: 'task-list-gamma',
         toolName: 'task_list',
         arguments: JSON.stringify({
           namespace: 'gamma',
@@ -300,7 +302,7 @@ describe('tool-v2 task tools', () => {
 
     const taskA = await system.execute(
       {
-        callId: 'task-graph-a',
+        toolCallId: 'task-graph-a',
         toolName: 'task_create',
         arguments: JSON.stringify({
           namespace: 'graph',
@@ -312,7 +314,7 @@ describe('tool-v2 task tools', () => {
     );
     const taskB = await system.execute(
       {
-        callId: 'task-graph-b',
+        toolCallId: 'task-graph-b',
         toolName: 'task_create',
         arguments: JSON.stringify({
           namespace: 'graph',
@@ -324,7 +326,7 @@ describe('tool-v2 task tools', () => {
     );
     const taskC = await system.execute(
       {
-        callId: 'task-graph-c',
+        toolCallId: 'task-graph-c',
         toolName: 'task_create',
         arguments: JSON.stringify({
           namespace: 'graph',
@@ -348,7 +350,7 @@ describe('tool-v2 task tools', () => {
 
     await system.execute(
       {
-        callId: 'task-graph-link-b',
+        toolCallId: 'task-graph-link-b',
         toolName: 'task_update',
         arguments: JSON.stringify({
           namespace: 'graph',
@@ -360,7 +362,7 @@ describe('tool-v2 task tools', () => {
     );
     await system.execute(
       {
-        callId: 'task-graph-link-c',
+        toolCallId: 'task-graph-link-c',
         toolName: 'task_update',
         arguments: JSON.stringify({
           namespace: 'graph',
@@ -373,7 +375,7 @@ describe('tool-v2 task tools', () => {
 
     const summary = await system.execute(
       {
-        callId: 'task-graph-summary',
+        toolCallId: 'task-graph-summary',
         toolName: 'task_graph',
         arguments: JSON.stringify({
           namespace: 'graph',
@@ -396,7 +398,7 @@ describe('tool-v2 task tools', () => {
 
     const focused = await system.execute(
       {
-        callId: 'task-graph-focused',
+        toolCallId: 'task-graph-focused',
         toolName: 'task_graph',
         arguments: JSON.stringify({
           namespace: 'graph',
@@ -424,18 +426,31 @@ describe('tool-v2 task tools', () => {
 
 function createContext(
   workspaceDir: string,
-  overrides: Partial<ToolExecutionContext> = {}
+  overrides: Partial<Omit<ToolExecutionContext, 'authorization'>> & {
+    approve?: ToolExecutionContext['authorization']['requestApproval'];
+    requestPermissions?: ToolExecutionContext['authorization']['requestPermissions'];
+    onPolicyCheck?: ToolExecutionContext['authorization']['evaluatePolicy'];
+  } = {}
 ): ToolExecutionContext {
+  const { approve, requestPermissions, onPolicyCheck, ...contextOverrides } = overrides;
   return {
     workingDirectory: workspaceDir,
     sessionState: new ToolSessionState(),
+    authorization: {
+      service: new AuthorizationService(),
+      principal: createSystemPrincipal('tool-v2-task-tools-test'),
+      requestApproval:
+        approve ||
+        (async () => ({
+          approved: true,
+          scope: 'turn',
+        })),
+      requestPermissions,
+      evaluatePolicy: onPolicyCheck,
+    },
     fileSystemPolicy: createWorkspaceFileSystemPolicy(workspaceDir),
     networkPolicy: createRestrictedNetworkPolicy(),
     approvalPolicy: 'on-request',
-    approve: async () => ({
-      approved: true,
-      scope: 'turn',
-    }),
-    ...overrides,
+    ...contextOverrides,
   };
 }

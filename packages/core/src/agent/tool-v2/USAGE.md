@@ -33,7 +33,7 @@ const toolSystem = createEnterpriseToolSystemV2();
 
 const result = await toolSystem.execute(
   {
-    callId: 'task-create-1',
+    toolCallId: 'task-create-1',
     toolName: 'task_create',
     arguments: JSON.stringify({
       namespace: 'demo',

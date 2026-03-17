@@ -2,6 +2,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { AuthorizationService } from '../../auth/authorization-service';
+import { createSystemPrincipal } from '../../auth/principal';
 import type {
   SubagentExecutionRecord,
   SubagentExecutionStore,
@@ -54,7 +56,7 @@ describe('tool-v2 subagent tools', () => {
 
     const spawnResult = await system.execute(
       {
-        callId: 'agent-spawn',
+        toolCallId: 'agent-spawn',
         toolName: 'spawn_agent',
         arguments: JSON.stringify({
           role: 'worker',
@@ -73,7 +75,7 @@ describe('tool-v2 subagent tools', () => {
 
     const statusResult = await system.execute(
       {
-        callId: 'agent-status',
+        toolCallId: 'agent-status',
         toolName: 'agent_status',
         arguments: JSON.stringify({
           agentId,
@@ -89,7 +91,7 @@ describe('tool-v2 subagent tools', () => {
 
     const waitResult = await system.execute(
       {
-        callId: 'agent-wait',
+        toolCallId: 'agent-wait',
         toolName: 'wait_agents',
         arguments: JSON.stringify({
           agentIds: [agentId],
@@ -107,7 +109,7 @@ describe('tool-v2 subagent tools', () => {
 
     const secondSpawn = await system.execute(
       {
-        callId: 'agent-spawn-2',
+        toolCallId: 'agent-spawn-2',
         toolName: 'spawn_agent',
         arguments: JSON.stringify({
           role: 'worker',
@@ -125,7 +127,7 @@ describe('tool-v2 subagent tools', () => {
     const secondAgentId = (secondSpawn.structured as SubagentExecutionRecord).agentId;
     const cancelResult = await system.execute(
       {
-        callId: 'agent-cancel',
+        toolCallId: 'agent-cancel',
         toolName: 'cancel_agent',
         arguments: JSON.stringify({
           agentId: secondAgentId,
@@ -163,7 +165,7 @@ describe('tool-v2 subagent tools', () => {
 
     const spawnResult = await system.execute(
       {
-        callId: 'agent-spawn-legacy',
+        toolCallId: 'agent-spawn-legacy',
         toolName: 'spawn_agent',
         arguments: JSON.stringify({
           role: 'worker',
@@ -183,7 +185,7 @@ describe('tool-v2 subagent tools', () => {
 
     const taskOutput = await system.execute(
       {
-        callId: 'task-output',
+        toolCallId: 'task-output',
         toolName: 'task_output',
         arguments: JSON.stringify({
           taskId: 'task-123',
@@ -204,7 +206,7 @@ describe('tool-v2 subagent tools', () => {
 
     const cancellableSpawn = await system.execute(
       {
-        callId: 'agent-spawn-legacy-stop',
+        toolCallId: 'agent-spawn-legacy-stop',
         toolName: 'spawn_agent',
         arguments: JSON.stringify({
           role: 'worker',
@@ -224,7 +226,7 @@ describe('tool-v2 subagent tools', () => {
 
     const taskStop = await system.execute(
       {
-        callId: 'task-stop',
+        toolCallId: 'task-stop',
         toolName: 'task_stop',
         arguments: JSON.stringify({
           taskId: 'task-456',
@@ -264,7 +266,7 @@ describe('tool-v2 subagent tools', () => {
 
     const spawnResult = await system.execute(
       {
-        callId: 'agent-spawn-terminal-stop',
+        toolCallId: 'agent-spawn-terminal-stop',
         toolName: 'spawn_agent',
         arguments: JSON.stringify({
           role: 'worker',
@@ -282,7 +284,7 @@ describe('tool-v2 subagent tools', () => {
     const agentId = (spawnResult.structured as SubagentExecutionRecord).agentId;
     const statusResult = await system.execute(
       {
-        callId: 'agent-status-terminal-stop',
+        toolCallId: 'agent-status-terminal-stop',
         toolName: 'agent_status',
         arguments: JSON.stringify({
           agentId,
@@ -295,7 +297,7 @@ describe('tool-v2 subagent tools', () => {
 
     const taskStop = await system.execute(
       {
-        callId: 'task-stop-terminal',
+        toolCallId: 'task-stop-terminal',
         toolName: 'task_stop',
         arguments: JSON.stringify({
           agentId,
@@ -336,7 +338,7 @@ describe('tool-v2 subagent tools', () => {
 
     const spawnResult = await system.execute(
       {
-        callId: 'agent-spawn-abort-output',
+        toolCallId: 'agent-spawn-abort-output',
         toolName: 'spawn_agent',
         arguments: JSON.stringify({
           role: 'worker',
@@ -358,7 +360,7 @@ describe('tool-v2 subagent tools', () => {
     setTimeout(() => controller.abort(), 50);
     const result = await system.execute(
       {
-        callId: 'task-output-aborted',
+        toolCallId: 'task-output-aborted',
         toolName: 'task_output',
         arguments: JSON.stringify({
           agentId: (spawnResult.structured as SubagentExecutionRecord).agentId,
@@ -447,7 +449,7 @@ describe('tool-v2 subagent tools', () => {
     try {
       const created = await system.execute(
         {
-          callId: 'task-create-linked',
+          toolCallId: 'task-create-linked',
           toolName: 'task_create',
           arguments: JSON.stringify({
             namespace: 'orchestration',
@@ -466,7 +468,7 @@ describe('tool-v2 subagent tools', () => {
 
       const spawned = await system.execute(
         {
-          callId: 'spawn-linked',
+          toolCallId: 'spawn-linked',
           toolName: 'spawn_agent',
           arguments: JSON.stringify({
             role: 'worker',
@@ -485,7 +487,7 @@ describe('tool-v2 subagent tools', () => {
 
       const linkedDetail = await system.execute(
         {
-          callId: 'task-get-linked-start',
+          toolCallId: 'task-get-linked-start',
           toolName: 'task_get',
           arguments: JSON.stringify({
             namespace: 'orchestration',
@@ -508,7 +510,7 @@ describe('tool-v2 subagent tools', () => {
 
       const completed = await system.execute(
         {
-          callId: 'task-output-linked',
+          toolCallId: 'task-output-linked',
           toolName: 'task_output',
           arguments: JSON.stringify({
             taskId,
@@ -523,7 +525,7 @@ describe('tool-v2 subagent tools', () => {
 
       const linkedDone = await system.execute(
         {
-          callId: 'task-get-linked-done',
+          toolCallId: 'task-get-linked-done',
           toolName: 'task_get',
           arguments: JSON.stringify({
             namespace: 'orchestration',
@@ -545,7 +547,7 @@ describe('tool-v2 subagent tools', () => {
 
       const abortCreated = await system.execute(
         {
-          callId: 'task-create-abort',
+          toolCallId: 'task-create-abort',
           toolName: 'task_create',
           arguments: JSON.stringify({
             namespace: 'orchestration',
@@ -565,7 +567,7 @@ describe('tool-v2 subagent tools', () => {
       const events: string[] = [];
       const abortSpawn = await system.execute(
         {
-          callId: 'spawn-linked-abort',
+          toolCallId: 'spawn-linked-abort',
           toolName: 'spawn_agent',
           arguments: JSON.stringify({
             role: 'worker',
@@ -587,7 +589,7 @@ describe('tool-v2 subagent tools', () => {
       await waitUntil(async () => {
         const detail = await system.execute(
           {
-            callId: 'task-get-linked-abort',
+            toolCallId: 'task-get-linked-abort',
             toolName: 'task_get',
             arguments: JSON.stringify({
               namespace: 'orchestration',
@@ -706,19 +708,32 @@ class HangingSubagentRunner extends FakeSubagentRunner {
 
 function createContext(
   workspaceDir: string,
-  overrides: Partial<ToolExecutionContext> = {}
+  overrides: Partial<Omit<ToolExecutionContext, 'authorization'>> & {
+    approve?: ToolExecutionContext['authorization']['requestApproval'];
+    requestPermissions?: ToolExecutionContext['authorization']['requestPermissions'];
+    onPolicyCheck?: ToolExecutionContext['authorization']['evaluatePolicy'];
+  } = {}
 ): ToolExecutionContext {
+  const { approve, requestPermissions, onPolicyCheck, ...contextOverrides } = overrides;
   return {
     workingDirectory: workspaceDir,
     sessionState: new ToolSessionState(),
+    authorization: {
+      service: new AuthorizationService(),
+      principal: createSystemPrincipal('tool-v2-subagents-test'),
+      requestApproval:
+        approve ||
+        (async () => ({
+          approved: true,
+          scope: 'turn',
+        })),
+      requestPermissions,
+      evaluatePolicy: onPolicyCheck,
+    },
     fileSystemPolicy: createWorkspaceFileSystemPolicy(workspaceDir),
     networkPolicy: createRestrictedNetworkPolicy(),
     approvalPolicy: 'on-request',
-    approve: async () => ({
-      approved: true,
-      scope: 'turn',
-    }),
-    ...overrides,
+    ...contextOverrides,
   };
 }
 

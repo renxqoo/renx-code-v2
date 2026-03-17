@@ -10,7 +10,6 @@ import { LLMProvider, Tool, ToolCall } from '../../providers';
 import { EventEmitter } from 'events';
 import { AgentError, MaxRetriesError, TimeoutBudgetExceededError } from './error';
 import { mergeAgentLoggers, type AgentLogger } from './logger';
-import { ToolConcurrencyPolicy } from '../tool/types';
 import type { BackoffConfig } from '../../providers';
 import { mergeLLMRequestConfig } from './llm-request-config';
 import {
@@ -73,6 +72,9 @@ import { calculateContextUsage } from './compaction-policy';
 import type { CompactionPromptVersion } from './compaction-prompt';
 import { prepareMessagesForLlmStep } from './step-compaction';
 import type { AgentToolExecutor } from './tool-executor';
+import type { PrincipalContext } from '../auth/contracts';
+import { createSystemPrincipal } from '../auth/principal';
+import type { ToolConcurrencyPolicy } from '../tool-v2/contracts';
 import { ToolSessionState } from '../tool-v2/context';
 
 export interface AgentConfig {
@@ -115,7 +117,7 @@ interface InternalAgentConfig {
 
 const DEFAULT_MAX_RETRY_COUNT = 20;
 const DEFAULT_COMPACTION_TRIGGER_RATIO = 0.8;
-const DEFAULT_COMPACTION_KEEP_MESSAGES = 6;
+const DEFAULT_COMPACTION_KEEP_MESSAGES = 0;
 const DEFAULT_MAX_CONCURRENT_TOOL_CALLS = 1;
 const DEFAULT_LLM_TIMEOUT_RATIO = 0.7;
 const ABORTED_MESSAGE = 'Operation aborted';
@@ -235,19 +237,26 @@ export class StatelessAgent extends EventEmitter {
         maxSteps,
         timeoutBudgetMs: timeoutBudget?.totalMs,
       })) ?? createNoopObservation<RunLifecycleFinishContext>();
-    return yield* runAgentLoop(this.createRunLoopRuntime(lifecycleHooks, toolSessionState), {
-      input,
-      callbacks,
-      maxSteps,
-      messages,
-      effectiveTools,
-      writeBufferSessions,
-      timeoutBudget,
-      executionScope,
-      abortSignal,
-      traceId,
-      runObservation,
-    });
+    return yield* runAgentLoop(
+      this.createRunLoopRuntime(
+        lifecycleHooks,
+        toolSessionState,
+        input.principal || createSystemPrincipal('agent-runtime', 'internal')
+      ),
+      {
+        input,
+        callbacks,
+        maxSteps,
+        messages,
+        effectiveTools,
+        writeBufferSessions,
+        timeoutBudget,
+        executionScope,
+        abortSignal,
+        traceId,
+        runObservation,
+      }
+    );
   }
 
   private async safeCallback<T>(
@@ -270,7 +279,8 @@ export class StatelessAgent extends EventEmitter {
 
   private createRunLoopRuntime(
     hooks: AgentRuntimeLifecycleHooks,
-    toolSessionState: ToolSessionState
+    toolSessionState: ToolSessionState,
+    principal: PrincipalContext = createSystemPrincipal('agent-runtime', 'internal')
   ): RunLoopRuntime {
     return buildRunLoopRuntime(
       {
@@ -306,6 +316,7 @@ export class StatelessAgent extends EventEmitter {
         createLLMStreamRuntimeDeps: this.createLLMStreamRuntimeDeps.bind(this),
         createToolRuntime: this.createToolRuntime.bind(this),
         toolSessionState,
+        principal,
         stream: {
           progress: this.emitProgress.bind(this),
           checkpoint: this.yieldCheckpoint.bind(this),
@@ -341,12 +352,17 @@ export class StatelessAgent extends EventEmitter {
     });
   }
 
-  private createToolRuntime(sessionState: ToolSessionState, hooks?: AgentRuntimeLifecycleHooks) {
+  private createToolRuntime(
+    sessionState: ToolSessionState,
+    principal: PrincipalContext,
+    hooks?: AgentRuntimeLifecycleHooks
+  ) {
     return buildToolRuntime(
       {
         agentRef: this,
         execution: {
           executor: this.toolExecutor,
+          principal,
           sessionState,
           ledger: this.toolExecutionLedger,
           maxConcurrentToolCalls: this.config.maxConcurrentToolCalls,

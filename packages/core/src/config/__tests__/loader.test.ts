@@ -72,14 +72,7 @@ describe('Renx Config Loader', () => {
       expect(config.log.console).toBe(false);
       expect(config.log.file).toBe(true);
       expect(config.agent.maxSteps).toBe(10000);
-      expect(config.agent.confirmationMode).toBe('manual');
       expect(config.agent.defaultModel).toBe('qwen3.5-plus');
-      expect(config.agent.toolRuntime).toEqual({
-        approvalPolicy: 'unless-trusted',
-        trustLevel: 'trusted',
-        fileSystemMode: 'unrestricted',
-        networkMode: 'enabled',
-      });
       expect(config.storage.fileHistory.enabled).toBe(true);
       expect(config.sources.global).toBe(path.join(globalDir, 'config.json'));
       expect(config.sources.project).toBeNull();
@@ -96,10 +89,6 @@ describe('Renx Config Loader', () => {
           log: { level: 'DEBUG', format: 'json' },
           agent: {
             defaultModel: 'gpt-5.3',
-            toolRuntime: {
-              approvalPolicy: 'unless-trusted',
-              trustLevel: 'trusted',
-            },
           },
         })
       );
@@ -114,10 +103,6 @@ describe('Renx Config Loader', () => {
       expect(config.log.level).toBe(LogLevel.DEBUG);
       expect(config.log.format).toBe('json');
       expect(config.agent.defaultModel).toBe('gpt-5.3');
-      expect(config.agent.toolRuntime.approvalPolicy).toBe('unless-trusted');
-      expect(config.agent.toolRuntime.trustLevel).toBe('trusted');
-      expect(config.agent.toolRuntime.fileSystemMode).toBe('unrestricted');
-      expect(config.agent.toolRuntime.networkMode).toBe('enabled');
       expect(config.log.console).toBe(false);
       expect(config.agent.maxSteps).toBe(10000);
       expect(config.sources.global).toBe(path.join(globalDir, 'config.json'));
@@ -135,12 +120,6 @@ describe('Renx Config Loader', () => {
           agent: {
             defaultModel: 'gpt-5.3',
             maxSteps: 100,
-            toolRuntime: {
-              approvalPolicy: 'on-request',
-              trustLevel: 'untrusted',
-              fileSystemMode: 'workspace',
-              networkMode: 'restricted',
-            },
           },
         })
       );
@@ -153,12 +132,6 @@ describe('Renx Config Loader', () => {
           log: { level: 'ERROR' },
           agent: {
             defaultModel: 'openrouter/hunter-alpha',
-            toolRuntime: {
-              approvalPolicy: 'unless-trusted',
-              trustLevel: 'trusted',
-              fileSystemMode: 'unrestricted',
-              networkMode: 'enabled',
-            },
           },
         })
       );
@@ -174,12 +147,6 @@ describe('Renx Config Loader', () => {
       expect(config.agent.defaultModel).toBe('openrouter/hunter-alpha');
       expect(config.log.format).toBe('json');
       expect(config.agent.maxSteps).toBe(100);
-      expect(config.agent.toolRuntime).toEqual({
-        approvalPolicy: 'unless-trusted',
-        trustLevel: 'trusted',
-        fileSystemMode: 'unrestricted',
-        networkMode: 'enabled',
-      });
       expect(config.sources.global).toBe(path.join(globalDir, 'config.json'));
       expect(config.sources.project).toBe(path.join(projectConfigDir, 'config.json'));
     });
@@ -272,23 +239,11 @@ describe('Renx Config Loader', () => {
           RENX_HOME: renxHome,
           AGENT_LOG_LEVEL: 'FATAL',
           AGENT_MODEL: 'qwen3.5-max',
-          AGENT_TOOL_CONFIRMATION_MODE: 'manual',
-          AGENT_TOOL_APPROVAL_POLICY: 'unless-trusted',
-          AGENT_TOOL_TRUST_LEVEL: 'trusted',
-          AGENT_TOOL_FILESYSTEM_MODE: 'unrestricted',
-          AGENT_TOOL_NETWORK_MODE: 'enabled',
         },
       });
 
       expect(config.log.level).toBe(LogLevel.FATAL);
       expect(config.agent.defaultModel).toBe('qwen3.5-max');
-      expect(config.agent.confirmationMode).toBe('manual');
-      expect(config.agent.toolRuntime).toEqual({
-        approvalPolicy: 'unless-trusted',
-        trustLevel: 'trusted',
-        fileSystemMode: 'unrestricted',
-        networkMode: 'enabled',
-      });
     });
 
     it('should use AGENT_* env vars directly', () => {
@@ -299,23 +254,15 @@ describe('Renx Config Loader', () => {
           RENX_HOME: renxHome,
           AGENT_LOG_LEVEL: 'WARN',
           AGENT_LOG_FORMAT: 'json',
-          AGENT_TOOL_CONFIRMATION_MODE: 'auto-deny',
-          AGENT_TOOL_APPROVAL_POLICY: 'on-failure',
-          AGENT_TOOL_TRUST_LEVEL: 'untrusted',
-          AGENT_TOOL_FILESYSTEM_MODE: 'workspace',
-          AGENT_TOOL_NETWORK_MODE: 'restricted',
+          AGENT_MODEL: 'direct-from-env',
+          AGENT_MAX_STEPS: '88',
         },
       });
 
       expect(config.log.level).toBe(LogLevel.WARN);
       expect(config.log.format).toBe('json');
-      expect(config.agent.confirmationMode).toBe('auto-deny');
-      expect(config.agent.toolRuntime).toEqual({
-        approvalPolicy: 'on-failure',
-        trustLevel: 'untrusted',
-        fileSystemMode: 'workspace',
-        networkMode: 'restricted',
-      });
+      expect(config.agent.defaultModel).toBe('direct-from-env');
+      expect(config.agent.maxSteps).toBe(88);
     });
 
     it('should let RENX_CUSTOM_MODELS_JSON override file-based model config', () => {

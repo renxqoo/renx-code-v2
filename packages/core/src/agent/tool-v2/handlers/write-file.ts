@@ -151,7 +151,7 @@ export class WriteFileToolV2 extends StructuredToolHandler<typeof schema> {
 
     const session = await this.createOrLoadSession(
       targetPath,
-      context.activeCall?.callId,
+      context.activeCall?.toolCallId,
       undefined,
       targetPath
     );

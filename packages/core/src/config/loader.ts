@@ -18,6 +18,11 @@ import type {
 const PROJECT_DIR_NAME = '.renx';
 const CONFIG_FILENAME = 'config.json';
 const CUSTOM_MODELS_ENV_VAR = 'RENX_CUSTOM_MODELS_JSON';
+const AGENT_FULL_ACCESS_ENV = 'AGENT_FULL_ACCESS';
+const AGENT_DEFAULT_APPROVAL_POLICY_ENV = 'AGENT_DEFAULT_APPROVAL_POLICY';
+const AGENT_DEFAULT_TRUST_LEVEL_ENV = 'AGENT_DEFAULT_TRUST_LEVEL';
+const AGENT_DEFAULT_FILESYSTEM_MODE_ENV = 'AGENT_DEFAULT_FILESYSTEM_MODE';
+const AGENT_DEFAULT_NETWORK_MODE_ENV = 'AGENT_DEFAULT_NETWORK_MODE';
 
 const DEFAULTS: RenxConfig = {
   log: {
@@ -36,14 +41,7 @@ const DEFAULTS: RenxConfig = {
   },
   agent: {
     maxSteps: 10000,
-    confirmationMode: 'manual',
     defaultModel: 'qwen3.5-plus',
-    toolRuntime: {
-      approvalPolicy: 'unless-trusted',
-      trustLevel: 'trusted',
-      fileSystemMode: 'unrestricted',
-      networkMode: 'enabled',
-    },
   },
 };
 
@@ -176,77 +174,54 @@ function parseNonNegativeInt(raw: string | undefined): number | null {
   return parsed;
 }
 
-function parseConfirmationMode(
+function parseApprovalPolicy(
   raw: string | undefined
-): ResolvedConfig['agent']['confirmationMode'] | null {
-  if (!raw) {
-    return null;
-  }
-
-  const normalized = raw.trim().toLowerCase().replace(/_/g, '-');
-  if (normalized === 'manual' || normalized === 'auto-approve' || normalized === 'auto-deny') {
-    return normalized;
-  }
-  return null;
-}
-
-function parseToolApprovalPolicy(
-  raw: string | undefined
-): ResolvedConfig['agent']['toolRuntime']['approvalPolicy'] | null {
-  if (!raw) {
-    return null;
-  }
-
-  const normalized = raw.trim().toLowerCase().replace(/_/g, '-');
-  if (
-    normalized === 'never' ||
-    normalized === 'on-request' ||
-    normalized === 'on-failure' ||
-    normalized === 'unless-trusted'
-  ) {
-    return normalized;
-  }
-  return null;
-}
-
-function parseToolTrustLevel(
-  raw: string | undefined
-): ResolvedConfig['agent']['toolRuntime']['trustLevel'] | null {
+): 'never' | 'on-request' | 'on-failure' | 'unless-trusted' | null {
   if (!raw) {
     return null;
   }
 
   const normalized = raw.trim().toLowerCase();
-  if (normalized === 'trusted' || normalized === 'untrusted') {
-    return normalized;
+  if (['never', 'on-request', 'on-failure', 'unless-trusted'].includes(normalized)) {
+    return normalized as 'never' | 'on-request' | 'on-failure' | 'unless-trusted';
   }
   return null;
 }
 
-function parseToolFileSystemMode(
-  raw: string | undefined
-): ResolvedConfig['agent']['toolRuntime']['fileSystemMode'] | null {
+function parseTrustLevel(raw: string | undefined): 'unknown' | 'trusted' | 'untrusted' | null {
   if (!raw) {
     return null;
   }
 
-  const normalized = raw.trim().toLowerCase().replace(/_/g, '-');
-  if (normalized === 'workspace' || normalized === 'unrestricted') {
-    return normalized;
+  const normalized = raw.trim().toLowerCase();
+  if (['unknown', 'trusted', 'untrusted'].includes(normalized)) {
+    return normalized as 'unknown' | 'trusted' | 'untrusted';
   }
   return null;
 }
 
-function parseToolNetworkMode(
+function parseFileSystemMode(
   raw: string | undefined
-): ResolvedConfig['agent']['toolRuntime']['networkMode'] | null {
+): 'read-only' | 'workspace-write' | 'unrestricted' | null {
   if (!raw) {
     return null;
   }
 
-  const normalized = raw.trim().toLowerCase().replace(/_/g, '-');
+  const normalized = raw.trim().toLowerCase();
+  if (['read-only', 'workspace-write', 'unrestricted'].includes(normalized)) {
+    return normalized as 'read-only' | 'workspace-write' | 'unrestricted';
+  }
+  return null;
+}
+
+function parseNetworkMode(raw: string | undefined): 'restricted' | 'enabled' | null {
+  if (!raw) {
+    return null;
+  }
+
+  const normalized = raw.trim().toLowerCase();
   if (normalized === 'restricted' || normalized === 'enabled') {
-    return normalized;
+    return normalized as 'restricted' | 'enabled';
   }
   return null;
 }
@@ -330,47 +305,47 @@ function applyEnvOverrides(config: RenxConfig, env: NodeJS.ProcessEnv): RenxConf
     }
   }
 
-  const confirmationMode = parseConfirmationMode(env.AGENT_TOOL_CONFIRMATION_MODE);
-  const approvalPolicy = parseToolApprovalPolicy(env.AGENT_TOOL_APPROVAL_POLICY);
-  const trustLevel = parseToolTrustLevel(env.AGENT_TOOL_TRUST_LEVEL);
-  const fileSystemMode = parseToolFileSystemMode(env.AGENT_TOOL_FILESYSTEM_MODE);
-  const networkMode = parseToolNetworkMode(env.AGENT_TOOL_NETWORK_MODE);
   const defaultModel = env.AGENT_MODEL?.trim();
   const maxSteps = parsePositiveInt(env.AGENT_MAX_STEPS);
+  const fullAccess = parseBoolean(env[AGENT_FULL_ACCESS_ENV]);
+  const approvalPolicy = parseApprovalPolicy(env[AGENT_DEFAULT_APPROVAL_POLICY_ENV]);
+  const trustLevel = parseTrustLevel(env[AGENT_DEFAULT_TRUST_LEVEL_ENV]);
+  const fileSystemMode = parseFileSystemMode(env[AGENT_DEFAULT_FILESYSTEM_MODE_ENV]);
+  const networkMode = parseNetworkMode(env[AGENT_DEFAULT_NETWORK_MODE_ENV]);
 
   if (
-    confirmationMode ||
+    defaultModel ||
+    maxSteps !== null ||
+    fullAccess !== null ||
     approvalPolicy ||
     trustLevel ||
     fileSystemMode ||
-    networkMode ||
-    defaultModel ||
-    maxSteps !== null
+    networkMode
   ) {
     result.agent = { ...(result.agent ?? {}) };
-    if (confirmationMode) {
-      result.agent.confirmationMode = confirmationMode;
-    }
-    if (approvalPolicy || trustLevel || fileSystemMode || networkMode) {
-      result.agent.toolRuntime = { ...(result.agent.toolRuntime ?? {}) };
-      if (approvalPolicy) {
-        result.agent.toolRuntime.approvalPolicy = approvalPolicy;
-      }
-      if (trustLevel) {
-        result.agent.toolRuntime.trustLevel = trustLevel;
-      }
-      if (fileSystemMode) {
-        result.agent.toolRuntime.fileSystemMode = fileSystemMode;
-      }
-      if (networkMode) {
-        result.agent.toolRuntime.networkMode = networkMode;
-      }
-    }
     if (defaultModel) {
       result.agent.defaultModel = defaultModel;
     }
     if (maxSteps !== null) {
       result.agent.maxSteps = maxSteps;
+    }
+    if (fullAccess !== null || approvalPolicy || trustLevel || fileSystemMode || networkMode) {
+      result.agent.permissions = { ...(result.agent.permissions ?? {}) };
+      if (fullAccess !== null) {
+        result.agent.permissions.fullAccess = fullAccess;
+      }
+      if (approvalPolicy) {
+        result.agent.permissions.approvalPolicy = approvalPolicy;
+      }
+      if (trustLevel) {
+        result.agent.permissions.trustLevel = trustLevel;
+      }
+      if (fileSystemMode) {
+        result.agent.permissions.fileSystemMode = fileSystemMode;
+      }
+      if (networkMode) {
+        result.agent.permissions.networkMode = networkMode;
+      }
     }
   }
 
@@ -415,13 +390,13 @@ function resolveConfig(
     },
     agent: {
       maxSteps: merged.agent?.maxSteps ?? 10000,
-      confirmationMode: merged.agent?.confirmationMode ?? 'manual',
       defaultModel: merged.agent?.defaultModel ?? 'qwen3.5-plus',
-      toolRuntime: {
-        approvalPolicy: merged.agent?.toolRuntime?.approvalPolicy ?? 'unless-trusted',
-        trustLevel: merged.agent?.toolRuntime?.trustLevel ?? 'trusted',
-        fileSystemMode: merged.agent?.toolRuntime?.fileSystemMode ?? 'unrestricted',
-        networkMode: merged.agent?.toolRuntime?.networkMode ?? 'enabled',
+      permissions: {
+        fullAccess: merged.agent?.permissions?.fullAccess ?? false,
+        approvalPolicy: merged.agent?.permissions?.approvalPolicy,
+        trustLevel: merged.agent?.permissions?.trustLevel,
+        fileSystemMode: merged.agent?.permissions?.fileSystemMode,
+        networkMode: merged.agent?.permissions?.networkMode,
       },
     },
     models: merged.models ?? {},
@@ -539,16 +514,23 @@ function applyConfigToEnv(
   }
 
   if (config.agent) {
-    setIfUnset('AGENT_TOOL_CONFIRMATION_MODE', config.agent.confirmationMode);
     setIfUnset('AGENT_MODEL', config.agent.defaultModel);
     setIfUnset(
       'AGENT_MAX_STEPS',
       config.agent.maxSteps !== undefined ? String(config.agent.maxSteps) : undefined
     );
-    setIfUnset('AGENT_TOOL_APPROVAL_POLICY', config.agent.toolRuntime?.approvalPolicy);
-    setIfUnset('AGENT_TOOL_TRUST_LEVEL', config.agent.toolRuntime?.trustLevel);
-    setIfUnset('AGENT_TOOL_FILESYSTEM_MODE', config.agent.toolRuntime?.fileSystemMode);
-    setIfUnset('AGENT_TOOL_NETWORK_MODE', config.agent.toolRuntime?.networkMode);
+    if (config.agent.permissions) {
+      setIfUnset(
+        AGENT_FULL_ACCESS_ENV,
+        config.agent.permissions.fullAccess !== undefined
+          ? String(config.agent.permissions.fullAccess)
+          : undefined
+      );
+      setIfUnset(AGENT_DEFAULT_APPROVAL_POLICY_ENV, config.agent.permissions.approvalPolicy);
+      setIfUnset(AGENT_DEFAULT_TRUST_LEVEL_ENV, config.agent.permissions.trustLevel);
+      setIfUnset(AGENT_DEFAULT_FILESYSTEM_MODE_ENV, config.agent.permissions.fileSystemMode);
+      setIfUnset(AGENT_DEFAULT_NETWORK_MODE_ENV, config.agent.permissions.networkMode);
+    }
   }
 
   if (config.models && Object.keys(config.models).length > 0) {
