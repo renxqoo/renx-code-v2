@@ -5,17 +5,17 @@ import { SLASH_COMMANDS, filterSlashCommands, resolveSlashCommand } from './slas
 describe('slash-commands', () => {
   describe('resolveSlashCommand', () => {
     it('should return null for empty input', () => {
-      expect(resolveSlashCommand('')).toBe(null);
-      expect(resolveSlashCommand('   ')).toBe(null);
-      expect(resolveSlashCommand('\t\n')).toBe(null);
+      expect(resolveSlashCommand('')).toBeNull();
+      expect(resolveSlashCommand('   ')).toBeNull();
+      expect(resolveSlashCommand('\t\n')).toBeNull();
     });
 
     it('should return null for non-slash commands', () => {
-      expect(resolveSlashCommand('hello world')).toBe(null);
+      expect(resolveSlashCommand('hello world')).toBeNull();
       // 'help me' returns help command because the first token 'help' matches
       // but the caller checks text.startsWith('/') before using runCommand
       expect(resolveSlashCommand('help me')?.name).toBe('help');
-      expect(resolveSlashCommand('/invalid')).toBe(null);
+      expect(resolveSlashCommand('/invalid')).toBeNull();
     });
 
     it('should resolve commands by name', () => {
