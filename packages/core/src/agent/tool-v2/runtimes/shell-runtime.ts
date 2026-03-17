@@ -131,7 +131,7 @@ export interface LocalProcessShellRuntimeOptions {
 
 export class LocalProcessShellRuntime implements ShellRuntime {
   private readonly backgroundBaseDir: string;
-  private readonly foregroundBaseDir: string;
+  private readonly foregroundBaseDir?: string;
   private readonly now: () => number;
   private readonly maxBackgroundOutputBytes: number;
   private readonly maxForegroundPreviewChars: number;
@@ -142,9 +142,9 @@ export class LocalProcessShellRuntime implements ShellRuntime {
     this.backgroundBaseDir = path.resolve(
       options.backgroundBaseDir || path.join(os.tmpdir(), 'renx-tool-v2-shell-bg')
     );
-    this.foregroundBaseDir = path.resolve(
-      options.foregroundBaseDir || path.join(os.tmpdir(), 'renx-tool-v2-shell-cache')
-    );
+    this.foregroundBaseDir = options.foregroundBaseDir
+      ? path.resolve(options.foregroundBaseDir)
+      : undefined;
     this.now = options.now || Date.now;
     this.maxBackgroundOutputBytes = options.maxBackgroundOutputBytes ?? 30000;
     this.maxForegroundPreviewChars = options.maxForegroundPreviewChars ?? 16000;
@@ -182,9 +182,11 @@ export class LocalProcessShellRuntime implements ShellRuntime {
       this.preferredShell,
       request.command
     );
-    await fsp.mkdir(this.foregroundBaseDir, { recursive: true });
+    const foregroundBaseDir =
+      this.foregroundBaseDir || path.join(path.resolve(request.cwd), '.renx', 'cache', 'shell');
+    await fsp.mkdir(foregroundBaseDir, { recursive: true });
     const capture = await ShellOutputCapture.create({
-      baseDir: this.foregroundBaseDir,
+      baseDir: foregroundBaseDir,
       command: request.command,
       cwd: path.resolve(request.cwd),
       previewChars: this.maxForegroundPreviewChars,

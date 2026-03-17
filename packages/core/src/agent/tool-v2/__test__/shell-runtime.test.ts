@@ -248,12 +248,8 @@ describe('shell runtime adapters', () => {
     }
   });
 
-  it('writes full foreground output to cache files and returns a truncated preview with paths', async () => {
-    const foregroundBaseDir = await fs.mkdtemp(
-      path.join(os.tmpdir(), 'renx-tool-v2-runtime-fg-cache-')
-    );
+  it('writes full foreground output to a project-local cache directory and returns truncated preview paths', async () => {
     const runtime: LocalProcessShellRuntime = new LocalProcessShellRuntimeImpl({
-      foregroundBaseDir,
       maxForegroundPreviewChars: 256,
     });
     const system = new EnterpriseToolSystem([
@@ -276,50 +272,49 @@ describe('shell runtime adapters', () => {
       }),
     ]);
 
-    try {
-      const result = await system.execute(
-        {
-          toolCallId: 'local-process-foreground-cache',
-          toolName: 'local_shell',
-          arguments: JSON.stringify({
-            command:
-              `node -e "process.stdout.write('A'.repeat(320));` +
-              `process.stderr.write('B'.repeat(320));"`,
-          }),
-        },
-        createContext(workspaceDir)
-      );
+    const result = await system.execute(
+      {
+        toolCallId: 'local-process-foreground-cache',
+        toolName: 'local_shell',
+        arguments: JSON.stringify({
+          command:
+            `node -e "process.stdout.write('A'.repeat(320));` +
+            `process.stderr.write('B'.repeat(320));"`,
+        }),
+      },
+      createContext(workspaceDir)
+    );
 
-      expect(result.success).toBe(true);
-      if (!result.success) {
-        return;
-      }
-
-      expect(result.output).toContain('Full output saved to:');
-      const structured = result.structured as {
-        outputTruncated: boolean;
-        outputArtifact: {
-          combinedPath: string;
-          metaPath: string;
-          stdoutPath: string;
-          stderrPath: string;
-        };
-      };
-      expect(structured.outputTruncated).toBe(true);
-
-      const combined = await fs.readFile(structured.outputArtifact.combinedPath, 'utf8');
-      const meta = JSON.parse(await fs.readFile(structured.outputArtifact.metaPath, 'utf8')) as {
-        truncated: boolean;
-        combinedPath: string;
-      };
-
-      expect(combined).toContain('A'.repeat(320));
-      expect(combined).toContain('B'.repeat(320));
-      expect(meta.truncated).toBe(true);
-      expect(meta.combinedPath).toBe(structured.outputArtifact.combinedPath);
-    } finally {
-      await fs.rm(foregroundBaseDir, { recursive: true, force: true });
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
     }
+
+    expect(result.output).toContain('Full output saved to:');
+    const structured = result.structured as {
+      outputTruncated: boolean;
+      outputArtifact: {
+        combinedPath: string;
+        metaPath: string;
+        stdoutPath: string;
+        stderrPath: string;
+      };
+    };
+    expect(structured.outputTruncated).toBe(true);
+    expect(structured.outputArtifact.combinedPath).toContain(
+      path.join(workspaceDir, '.renx', 'cache', 'shell')
+    );
+
+    const combined = await fs.readFile(structured.outputArtifact.combinedPath, 'utf8');
+    const meta = JSON.parse(await fs.readFile(structured.outputArtifact.metaPath, 'utf8')) as {
+      truncated: boolean;
+      combinedPath: string;
+    };
+
+    expect(combined).toContain('A'.repeat(320));
+    expect(combined).toContain('B'.repeat(320));
+    expect(meta.truncated).toBe(true);
+    expect(meta.combinedPath).toBe(structured.outputArtifact.combinedPath);
   });
 
   it('runs PowerShell-native commands directly on Windows by default', async () => {

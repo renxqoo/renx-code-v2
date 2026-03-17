@@ -84,6 +84,7 @@ describe('enterprise-agent-factory', () => {
           },
         },
       },
+      env: {},
     });
 
     const result = await runtime.toolExecutor.execute(
@@ -185,6 +186,7 @@ describe('enterprise-agent-factory', () => {
         trustLevel: 'trusted',
       },
       organizationPolicyFilePath: policyFile,
+      env: {},
     });
 
     let executingPolicyVersion: string | undefined;
