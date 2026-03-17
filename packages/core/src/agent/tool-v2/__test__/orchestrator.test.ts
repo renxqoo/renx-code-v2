@@ -11,6 +11,7 @@ import { RequestPermissionsToolV2 } from '../handlers/request-permissions';
 import { LocalShellToolV2 } from '../handlers/shell';
 import { createRestrictedNetworkPolicy, createWorkspaceFileSystemPolicy } from '../permissions';
 import type {
+  ShellRuntimeCapabilities,
   ShellRuntime,
   ShellRuntimeRequest,
   ShellRuntimeResult,
@@ -32,7 +33,12 @@ describe('tool-v2 orchestrator', () => {
     const runtime = new RecordingShellRuntime();
     const approvalRequests: ToolApprovalRequest[] = [];
     const events: ToolExecutionEvent[] = [];
-    const system = new EnterpriseToolSystem([new LocalShellToolV2({ runtime })]);
+    const system = new EnterpriseToolSystem([
+      new LocalShellToolV2({
+        runtime,
+        approvalMode: 'always',
+      }),
+    ]);
     const sessionState = new ToolSessionState();
     const context = createContext(workspaceDir, sessionState, {
       approve: async (request) => {
@@ -292,6 +298,19 @@ describe('tool-v2 orchestrator', () => {
 
 class RecordingShellRuntime implements ShellRuntime {
   readonly requests: ShellRuntimeRequest[] = [];
+  private readonly capabilities: ShellRuntimeCapabilities = {
+    sandboxing: [
+      { mode: 'workspace-write', enforcement: 'advisory' },
+      { mode: 'full-access', enforcement: 'advisory' },
+    ],
+    escalation: {
+      supported: true,
+    },
+  };
+
+  getCapabilities(): ShellRuntimeCapabilities {
+    return this.capabilities;
+  }
 
   async execute(request: ShellRuntimeRequest): Promise<ShellRuntimeResult> {
     this.requests.push(request);

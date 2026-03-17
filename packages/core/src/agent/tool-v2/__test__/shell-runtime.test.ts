@@ -21,6 +21,7 @@ import {
   resolvePreferredShell,
 } from '../runtimes/shell-runtime';
 import { createRuleBasedShellCommandPolicy } from '../shell-policy';
+import { SHELL_POLICY_PROFILES } from '../shell-profiles';
 import { EnterpriseToolSystem } from '../tool-system';
 
 describe('shell runtime adapters', () => {
@@ -169,7 +170,7 @@ describe('shell runtime adapters', () => {
     const system = new EnterpriseToolSystem([
       new LocalShellToolV2({
         runtime,
-        approvalMode: 'policy',
+        profile: SHELL_POLICY_PROFILES.fullAccess,
       }),
     ]);
 
