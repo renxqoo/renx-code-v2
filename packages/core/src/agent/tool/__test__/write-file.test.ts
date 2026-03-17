@@ -115,10 +115,13 @@ describe('WriteFileTool', () => {
     expect(payload.buffer.bufferId).toBe('write_call_1');
     expect(payload.buffer.bufferedBytes).toBe(Buffer.byteLength('0123456789012345', 'utf8'));
     expect(payload.buffer.maxChunkBytes).toBe(8);
+    // Use realpath to handle macOS symlink (/var -> /private/var)
+    const realAllowedDir = await fs.realpath(allowedDir);
+    const realTarget = path.join(realAllowedDir, 'large.txt');
     expect(payload.nextArgs).toMatchObject({
       mode: 'finalize',
       bufferId: 'write_call_1',
-      path: target,
+      path: realTarget,
     });
   });
 
