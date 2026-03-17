@@ -736,7 +736,7 @@ describe('local_shell v2', () => {
   });
 
   it('cascades parent abort into background shell cancellation', async () => {
-    const runtime = new BackgroundRecordingShellRuntime();
+    const runtime = new BackgroundRecordingShellRuntime({ autoComplete: false });
     const backgroundStoreDir = await fs.mkdtemp(
       path.join(os.tmpdir(), 'renx-tool-v2-shell-abort-store-')
     );
@@ -780,6 +780,9 @@ describe('local_shell v2', () => {
       const taskId = (started.structured as { taskId: string }).taskId;
       controller.abort();
 
+      // Give the abort handler time to execute (it runs asynchronously via void onAbort())
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
       await waitUntil(async () => {
         const stopped = await system.execute(
           {
@@ -796,7 +799,7 @@ describe('local_shell v2', () => {
           stopped.success &&
           (stopped.structured as { shellRun: { status: string } }).shellRun.status === 'cancelled'
         );
-      });
+      }, 2000);
 
       await waitUntil(async () =>
         events.some((event) => event.includes('background shell cancelled by parent abort'))
@@ -850,6 +853,12 @@ class RecordingShellRuntime implements ShellRuntime {
 class BackgroundRecordingShellRuntime extends RecordingShellRuntime {
   private nextId = 1;
   private readonly backgroundRecords = new Map<string, ShellBackgroundExecutionRecord>();
+  private readonly autoComplete: boolean;
+
+  constructor(options?: { autoComplete?: boolean }) {
+    super();
+    this.autoComplete = options?.autoComplete ?? true;
+  }
 
   override getCapabilities(): ShellRuntimeCapabilities {
     return {
@@ -887,6 +896,11 @@ class BackgroundRecordingShellRuntime extends RecordingShellRuntime {
   ): Promise<ShellBackgroundExecutionRecord> {
     const current = this.backgroundRecords.get(record.taskId) || record;
     if (current.status !== 'running') {
+      return current;
+    }
+    // When autoComplete is false, keep 'running' status to simulate a real background process
+    // that doesn't complete immediately. This allows cancel operations to work correctly.
+    if (!this.autoComplete) {
       return current;
     }
     const completed: ShellBackgroundExecutionRecord = {

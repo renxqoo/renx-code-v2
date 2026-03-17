@@ -210,7 +210,9 @@ export type SourceModules = {
   createEnterpriseToolSystemV2WithSubagents: (options: Record<string, unknown>) => unknown;
   EnterpriseToolExecutor: ToolExecutorCtor;
   createWorkspaceFileSystemPolicy: (workspaceRoot: string) => unknown;
+  createUnrestrictedFileSystemPolicy: () => unknown;
   createRestrictedNetworkPolicy: () => unknown;
+  createEnabledNetworkPolicy: () => unknown;
   getTaskStateStoreV2: (options?: Record<string, unknown>) => unknown;
 };
 
@@ -242,8 +244,12 @@ const loadSourceModules = async (): Promise<SourceModules> => {
     EnterpriseToolExecutor: core.EnterpriseToolExecutor as ToolExecutorCtor,
     createWorkspaceFileSystemPolicy:
       core.createWorkspaceFileSystemPolicy as SourceModules['createWorkspaceFileSystemPolicy'],
+    createUnrestrictedFileSystemPolicy:
+      core.createUnrestrictedFileSystemPolicy as SourceModules['createUnrestrictedFileSystemPolicy'],
     createRestrictedNetworkPolicy:
       core.createRestrictedNetworkPolicy as SourceModules['createRestrictedNetworkPolicy'],
+    createEnabledNetworkPolicy:
+      core.createEnabledNetworkPolicy as SourceModules['createEnabledNetworkPolicy'],
     getTaskStateStoreV2: core.getTaskStateStoreV2 as SourceModules['getTaskStateStoreV2'],
   };
 };

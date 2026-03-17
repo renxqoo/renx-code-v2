@@ -104,6 +104,63 @@ const parsePositiveInt = (raw: string | undefined, fallback: number): number => 
   return value;
 };
 
+const parseToolApprovalPolicy = (
+  raw: string | undefined
+): 'never' | 'on-request' | 'on-failure' | 'unless-trusted' => {
+  const normalized = raw?.trim().toLowerCase().replace(/_/g, '-');
+  if (
+    normalized === 'never' ||
+    normalized === 'on-request' ||
+    normalized === 'on-failure' ||
+    normalized === 'unless-trusted'
+  ) {
+    return normalized;
+  }
+  return 'unless-trusted';
+};
+
+const parseToolTrustLevel = (raw: string | undefined): 'trusted' | 'untrusted' => {
+  const normalized = raw?.trim().toLowerCase();
+  if (normalized === 'trusted' || normalized === 'untrusted') {
+    return normalized;
+  }
+  return 'trusted';
+};
+
+const parseToolFileSystemMode = (raw: string | undefined): 'workspace' | 'unrestricted' => {
+  const normalized = raw?.trim().toLowerCase().replace(/_/g, '-');
+  if (normalized === 'workspace' || normalized === 'unrestricted') {
+    return normalized;
+  }
+  return 'unrestricted';
+};
+
+const parseToolNetworkMode = (raw: string | undefined): 'restricted' | 'enabled' => {
+  const normalized = raw?.trim().toLowerCase().replace(/_/g, '-');
+  if (normalized === 'restricted' || normalized === 'enabled') {
+    return normalized;
+  }
+  return 'enabled';
+};
+
+const resolveToolExecutorPolicies = (modules: SourceModules, workspaceRoot: string) => {
+  const fileSystemMode = parseToolFileSystemMode(process.env.AGENT_TOOL_FILESYSTEM_MODE);
+  const networkMode = parseToolNetworkMode(process.env.AGENT_TOOL_NETWORK_MODE);
+
+  return {
+    approvalPolicy: parseToolApprovalPolicy(process.env.AGENT_TOOL_APPROVAL_POLICY),
+    trustLevel: parseToolTrustLevel(process.env.AGENT_TOOL_TRUST_LEVEL),
+    fileSystemPolicy:
+      fileSystemMode === 'unrestricted'
+        ? modules.createUnrestrictedFileSystemPolicy()
+        : modules.createWorkspaceFileSystemPolicy(workspaceRoot),
+    networkPolicy:
+      networkMode === 'enabled'
+        ? modules.createEnabledNetworkPolicy()
+        : modules.createRestrictedNetworkPolicy(),
+  };
+};
+
 const resolvePromptCacheConfig = (conversationId: string): Record<string, unknown> | undefined => {
   const rawPromptCacheKey = process.env.AGENT_PROMPT_CACHE_KEY?.trim();
   const promptCacheRetention = process.env.AGENT_PROMPT_CACHE_RETENTION?.trim();
@@ -419,6 +476,7 @@ const createRuntime = async (): Promise<RuntimeCore> => {
   const taskStore = modules.getTaskStateStoreV2({
     baseDir: modules.resolveRenxTaskDir(process.env),
   });
+  const toolExecutorPolicies = resolveToolExecutorPolicies(modules, workspaceRoot);
   const deferredSubagentAppService = createDeferredSubagentAppService();
   let toolExecutor: ToolExecutorLike | null = null;
   const toolSystem = modules.createEnterpriseToolSystemV2WithSubagents({
@@ -441,10 +499,10 @@ const createRuntime = async (): Promise<RuntimeCore> => {
   toolExecutor = new modules.EnterpriseToolExecutor({
     system: toolSystem,
     workingDirectory: workspaceRoot,
-    fileSystemPolicy: modules.createWorkspaceFileSystemPolicy(workspaceRoot),
-    networkPolicy: modules.createRestrictedNetworkPolicy(),
-    approvalPolicy: 'on-request',
-    trustLevel: 'untrusted',
+    fileSystemPolicy: toolExecutorPolicies.fileSystemPolicy,
+    networkPolicy: toolExecutorPolicies.networkPolicy,
+    approvalPolicy: toolExecutorPolicies.approvalPolicy,
+    trustLevel: toolExecutorPolicies.trustLevel,
   });
 
   const agent = new modules.StatelessAgent(provider, toolExecutor, {

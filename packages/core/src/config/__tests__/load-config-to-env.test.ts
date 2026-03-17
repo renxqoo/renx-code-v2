@@ -23,6 +23,10 @@ describe('loadConfigToEnv', () => {
     delete process.env.AGENT_FILE_HISTORY_MAX_AGE_DAYS;
     delete process.env.AGENT_FILE_HISTORY_MAX_TOTAL_MB;
     delete process.env.AGENT_TOOL_CONFIRMATION_MODE;
+    delete process.env.AGENT_TOOL_APPROVAL_POLICY;
+    delete process.env.AGENT_TOOL_TRUST_LEVEL;
+    delete process.env.AGENT_TOOL_FILESYSTEM_MODE;
+    delete process.env.AGENT_TOOL_NETWORK_MODE;
     delete process.env.AGENT_MODEL;
     delete process.env.AGENT_MAX_STEPS;
     delete process.env.RENX_CUSTOM_MODELS_JSON;
@@ -39,7 +43,15 @@ describe('loadConfigToEnv', () => {
       path.join(globalDir, 'config.json'),
       JSON.stringify({
         log: { level: 'DEBUG', format: 'json', file: true },
-        agent: { defaultModel: 'gpt-5.4' },
+        agent: {
+          defaultModel: 'gpt-5.4',
+          toolRuntime: {
+            approvalPolicy: 'unless-trusted',
+            trustLevel: 'trusted',
+            fileSystemMode: 'unrestricted',
+            networkMode: 'enabled',
+          },
+        },
       })
     );
 
@@ -50,6 +62,79 @@ describe('loadConfigToEnv', () => {
     expect(process.env.AGENT_LOG_FORMAT).toBe('json');
     expect(process.env.AGENT_LOG_FILE_ENABLED).toBe('true');
     expect(process.env.AGENT_MODEL).toBe('gpt-5.4');
+    expect(process.env.AGENT_TOOL_APPROVAL_POLICY).toBe('unless-trusted');
+    expect(process.env.AGENT_TOOL_TRUST_LEVEL).toBe('trusted');
+    expect(process.env.AGENT_TOOL_FILESYSTEM_MODE).toBe('unrestricted');
+    expect(process.env.AGENT_TOOL_NETWORK_MODE).toBe('enabled');
+  });
+
+  it('should load project tool runtime config over global', () => {
+    fs.mkdirSync(globalDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(globalDir, 'config.json'),
+      JSON.stringify({
+        agent: {
+          toolRuntime: {
+            approvalPolicy: 'on-request',
+            trustLevel: 'untrusted',
+            fileSystemMode: 'workspace',
+            networkMode: 'restricted',
+          },
+        },
+      })
+    );
+
+    const projectConfigDir = path.join(tmpDir, '.renx');
+    fs.mkdirSync(projectConfigDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(projectConfigDir, 'config.json'),
+      JSON.stringify({
+        agent: {
+          toolRuntime: {
+            approvalPolicy: 'unless-trusted',
+            trustLevel: 'trusted',
+            fileSystemMode: 'unrestricted',
+            networkMode: 'enabled',
+          },
+        },
+      })
+    );
+
+    loadConfigToEnv({ projectRoot: tmpDir, globalDir });
+
+    expect(process.env.AGENT_TOOL_APPROVAL_POLICY).toBe('unless-trusted');
+    expect(process.env.AGENT_TOOL_TRUST_LEVEL).toBe('trusted');
+    expect(process.env.AGENT_TOOL_FILESYSTEM_MODE).toBe('unrestricted');
+    expect(process.env.AGENT_TOOL_NETWORK_MODE).toBe('enabled');
+  });
+
+  it('should not override existing tool runtime env vars', () => {
+    process.env.AGENT_TOOL_APPROVAL_POLICY = 'never';
+    process.env.AGENT_TOOL_TRUST_LEVEL = 'untrusted';
+    process.env.AGENT_TOOL_FILESYSTEM_MODE = 'workspace';
+    process.env.AGENT_TOOL_NETWORK_MODE = 'restricted';
+
+    fs.mkdirSync(globalDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(globalDir, 'config.json'),
+      JSON.stringify({
+        agent: {
+          toolRuntime: {
+            approvalPolicy: 'unless-trusted',
+            trustLevel: 'trusted',
+            fileSystemMode: 'unrestricted',
+            networkMode: 'enabled',
+          },
+        },
+      })
+    );
+
+    loadConfigToEnv({ projectRoot: tmpDir, globalDir });
+
+    expect(process.env.AGENT_TOOL_APPROVAL_POLICY).toBe('never');
+    expect(process.env.AGENT_TOOL_TRUST_LEVEL).toBe('untrusted');
+    expect(process.env.AGENT_TOOL_FILESYSTEM_MODE).toBe('workspace');
+    expect(process.env.AGENT_TOOL_NETWORK_MODE).toBe('restricted');
   });
 
   it('should load project config.json over global', () => {
@@ -93,6 +178,10 @@ describe('loadConfigToEnv', () => {
     expect(fs.existsSync(path.join(globalDir, 'config.json'))).toBe(true);
     expect(process.env.AGENT_MODEL).toBe('qwen3.5-plus');
     expect(process.env.AGENT_TOOL_CONFIRMATION_MODE).toBe('manual');
+    expect(process.env.AGENT_TOOL_APPROVAL_POLICY).toBe('unless-trusted');
+    expect(process.env.AGENT_TOOL_TRUST_LEVEL).toBe('trusted');
+    expect(process.env.AGENT_TOOL_FILESYSTEM_MODE).toBe('unrestricted');
+    expect(process.env.AGENT_TOOL_NETWORK_MODE).toBe('enabled');
   });
 
   it('should load storage config', () => {
@@ -117,7 +206,17 @@ describe('loadConfigToEnv', () => {
     fs.writeFileSync(
       path.join(globalDir, 'config.json'),
       JSON.stringify({
-        agent: { confirmationMode: 'manual', defaultModel: 'qwen3.5-max', maxSteps: 100 },
+        agent: {
+          confirmationMode: 'manual',
+          defaultModel: 'qwen3.5-max',
+          maxSteps: 100,
+          toolRuntime: {
+            approvalPolicy: 'unless-trusted',
+            trustLevel: 'trusted',
+            fileSystemMode: 'unrestricted',
+            networkMode: 'enabled',
+          },
+        },
       })
     );
 
@@ -126,6 +225,10 @@ describe('loadConfigToEnv', () => {
     expect(process.env.AGENT_TOOL_CONFIRMATION_MODE).toBe('manual');
     expect(process.env.AGENT_MODEL).toBe('qwen3.5-max');
     expect(process.env.AGENT_MAX_STEPS).toBe('100');
+    expect(process.env.AGENT_TOOL_APPROVAL_POLICY).toBe('unless-trusted');
+    expect(process.env.AGENT_TOOL_TRUST_LEVEL).toBe('trusted');
+    expect(process.env.AGENT_TOOL_FILESYSTEM_MODE).toBe('unrestricted');
+    expect(process.env.AGENT_TOOL_NETWORK_MODE).toBe('enabled');
   });
 
   it('should merge custom models into RENX_CUSTOM_MODELS_JSON', () => {

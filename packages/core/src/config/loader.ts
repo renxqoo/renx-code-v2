@@ -38,6 +38,12 @@ const DEFAULTS: RenxConfig = {
     maxSteps: 10000,
     confirmationMode: 'manual',
     defaultModel: 'qwen3.5-plus',
+    toolRuntime: {
+      approvalPolicy: 'unless-trusted',
+      trustLevel: 'trusted',
+      fileSystemMode: 'unrestricted',
+      networkMode: 'enabled',
+    },
   },
 };
 
@@ -184,6 +190,67 @@ function parseConfirmationMode(
   return null;
 }
 
+function parseToolApprovalPolicy(
+  raw: string | undefined
+): ResolvedConfig['agent']['toolRuntime']['approvalPolicy'] | null {
+  if (!raw) {
+    return null;
+  }
+
+  const normalized = raw.trim().toLowerCase().replace(/_/g, '-');
+  if (
+    normalized === 'never' ||
+    normalized === 'on-request' ||
+    normalized === 'on-failure' ||
+    normalized === 'unless-trusted'
+  ) {
+    return normalized;
+  }
+  return null;
+}
+
+function parseToolTrustLevel(
+  raw: string | undefined
+): ResolvedConfig['agent']['toolRuntime']['trustLevel'] | null {
+  if (!raw) {
+    return null;
+  }
+
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === 'trusted' || normalized === 'untrusted') {
+    return normalized;
+  }
+  return null;
+}
+
+function parseToolFileSystemMode(
+  raw: string | undefined
+): ResolvedConfig['agent']['toolRuntime']['fileSystemMode'] | null {
+  if (!raw) {
+    return null;
+  }
+
+  const normalized = raw.trim().toLowerCase().replace(/_/g, '-');
+  if (normalized === 'workspace' || normalized === 'unrestricted') {
+    return normalized;
+  }
+  return null;
+}
+
+function parseToolNetworkMode(
+  raw: string | undefined
+): ResolvedConfig['agent']['toolRuntime']['networkMode'] | null {
+  if (!raw) {
+    return null;
+  }
+
+  const normalized = raw.trim().toLowerCase().replace(/_/g, '-');
+  if (normalized === 'restricted' || normalized === 'enabled') {
+    return normalized;
+  }
+  return null;
+}
+
 function deepMerge<T extends object>(base: T, override: Partial<T>): T {
   const result = { ...base };
   for (const key of Object.keys(override) as Array<keyof T>) {
@@ -264,13 +331,40 @@ function applyEnvOverrides(config: RenxConfig, env: NodeJS.ProcessEnv): RenxConf
   }
 
   const confirmationMode = parseConfirmationMode(env.AGENT_TOOL_CONFIRMATION_MODE);
+  const approvalPolicy = parseToolApprovalPolicy(env.AGENT_TOOL_APPROVAL_POLICY);
+  const trustLevel = parseToolTrustLevel(env.AGENT_TOOL_TRUST_LEVEL);
+  const fileSystemMode = parseToolFileSystemMode(env.AGENT_TOOL_FILESYSTEM_MODE);
+  const networkMode = parseToolNetworkMode(env.AGENT_TOOL_NETWORK_MODE);
   const defaultModel = env.AGENT_MODEL?.trim();
   const maxSteps = parsePositiveInt(env.AGENT_MAX_STEPS);
 
-  if (confirmationMode || defaultModel || maxSteps !== null) {
+  if (
+    confirmationMode ||
+    approvalPolicy ||
+    trustLevel ||
+    fileSystemMode ||
+    networkMode ||
+    defaultModel ||
+    maxSteps !== null
+  ) {
     result.agent = { ...(result.agent ?? {}) };
     if (confirmationMode) {
       result.agent.confirmationMode = confirmationMode;
+    }
+    if (approvalPolicy || trustLevel || fileSystemMode || networkMode) {
+      result.agent.toolRuntime = { ...(result.agent.toolRuntime ?? {}) };
+      if (approvalPolicy) {
+        result.agent.toolRuntime.approvalPolicy = approvalPolicy;
+      }
+      if (trustLevel) {
+        result.agent.toolRuntime.trustLevel = trustLevel;
+      }
+      if (fileSystemMode) {
+        result.agent.toolRuntime.fileSystemMode = fileSystemMode;
+      }
+      if (networkMode) {
+        result.agent.toolRuntime.networkMode = networkMode;
+      }
     }
     if (defaultModel) {
       result.agent.defaultModel = defaultModel;
@@ -323,6 +417,12 @@ function resolveConfig(
       maxSteps: merged.agent?.maxSteps ?? 10000,
       confirmationMode: merged.agent?.confirmationMode ?? 'manual',
       defaultModel: merged.agent?.defaultModel ?? 'qwen3.5-plus',
+      toolRuntime: {
+        approvalPolicy: merged.agent?.toolRuntime?.approvalPolicy ?? 'unless-trusted',
+        trustLevel: merged.agent?.toolRuntime?.trustLevel ?? 'trusted',
+        fileSystemMode: merged.agent?.toolRuntime?.fileSystemMode ?? 'unrestricted',
+        networkMode: merged.agent?.toolRuntime?.networkMode ?? 'enabled',
+      },
     },
     models: merged.models ?? {},
     sources,
@@ -445,6 +545,10 @@ function applyConfigToEnv(
       'AGENT_MAX_STEPS',
       config.agent.maxSteps !== undefined ? String(config.agent.maxSteps) : undefined
     );
+    setIfUnset('AGENT_TOOL_APPROVAL_POLICY', config.agent.toolRuntime?.approvalPolicy);
+    setIfUnset('AGENT_TOOL_TRUST_LEVEL', config.agent.toolRuntime?.trustLevel);
+    setIfUnset('AGENT_TOOL_FILESYSTEM_MODE', config.agent.toolRuntime?.fileSystemMode);
+    setIfUnset('AGENT_TOOL_NETWORK_MODE', config.agent.toolRuntime?.networkMode);
   }
 
   if (config.models && Object.keys(config.models).length > 0) {

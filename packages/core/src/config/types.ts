@@ -19,10 +19,26 @@ export interface StorageConfig {
   fileHistory?: FileHistoryConfig;
 }
 
+export type AgentToolApprovalPolicy = 'never' | 'on-request' | 'on-failure' | 'unless-trusted';
+
+export type AgentToolTrustLevel = 'trusted' | 'untrusted';
+
+export type AgentToolFileSystemMode = 'workspace' | 'unrestricted';
+
+export type AgentToolNetworkMode = 'restricted' | 'enabled';
+
+export interface AgentToolRuntimeConfig {
+  approvalPolicy?: AgentToolApprovalPolicy;
+  trustLevel?: AgentToolTrustLevel;
+  fileSystemMode?: AgentToolFileSystemMode;
+  networkMode?: AgentToolNetworkMode;
+}
+
 export interface AgentConfig {
   maxSteps?: number;
   confirmationMode?: 'manual' | 'auto-approve' | 'auto-deny';
   defaultModel?: string;
+  toolRuntime?: AgentToolRuntimeConfig;
 }
 
 export interface ConfigModelDefinition {
@@ -80,6 +96,12 @@ export interface ResolvedConfig {
     maxSteps: number;
     confirmationMode: 'manual' | 'auto-approve' | 'auto-deny';
     defaultModel: string;
+    toolRuntime: {
+      approvalPolicy: AgentToolApprovalPolicy;
+      trustLevel: AgentToolTrustLevel;
+      fileSystemMode: AgentToolFileSystemMode;
+      networkMode: AgentToolNetworkMode;
+    };
   };
   models: Record<string, ConfigModelDefinition>;
   sources: {

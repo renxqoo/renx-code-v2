@@ -20,6 +20,11 @@ export {
   writeProjectConfig,
 } from './config';
 export type {
+  AgentToolApprovalPolicy,
+  AgentToolFileSystemMode,
+  AgentToolNetworkMode,
+  AgentToolRuntimeConfig,
+  AgentToolTrustLevel,
   ConfigModelDefinition,
   FileHistoryConfig,
   LoadConfigOptions,

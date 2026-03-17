@@ -119,7 +119,9 @@ describe('runAgentPrompt error handling', () => {
         })),
         EnterpriseToolExecutor: FakeToolExecutor,
         createWorkspaceFileSystemPolicy: vi.fn(() => ({ mode: 'restricted' })),
+        createUnrestrictedFileSystemPolicy: vi.fn(() => ({ mode: 'unrestricted' })),
         createRestrictedNetworkPolicy: vi.fn(() => ({ mode: 'restricted' })),
+        createEnabledNetworkPolicy: vi.fn(() => ({ mode: 'enabled' })),
         getTaskStateStoreV2: vi.fn(() => ({})),
       }) as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>;
 

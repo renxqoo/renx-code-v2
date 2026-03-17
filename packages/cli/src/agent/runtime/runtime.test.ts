@@ -58,9 +58,17 @@ const buildMockModules = (
   ];
 
   class FakeToolExecutor {
+    static lastOptions: unknown;
     private readonly schemas: ToolSchemaLike[];
 
-    constructor(options: { system?: { schemas?: ToolSchemaLike[] } }) {
+    constructor(options: {
+      system?: { schemas?: ToolSchemaLike[] };
+      fileSystemPolicy?: unknown;
+      networkPolicy?: unknown;
+      approvalPolicy?: string;
+      trustLevel?: string;
+    }) {
+      FakeToolExecutor.lastOptions = options;
       this.schemas = options.system?.schemas || [];
     }
 
@@ -160,7 +168,9 @@ const buildMockModules = (
     })),
     EnterpriseToolExecutor: FakeToolExecutor,
     createWorkspaceFileSystemPolicy: vi.fn(() => ({ mode: 'restricted' })),
+    createUnrestrictedFileSystemPolicy: vi.fn(() => ({ mode: 'unrestricted' })),
     createRestrictedNetworkPolicy: vi.fn(() => ({ mode: 'restricted' })),
+    createEnabledNetworkPolicy: vi.fn(() => ({ mode: 'enabled' })),
     getTaskStateStoreV2: vi.fn(() => ({})),
     ...overrides,
   };
@@ -176,6 +186,10 @@ describe('runtime', () => {
   const originalApiKey = process.env.TEST_API_KEY;
   const originalRenxHome = process.env.RENX_HOME;
   const originalAgentModel = process.env.AGENT_MODEL;
+  const originalToolApprovalPolicy = process.env.AGENT_TOOL_APPROVAL_POLICY;
+  const originalToolTrustLevel = process.env.AGENT_TOOL_TRUST_LEVEL;
+  const originalToolFileSystemMode = process.env.AGENT_TOOL_FILESYSTEM_MODE;
+  const originalToolNetworkMode = process.env.AGENT_TOOL_NETWORK_MODE;
   const originalPromptCacheKey = process.env.AGENT_PROMPT_CACHE_KEY;
   const originalPromptCacheRetention = process.env.AGENT_PROMPT_CACHE_RETENTION;
   const renxHome = path.join(process.cwd(), '.tmp-renx-home');
@@ -185,6 +199,10 @@ describe('runtime', () => {
     process.env.TEST_API_KEY = 'test-key';
     process.env.RENX_HOME = renxHome;
     delete process.env.AGENT_MODEL;
+    delete process.env.AGENT_TOOL_APPROVAL_POLICY;
+    delete process.env.AGENT_TOOL_TRUST_LEVEL;
+    delete process.env.AGENT_TOOL_FILESYSTEM_MODE;
+    delete process.env.AGENT_TOOL_NETWORK_MODE;
     delete process.env.AGENT_PROMPT_CACHE_KEY;
     delete process.env.AGENT_PROMPT_CACHE_RETENTION;
     mockResolveWorkspaceRoot.mockReturnValue('/test/workspace');
@@ -207,6 +225,26 @@ describe('runtime', () => {
       delete process.env.AGENT_MODEL;
     } else {
       process.env.AGENT_MODEL = originalAgentModel;
+    }
+    if (originalToolApprovalPolicy === undefined) {
+      delete process.env.AGENT_TOOL_APPROVAL_POLICY;
+    } else {
+      process.env.AGENT_TOOL_APPROVAL_POLICY = originalToolApprovalPolicy;
+    }
+    if (originalToolTrustLevel === undefined) {
+      delete process.env.AGENT_TOOL_TRUST_LEVEL;
+    } else {
+      process.env.AGENT_TOOL_TRUST_LEVEL = originalToolTrustLevel;
+    }
+    if (originalToolFileSystemMode === undefined) {
+      delete process.env.AGENT_TOOL_FILESYSTEM_MODE;
+    } else {
+      process.env.AGENT_TOOL_FILESYSTEM_MODE = originalToolFileSystemMode;
+    }
+    if (originalToolNetworkMode === undefined) {
+      delete process.env.AGENT_TOOL_NETWORK_MODE;
+    } else {
+      process.env.AGENT_TOOL_NETWORK_MODE = originalToolNetworkMode;
     }
     if (originalPromptCacheKey === undefined) {
       delete process.env.AGENT_PROMPT_CACHE_KEY;
@@ -251,6 +289,61 @@ describe('runtime', () => {
 
     await expect(getAgentModelId()).resolves.toBe('gpt-5.3-my');
     await expect(getAgentModelLabel()).resolves.toBe('GPT-5.3-my');
+  });
+
+  it('applies tool runtime policies loaded from config before runtime initialization', async () => {
+    const modules = buildMockModules();
+    const toolExecutorClass = modules.EnterpriseToolExecutor as {
+      lastOptions?: {
+        approvalPolicy?: string;
+        trustLevel?: string;
+        fileSystemPolicy?: { mode?: string };
+        networkPolicy?: { mode?: string };
+      };
+    };
+    modules.loadConfigToEnv = vi.fn(() => {
+      process.env.AGENT_TOOL_APPROVAL_POLICY = 'unless-trusted';
+      process.env.AGENT_TOOL_TRUST_LEVEL = 'trusted';
+      process.env.AGENT_TOOL_FILESYSTEM_MODE = 'unrestricted';
+      process.env.AGENT_TOOL_NETWORK_MODE = 'enabled';
+      return ['C:\\Users\\Administrator\\.renx\\config.json'];
+    });
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    await runAgentPrompt('Test prompt', {});
+
+    expect(toolExecutorClass.lastOptions).toMatchObject({
+      approvalPolicy: 'unless-trusted',
+      trustLevel: 'trusted',
+      fileSystemPolicy: { mode: 'unrestricted' },
+      networkPolicy: { mode: 'enabled' },
+    });
+  });
+
+  it('uses permissive tool runtime defaults when nothing is configured', async () => {
+    const modules = buildMockModules();
+    const toolExecutorClass = modules.EnterpriseToolExecutor as {
+      lastOptions?: {
+        approvalPolicy?: string;
+        trustLevel?: string;
+        fileSystemPolicy?: { mode?: string };
+        networkPolicy?: { mode?: string };
+      };
+    };
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    await runAgentPrompt('Test prompt', {});
+
+    expect(toolExecutorClass.lastOptions).toMatchObject({
+      approvalPolicy: 'unless-trusted',
+      trustLevel: 'trusted',
+      fileSystemPolicy: { mode: 'unrestricted' },
+      networkPolicy: { mode: 'enabled' },
+    });
   });
 
   it('lists models with current selection', async () => {

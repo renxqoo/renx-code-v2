@@ -69,9 +69,23 @@ export function createWorkspaceFileSystemPolicy(
   };
 }
 
+export function createUnrestrictedFileSystemPolicy(): ToolFileSystemPolicy {
+  return {
+    mode: 'unrestricted',
+    readRoots: [],
+    writeRoots: [],
+  };
+}
+
 export function createRestrictedNetworkPolicy(): ToolNetworkPolicy {
   return {
     mode: 'restricted',
+  };
+}
+
+export function createEnabledNetworkPolicy(): ToolNetworkPolicy {
+  return {
+    mode: 'enabled',
   };
 }
 

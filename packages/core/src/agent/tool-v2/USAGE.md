@@ -47,8 +47,8 @@ const result = await toolSystem.execute(
     sessionState: new ToolSessionState(),
     fileSystemPolicy: createWorkspaceFileSystemPolicy(workingDirectory),
     networkPolicy: createRestrictedNetworkPolicy(),
-    approvalPolicy: 'on-request',
-    trustLevel: 'untrusted',
+    approvalPolicy: 'unless-trusted',
+    trustLevel: 'trusted',
   }
 );
 
@@ -86,8 +86,8 @@ const toolExecutor = new EnterpriseToolExecutor({
   workingDirectory,
   fileSystemPolicy: createWorkspaceFileSystemPolicy(workingDirectory),
   networkPolicy: createRestrictedNetworkPolicy(),
-  approvalPolicy: 'on-request',
-  trustLevel: 'untrusted',
+  approvalPolicy: 'unless-trusted',
+  trustLevel: 'trusted',
 });
 
 const agent = new StatelessAgent(provider, toolExecutor, {
