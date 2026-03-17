@@ -149,13 +149,28 @@ async function importCoreFromPackage(): Promise<CoreModules | null> {
   }
 }
 
-async function importCoreFromSource(repoRoot: string): Promise<CoreModules> {
-  const coreEntry = pathToFileURL(path.join(repoRoot, 'packages', 'core', 'src', 'index.ts')).href;
-  const imported = (await import(coreEntry)) as Partial<CoreModules>;
-  if (!isValidCoreModules(imported)) {
-    throw new Error('Core module import is missing required exports.');
+async function importCoreFromDist(repoRoot: string): Promise<CoreModules | null> {
+  try {
+    const coreEntry = pathToFileURL(
+      path.join(repoRoot, 'packages', 'core', 'dist', 'index.js')
+    ).href;
+    const imported = (await import(coreEntry)) as Partial<CoreModules>;
+    return isValidCoreModules(imported) ? imported : null;
+  } catch {
+    return null;
   }
-  return imported;
+}
+
+async function importCoreFromSource(repoRoot: string): Promise<CoreModules | null> {
+  try {
+    const coreEntry = pathToFileURL(
+      path.join(repoRoot, 'packages', 'core', 'src', 'index.ts')
+    ).href;
+    const imported = (await import(coreEntry)) as Partial<CoreModules>;
+    return isValidCoreModules(imported) ? imported : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function getCoreModules(repoRoot: string): Promise<CoreModules> {
@@ -164,7 +179,18 @@ export async function getCoreModules(repoRoot: string): Promise<CoreModules> {
     if (fromPackage) {
       return fromPackage;
     }
-    return importCoreFromSource(repoRoot);
+
+    const fromDist = await importCoreFromDist(repoRoot);
+    if (fromDist) {
+      return fromDist;
+    }
+
+    const fromSource = await importCoreFromSource(repoRoot);
+    if (fromSource) {
+      return fromSource;
+    }
+
+    throw new Error('Unable to load core modules from package, dist, or source entrypoints.');
   })();
 
   return cachedModules;
