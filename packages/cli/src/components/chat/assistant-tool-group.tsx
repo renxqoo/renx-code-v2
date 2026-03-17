@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import { uiTheme } from '../../ui/theme';
 import { getToolDisplayIcon, getToolDisplayName } from '../tool-display-config';
+import { resolveToolResultFallbackText } from './assistant-tool-result';
 import { CodeBlock } from './code-block';
 import type { ToolSegmentGroup } from './segment-groups';
 
@@ -198,7 +199,8 @@ const mergeOutputLines = (
     .map((segment) => segment.content)
     .join('')
     .trim();
-  const resultText = parsedResult?.output?.trim() || parsedResult?.details?.trim();
+  const fallbackText = resolveToolResultFallbackText(parsedResult)?.trim();
+  const resultText = parsedResult?.output?.trim() || parsedResult?.details?.trim() || fallbackText;
   if (streamText && resultText && streamText === resultText) {
     return streamText;
   }
