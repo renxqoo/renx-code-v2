@@ -6,12 +6,17 @@ import { uiTheme } from '../ui/theme';
 type FooterHintsProps = {
   isThinking: boolean;
   contextUsagePercent: number | null;
+  isFullAccessMode?: boolean;
 };
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const SPINNER_INTERVAL_MS = 80;
 
-export const FooterHints = ({ isThinking, contextUsagePercent }: FooterHintsProps) => {
+export const FooterHints = ({
+  isThinking,
+  contextUsagePercent,
+  isFullAccessMode = false,
+}: FooterHintsProps) => {
   const [frameIndex, setFrameIndex] = useState(0);
   const hintAlignPaddingX =
     uiTheme.layout.conversationPaddingX +
@@ -64,6 +69,11 @@ export const FooterHints = ({ isThinking, contextUsagePercent }: FooterHintsProp
         {isThinking ? (
           <text fg={uiTheme.muted} attributes={TextAttributes.BOLD}>
             <strong>esc</strong> stop
+          </text>
+        ) : null}
+        {isFullAccessMode ? (
+          <text fg={uiTheme.muted} attributes={TextAttributes.BOLD}>
+            <strong>full access</strong>
           </text>
         ) : null}
         <text fg={uiTheme.muted} attributes={TextAttributes.BOLD}>

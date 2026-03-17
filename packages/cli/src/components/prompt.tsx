@@ -52,7 +52,7 @@ export const Prompt = ({
       ),
     [selectedFiles]
   );
-  const inputLocked = isThinking || disabled;
+  const inputLocked = disabled;
   const promptAlignPaddingX =
     uiTheme.layout.conversationPaddingX +
     uiTheme.layout.conversationContentPaddingX +
@@ -207,10 +207,10 @@ export const Prompt = ({
               selectionBg={uiTheme.inputSelectionBg}
               selectionFg={uiTheme.inputSelectionText}
               placeholder={
-                isThinking
-                  ? 'waiting for agent response...'
-                  : disabled
-                    ? 'command dialog active...'
+                disabled
+                  ? 'command dialog active...'
+                  : isThinking
+                    ? 'Agent is running, you can type follow-up...'
                     : 'Type your message...'
               }
               placeholderColor={uiTheme.muted}
@@ -225,24 +225,15 @@ export const Prompt = ({
               <text fg={uiTheme.muted} attributes={uiTheme.typography.muted}>
                 Coding Agent
               </text>
-              {isFullAccessMode ? (
-                <box
-                  paddingLeft={1}
-                  paddingRight={1}
-                  backgroundColor="#ffb347"
-                  border={['top', 'bottom', 'left', 'right']}
-                  borderColor="#ffb347"
-                >
-                  <text fg="#2a1600" attributes={uiTheme.typography.muted}>
-                    FULL ACCESS MODE
-                  </text>
-                </box>
-              ) : null}
             </box>
           </box>
         </box>
       </box>
-      <FooterHints isThinking={isThinking} contextUsagePercent={contextUsagePercent} />
+      <FooterHints
+        isThinking={isThinking}
+        contextUsagePercent={contextUsagePercent}
+        isFullAccessMode={isFullAccessMode}
+      />
     </box>
   );
 };
