@@ -14,10 +14,13 @@ import {
   createWindowsForegroundShellInvocation,
   resolvePreferredWindowsShell,
 } from './shell-runtime-windows';
+import { ShellOutputCapture, type ShellOutputArtifact } from './shell-output';
 import { resolveBundledRipgrepPathEntries } from './bundled-ripgrep';
 import type { ToolSandboxMode } from '../contracts';
 import type { ShellExecutionMode } from '../shell-policy';
 import type { ShellSandboxPolicy } from '../shell-sandbox';
+
+export type { ShellOutputArtifact } from './shell-output';
 
 export type ShellSandboxEnforcement = 'advisory' | 'enforced';
 
@@ -86,6 +89,7 @@ export interface ShellRuntimeResult {
   readonly exitCode: number;
   readonly timedOut: boolean;
   readonly output: string;
+  readonly artifact?: ShellOutputArtifact;
 }
 
 export interface ShellRuntime {
@@ -118,15 +122,19 @@ export type ShellCommandWorks = (candidate: string, args: string[]) => boolean;
 
 export interface LocalProcessShellRuntimeOptions {
   readonly backgroundBaseDir?: string;
+  readonly foregroundBaseDir?: string;
   readonly now?: () => number;
   readonly maxBackgroundOutputBytes?: number;
+  readonly maxForegroundPreviewChars?: number;
   readonly extraPathEntries?: readonly string[];
 }
 
 export class LocalProcessShellRuntime implements ShellRuntime {
   private readonly backgroundBaseDir: string;
+  private readonly foregroundBaseDir: string;
   private readonly now: () => number;
   private readonly maxBackgroundOutputBytes: number;
+  private readonly maxForegroundPreviewChars: number;
   private readonly preferredShell: ResolvedShell;
   private readonly extraPathEntries: readonly string[];
 
@@ -134,8 +142,12 @@ export class LocalProcessShellRuntime implements ShellRuntime {
     this.backgroundBaseDir = path.resolve(
       options.backgroundBaseDir || path.join(os.tmpdir(), 'renx-tool-v2-shell-bg')
     );
+    this.foregroundBaseDir = path.resolve(
+      options.foregroundBaseDir || path.join(os.tmpdir(), 'renx-tool-v2-shell-cache')
+    );
     this.now = options.now || Date.now;
     this.maxBackgroundOutputBytes = options.maxBackgroundOutputBytes ?? 30000;
+    this.maxForegroundPreviewChars = options.maxForegroundPreviewChars ?? 16000;
     this.preferredShell = resolvePreferredShell();
     this.extraPathEntries = options.extraPathEntries || resolveBundledRipgrepPathEntries();
   }
@@ -170,6 +182,14 @@ export class LocalProcessShellRuntime implements ShellRuntime {
       this.preferredShell,
       request.command
     );
+    await fsp.mkdir(this.foregroundBaseDir, { recursive: true });
+    const capture = await ShellOutputCapture.create({
+      baseDir: this.foregroundBaseDir,
+      command: request.command,
+      cwd: path.resolve(request.cwd),
+      previewChars: this.maxForegroundPreviewChars,
+      now: this.now,
+    });
 
     return new Promise((resolve, reject) => {
       const child = spawn(shellPath, shellArgs, {
@@ -179,8 +199,8 @@ export class LocalProcessShellRuntime implements ShellRuntime {
         windowsHide: true,
       });
 
-      let output = '';
       let timedOut = false;
+      let settled = false;
 
       const timeout = setTimeout(() => {
         timedOut = true;
@@ -205,28 +225,54 @@ export class LocalProcessShellRuntime implements ShellRuntime {
 
       child.stdout?.on('data', (chunk: Buffer) => {
         const text = chunk.toString('utf8');
-        output += text;
+        capture.appendStdout(text);
         void request.onStdout?.(text);
       });
 
       child.stderr?.on('data', (chunk: Buffer) => {
         const text = chunk.toString('utf8');
-        output += text;
+        capture.appendStderr(text);
         void request.onStderr?.(text);
       });
 
-      child.once('error', (error) => {
+      child.once('error', async (error) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
         clearTimeout(timeout);
+        try {
+          await capture.finalize({
+            exitCode: timedOut ? 124 : 1,
+            timedOut,
+          });
+        } catch {
+          // Ignore artifact cleanup errors and surface the spawn error.
+        }
         reject(error);
       });
 
-      child.once('close', (code) => {
+      child.once('close', async (code) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
         clearTimeout(timeout);
-        resolve({
-          exitCode: code ?? (timedOut ? 124 : 1),
-          timedOut,
-          output: output.trim(),
-        });
+        try {
+          const exitCode = code ?? (timedOut ? 124 : 1);
+          const finalized = await capture.finalize({
+            exitCode,
+            timedOut,
+          });
+          resolve({
+            exitCode,
+            timedOut,
+            output: finalized.output,
+            artifact: finalized.artifact,
+          });
+        } catch (error) {
+          reject(error);
+        }
       });
     });
   }

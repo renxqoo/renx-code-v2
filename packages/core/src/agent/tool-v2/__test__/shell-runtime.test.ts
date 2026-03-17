@@ -20,6 +20,7 @@ import {
   LocalProcessShellRuntime as LocalProcessShellRuntimeImpl,
   resolvePreferredShell,
 } from '../runtimes/shell-runtime';
+import { truncateShellOutput } from '../runtimes/shell-output';
 import { createRuleBasedShellCommandPolicy } from '../shell-policy';
 import { SHELL_POLICY_PROFILES } from '../shell-profiles';
 import { EnterpriseToolSystem } from '../tool-system';
@@ -91,6 +92,18 @@ describe('shell runtime adapters', () => {
       shellPath: '/bin/zsh',
       flavor: 'posix',
     });
+  });
+
+  it('truncates shell previews with preserved head and tail context', () => {
+    const value = `${'alpha'.repeat(80)}${'omega'.repeat(80)}`;
+    const result = truncateShellOutput(value, 120);
+
+    expect(result.truncated).toBe(true);
+    expect(result.totalChars).toBe(value.length);
+    expect(result.output).toContain('[');
+    expect(result.output).toContain('chars truncated');
+    expect(result.output).toContain('alpha');
+    expect(result.output).toContain('omega');
   });
 
   it('routes sandboxed and escalated executions through the brokered runtime', async () => {
@@ -232,6 +245,80 @@ describe('shell runtime adapters', () => {
     if (result.success) {
       expect(result.output).toContain('alpha');
       expect(result.output).toContain('beta');
+    }
+  });
+
+  it('writes full foreground output to cache files and returns a truncated preview with paths', async () => {
+    const foregroundBaseDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'renx-tool-v2-runtime-fg-cache-')
+    );
+    const runtime: LocalProcessShellRuntime = new LocalProcessShellRuntimeImpl({
+      foregroundBaseDir,
+      maxForegroundPreviewChars: 256,
+    });
+    const system = new EnterpriseToolSystem([
+      new LocalShellToolV2({
+        runtime,
+        approvalMode: 'policy',
+        policy: createRuleBasedShellCommandPolicy({
+          rules: [],
+          fallback: {
+            evaluate(command) {
+              return {
+                effect: 'allow',
+                commands: [command],
+                preferredSandbox: 'workspace-write',
+                executionMode: 'sandboxed',
+              };
+            },
+          },
+        }),
+      }),
+    ]);
+
+    try {
+      const result = await system.execute(
+        {
+          toolCallId: 'local-process-foreground-cache',
+          toolName: 'local_shell',
+          arguments: JSON.stringify({
+            command:
+              `node -e "process.stdout.write('A'.repeat(320));` +
+              `process.stderr.write('B'.repeat(320));"`,
+          }),
+        },
+        createContext(workspaceDir)
+      );
+
+      expect(result.success).toBe(true);
+      if (!result.success) {
+        return;
+      }
+
+      expect(result.output).toContain('Full output saved to:');
+      const structured = result.structured as {
+        outputTruncated: boolean;
+        outputArtifact: {
+          combinedPath: string;
+          metaPath: string;
+          stdoutPath: string;
+          stderrPath: string;
+        };
+      };
+      expect(structured.outputTruncated).toBe(true);
+
+      const combined = await fs.readFile(structured.outputArtifact.combinedPath, 'utf8');
+      const meta = JSON.parse(await fs.readFile(structured.outputArtifact.metaPath, 'utf8')) as {
+        truncated: boolean;
+        combinedPath: string;
+      };
+
+      expect(combined).toContain('A'.repeat(320));
+      expect(combined).toContain('B'.repeat(320));
+      expect(meta.truncated).toBe(true);
+      expect(meta.combinedPath).toBe(structured.outputArtifact.combinedPath);
+    } finally {
+      await fs.rm(foregroundBaseDir, { recursive: true, force: true });
     }
   });
 

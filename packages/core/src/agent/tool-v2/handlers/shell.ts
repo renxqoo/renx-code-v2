@@ -26,6 +26,7 @@ import {
   shellRuntimeSupportsBackground,
   shellRuntimeSupportsEscalation,
   syncShellRuntimeSandboxPolicy,
+  type ShellOutputArtifact,
   type ShellRuntime,
 } from '../runtimes/shell-runtime';
 import {
@@ -145,6 +146,37 @@ export class LocalShellToolV2 extends StructuredToolHandler<typeof schema> {
             sandboxEnforcement: stringSchema(),
             executionMode: enumSchema(['sandboxed', 'escalated']),
             networkAccess: booleanSchema(),
+            outputTruncated: booleanSchema(),
+            outputArtifact: objectSchema(
+              {
+                runId: stringSchema(),
+                runDir: stringSchema(),
+                stdoutPath: stringSchema(),
+                stderrPath: stringSchema(),
+                combinedPath: stringSchema(),
+                metaPath: stringSchema(),
+                bytesStdout: integerSchema(),
+                bytesStderr: integerSchema(),
+                bytesCombined: integerSchema(),
+                truncated: booleanSchema(),
+                previewChars: integerSchema(),
+              },
+              {
+                required: [
+                  'runId',
+                  'runDir',
+                  'stdoutPath',
+                  'stderrPath',
+                  'combinedPath',
+                  'metaPath',
+                  'bytesStdout',
+                  'bytesStderr',
+                  'bytesCombined',
+                  'truncated',
+                  'previewChars',
+                ],
+              }
+            ),
             segments: arraySchema(
               objectSchema(
                 {
@@ -344,8 +376,9 @@ export class LocalShellToolV2 extends StructuredToolHandler<typeof schema> {
       signal: context.signal,
       emit: context.emit,
     });
+    const formattedOutput = formatForegroundShellOutput(result.output, result.artifact);
     return {
-      output: result.output,
+      output: formattedOutput,
       structured: {
         exitCode: result.exitCode,
         timedOut: result.timedOut,
@@ -356,6 +389,8 @@ export class LocalShellToolV2 extends StructuredToolHandler<typeof schema> {
         sandboxEnforcement: capability?.enforcement || 'none',
         executionMode: assessment.executionMode,
         networkAccess: sandboxPolicy.networkAccess,
+        outputTruncated: result.artifact?.truncated || false,
+        ...(result.artifact ? { outputArtifact: result.artifact } : {}),
         segments: assessment.segments.map((segment) => ({
           segment: segment.segment,
           effect: segment.decision.effect,
@@ -372,6 +407,19 @@ export class LocalShellToolV2 extends StructuredToolHandler<typeof schema> {
         sandboxEnforcement: capability?.enforcement || 'none',
         executionMode: assessment.executionMode,
         networkAccess: sandboxPolicy.networkAccess,
+        outputTruncated: result.artifact?.truncated || false,
+        ...(result.artifact
+          ? {
+              outputArtifact: {
+                runId: result.artifact.runId,
+                runDir: result.artifact.runDir,
+                combinedPath: result.artifact.combinedPath,
+                stdoutPath: result.artifact.stdoutPath,
+                stderrPath: result.artifact.stderrPath,
+                metaPath: result.artifact.metaPath,
+              },
+            }
+          : {}),
         matchedRule:
           assessment.matchedRules.length === 1
             ? assessment.matchedRules[0]
@@ -419,7 +467,12 @@ async function executeShellCommand(options: {
   environment: Record<string, string>;
   signal?: AbortSignal;
   emit?: ToolExecutionContext['emit'];
-}): Promise<{ exitCode: number; timedOut: boolean; output: string }> {
+}): Promise<{
+  exitCode: number;
+  timedOut: boolean;
+  output: string;
+  artifact?: ShellOutputArtifact;
+}> {
   return options.runtime.execute({
     command: options.command,
     cwd: path.resolve(options.cwd),
@@ -439,6 +492,17 @@ async function executeShellCommand(options: {
       await options.emit?.({ type: 'stderr', message: chunk });
     },
   });
+}
+
+function formatForegroundShellOutput(output: string, artifact?: ShellOutputArtifact): string {
+  if (!artifact?.truncated) {
+    return output;
+  }
+
+  const lines = [output.trim()];
+  lines.push(`Full output saved to: ${artifact.combinedPath}`);
+  lines.push(`Metadata saved to: ${artifact.metaPath}`);
+  return lines.filter((line) => line.length > 0).join('\n');
 }
 
 function buildApprovalReason(
