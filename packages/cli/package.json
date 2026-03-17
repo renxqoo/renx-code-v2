@@ -17,7 +17,7 @@
   "scripts": {
     "build": "pnpm --filter @renx-code/core build && tsc -p tsconfig.build.json",
     "dev": "pnpm --filter @renx-code/core build && bun run src/index.tsx",
-    "test:run:bun": "bun test --preload ./test/setup-dom.ts src/context-usage-regressions.test.ts src/commands src/components src/files src/hooks src/runtime/cli-args.test.ts src/runtime/clipboard.test.ts src/runtime/terminal-theme.test.ts src/ui",
+    "test:run:bun": "bun test --no-cache --preload ./test/setup-dom.ts src/context-usage-regressions.test.ts src/commands src/components src/files src/hooks src/runtime/cli-args.test.ts src/runtime/clipboard.test.ts src/runtime/terminal-theme.test.ts src/ui",
     "test:run:vitest": "vitest run src/agent/runtime src/runtime/exit.test.ts src/runtime/runtime-support.test.ts",
     "test:run": "pnpm --filter @renx-code/core build && pnpm run test:run:bun && pnpm run test:run:vitest",
     "typecheck": "pnpm --filter @renx-code/core build && tsc -p tsconfig.json --noEmit"
