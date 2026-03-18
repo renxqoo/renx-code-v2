@@ -19,7 +19,7 @@ export {
   RENX_HOME_ENV,
   writeGlobalConfig,
   writeProjectConfig,
-} from './config';
+} from './config/index';
 export type {
   ConfigModelDefinition,
   FileHistoryConfig,
@@ -32,16 +32,16 @@ export type {
   RuntimeConfig,
   RuntimeLogConfig,
   StorageConfig,
-} from './config';
-export * from './logger';
-export * from './providers';
+} from './config/index';
+export * from './logger/index';
+export * from './providers/index';
 export * from './agent/error-contract';
-export * from './agent/app';
-export * from './agent/agent';
-export * from './agent/auth';
+export * from './agent/app/index';
+export * from './agent/agent/index';
+export * from './agent/auth/index';
 export { buildSystemPrompt } from './agent/prompts/system';
 export type { AgentContextUsage, Message, ToolConfirmInfo, ToolDecision } from './agent/types';
 export type { AgentLogger } from './agent/agent/logger';
 export { createAgentLoggerAdapter } from './agent/agent/logger';
-export * from './agent/tool-v2';
+export * from './agent/tool-v2/index';
 export * from './cli-contracts';
