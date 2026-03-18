@@ -839,7 +839,10 @@ function createId(prefix: string): string {
   return `${prefix}${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 }
 
-function normalizeBootstrapMessages(historyMessages: Message[], bootstrapMessages?: Message[]): Message[] {
+function normalizeBootstrapMessages(
+  historyMessages: Message[],
+  bootstrapMessages?: Message[]
+): Message[] {
   if (!bootstrapMessages || bootstrapMessages.length === 0) {
     return [];
   }

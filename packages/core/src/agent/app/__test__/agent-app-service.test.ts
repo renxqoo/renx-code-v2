@@ -245,13 +245,15 @@ describe('AgentAppService', () => {
       'user',
       'assistant',
     ]);
-    expect(historyMessages.filter((message) => message.messageId === 'msg_bootstrap_1')).toHaveLength(1);
+    expect(
+      historyMessages.filter((message) => message.messageId === 'msg_bootstrap_1')
+    ).toHaveLength(1);
 
     const firstRunEvents = await app.listRunEvents('exec_bootstrap_1');
     expect(
       firstRunEvents
         .filter((event) => event.eventType === 'user_message')
-        .map((event) => ((event.data as { message?: { messageId?: string } }).message?.messageId))
+        .map((event) => (event.data as { message?: { messageId?: string } }).message?.messageId)
     ).toEqual(['msg_bootstrap_1', expect.stringMatching(/^msg_usr_/)]);
   });
 

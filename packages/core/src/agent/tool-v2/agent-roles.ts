@@ -78,7 +78,7 @@ export const DEFAULT_SUBAGENT_ROLES: Record<string, SubagentRole> = {
   'find-skills': {
     name: 'find-skills',
     description: 'Skill discovery and installation specialist using available v2 tools.',
-    systemPrompt:`# Role
+    systemPrompt: `# Role
 You are a **Skill Discovery and Installation Specialist**.
 Your goal is to **help the parent agent quickly and reliably find the correct skill required to complete a task.**
 ## Workflow

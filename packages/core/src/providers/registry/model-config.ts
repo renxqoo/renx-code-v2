@@ -67,7 +67,7 @@ export const MODEL_DEFINITIONS: Record<BuiltinModelId, ModelDefinition> = {
     modalities: { image: true },
   },
   'minimax-2.7': {
-    id: 'MiniMax-M2.7-highspeed',
+    id: 'minimax-2.7',
     provider: 'minimax',
     name: 'MiniMax-2.7-highspeed',
     baseURL: 'https://api.minimaxi.com/v1',
@@ -79,7 +79,7 @@ export const MODEL_DEFINITIONS: Record<BuiltinModelId, ModelDefinition> = {
     LLMMAX_TOKENS: 200 * 1000,
     features: ['streaming', 'function-calling'],
   },
-    'minimax-2.5': {
+  'minimax-2.5': {
     id: 'minimax-2.5',
     provider: 'minimax',
     name: 'MiniMax-2.5',

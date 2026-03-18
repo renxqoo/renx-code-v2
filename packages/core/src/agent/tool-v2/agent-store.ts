@@ -87,6 +87,7 @@ export class FileSubagentExecutionStore implements SubagentExecutionStore {
     );
     await fs.writeFile(tempPath, JSON.stringify(state, null, 2), 'utf8');
     try {
+      await fs.rm(this.filePath, { force: true });
       await fs.rename(tempPath, this.filePath);
     } finally {
       await fs.rm(tempPath, { force: true });

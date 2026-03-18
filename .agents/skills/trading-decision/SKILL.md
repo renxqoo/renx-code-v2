@@ -55,15 +55,15 @@ A systematic multi-agent framework for making stock trading decisions through co
 
 ### 数据需求规范
 
-| 分析师 | 数据类别 | 必需字段 | 格式要求 |
-|--------|----------|----------|----------|
-| Market Analyst | 价格数据 | open, high, low, close, volume, date | OHLCV DataFrame |
-| Market Analyst | 技术指标 | 指标名称 + 计算值 | Key-Value |
-| Social Analyst | 社交数据 | platform, sentiment_score, content, date | Array |
-| News Analyst | 新闻数据 | headline, source, date, sentiment | Array |
-| News Analyst | 内幕情绪 | insider_sentiment_score, buy_ratio, sell_ratio | Object |
-| Fundamentals Analyst | 公司概况 | market_cap, pe_ratio, eps, industry | Object |
-| Fundamentals Analyst | 现金流量 | operating_cf, investing_cf, financing_cf, free_cf | Object |
+| 分析师               | 数据类别 | 必需字段                                          | 格式要求        |
+| -------------------- | -------- | ------------------------------------------------- | --------------- |
+| Market Analyst       | 价格数据 | open, high, low, close, volume, date              | OHLCV DataFrame |
+| Market Analyst       | 技术指标 | 指标名称 + 计算值                                 | Key-Value       |
+| Social Analyst       | 社交数据 | platform, sentiment_score, content, date          | Array           |
+| News Analyst         | 新闻数据 | headline, source, date, sentiment                 | Array           |
+| News Analyst         | 内幕情绪 | insider_sentiment_score, buy_ratio, sell_ratio    | Object          |
+| Fundamentals Analyst | 公司概况 | market_cap, pe_ratio, eps, industry               | Object          |
+| Fundamentals Analyst | 现金流量 | operating_cf, investing_cf, financing_cf, free_cf | Object          |
 
 ### 数据接口实现示例
 
@@ -74,14 +74,14 @@ A systematic multi-agent framework for making stock trading decisions through co
 
 class StockDataProvider:
     """股票价格数据接口 - 必需"""
-    
+
     def get_ohlcv(self, ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
         """
         获取OHLCV数据
         Returns: DataFrame with columns [date, open, high, low, close, volume]
         """
         pass
-    
+
     def get_indicators(self, ticker: str, indicator_names: List[str], date: str) -> Dict:
         """
         获取技术指标
@@ -92,7 +92,7 @@ class StockDataProvider:
 
 class SentimentDataProvider:
     """社交情绪数据接口 - 必需"""
-    
+
     def get_social_sentiment(self, ticker: str, start_date: str, end_date: str) -> List[Dict]:
         """
         Returns: [{platform, sentiment_score, content, date}, ...]
@@ -101,13 +101,13 @@ class SentimentDataProvider:
 
 class NewsDataProvider:
     """新闻数据接口 - 必需"""
-    
+
     def get_news(self, ticker: str, start_date: str, end_date: str) -> List[Dict]:
         """
         Returns: [{headline, source, date, sentiment}, ...]
         """
         pass
-    
+
     def get_insider_transactions(self, ticker: str, date: str) -> List[Dict]:
         """
         Returns: [{insider_name, transaction_type, shares, date}, ...]
@@ -116,19 +116,19 @@ class NewsDataProvider:
 
 class FundamentalsDataProvider:
     """基本面数据接口 - 必需"""
-    
+
     def get_company_profile(self, ticker: str) -> Dict:
         """Returns: {industry, market_cap, pe_ratio, eps, ...}"""
         pass
-    
+
     def get_income_statement(self, ticker: str, period: str) -> Dict:
         """Returns: {revenue, net_income, eps, ...}"""
         pass
-    
+
     def get_balance_sheet(self, ticker: str, period: str) -> Dict:
         """Returns: {total_assets, total_debt, equity, ...}"""
         pass
-    
+
     def get_cashflow(self, ticker: str, period: str) -> Dict:
         """Returns: {operating_cf, investing_cf, financing_cf, ...}"""
         pass
@@ -151,25 +151,27 @@ DATA_PROVIDERS = {
 
 ### 支持的数据源类型
 
-| 类型 | 示例 | 适配方式 |
-|------|------|----------|
-| REST API | Alpha Vantage, Finnhub, Yahoo Finance | HTTP请求封装 |
-| Web Scraping | 网页爬取 | BeautifulSoup/Selenium |
-| Database | MySQL, PostgreSQL | SQL查询 |
-| Files | CSV, Excel, JSON | 文件读取解析 |
-| WebSocket | 实时行情 | WebSocket客户端 |
-| GraphQL | 自定义API | GraphQL客户端 |
+| 类型         | 示例                                  | 适配方式               |
+| ------------ | ------------------------------------- | ---------------------- |
+| REST API     | Alpha Vantage, Finnhub, Yahoo Finance | HTTP请求封装           |
+| Web Scraping | 网页爬取                              | BeautifulSoup/Selenium |
+| Database     | MySQL, PostgreSQL                     | SQL查询                |
+| Files        | CSV, Excel, JSON                      | 文件读取解析           |
+| WebSocket    | 实时行情                              | WebSocket客户端        |
+| GraphQL      | 自定义API                             | GraphQL客户端          |
 
 ## Phase 1: Analyst Team (Sequential)
 
 Execute four analytical modules in order:
 
 ### 1.1 Market Analyst
+
 **Role**: Technical analysis expert
 **Data Needs**: OHLCV data, Technical indicators
 **Output**: `market_report`
 
 **Indicators to select (up to 8)**:
+
 - Moving Averages: `close_10_ema`, `close_50_sma`, `close_200_sma`
 - MACD Family: `macd`, `macds`, `macdh`
 - Momentum: `rsi`, `mfi`
@@ -177,39 +179,46 @@ Execute four analytical modules in order:
 - Volume: `vwma`
 
 **Analysis Requirements**:
+
 - Detailed trend analysis with support/resistance levels
 - Signal interpretation for each indicator
 - Price-volume relationship
 - No generic "mixed signals" - provide specific actionable insights
 
 ### 1.2 Social Media Analyst
+
 **Role**: Sentiment analyst
 **Data Needs**: Social media posts, sentiment scores
 **Output**: `sentiment_report`
 
 **Analysis Requirements**:
+
 - Social media sentiment trends (positive/negative/neutral)
 - Sentiment score and trajectory
 - Key discussion themes
 - Public perception impact assessment
 
 ### 1.3 News Analyst
+
 **Role**: News and macro analyst
 **Data Needs**: News articles, insider transactions
 **Output**: `news_report`
 
 **Analysis Requirements**:
+
 - Recent news impact on stock
 - Insider activity analysis (sentiment + transactions)
 - Macroeconomic context
 - Event-driven opportunities/risks
 
 ### 1.4 Fundamentals Analyst
+
 **Role**: Financial analyst
 **Data Needs**: Financial statements, company profile
 **Output**: `fundamentals_report`
 
 **Analysis Requirements**:
+
 - Company profile (industry, market cap, P/E, EPS)
 - Financial health (revenue growth, profit margins, debt levels)
 - Balance sheet strength
@@ -221,21 +230,25 @@ Execute four analytical modules in order:
 ## Phase 2: Research Team (Debate Loop)
 
 ### 2.1 Bull Researcher
+
 **Role**: Advocate for investment
 **Memory**: Access to similar historical situations
 **Output**: Bull case with evidence-based arguments
 
 ### 2.2 Bear Researcher
+
 **Role**: Advocate against investment
 **Memory**: Access to similar historical situations
 **Output**: Bear case with risk-focused arguments
 
 ### 2.3 Research Manager
+
 **Role**: Portfolio manager and debate facilitator
 **Model**: Deep thinking model (e.g., o1-preview)
 **Output**: `investment_plan`
 
 **Decision Requirements**:
+
 - Summarize key bull and bear arguments
 - Make definitive decision: **BUY / SELL / HOLD**
 - **AVOID defaulting to HOLD** - commit when evidence is clear
@@ -246,10 +259,12 @@ Execute four analytical modules in order:
 ## Phase 3: Trading Team
 
 ### 3.1 Trader
+
 **Role**: Execute investment plan
 **Output**: `trader_investment_plan`
 
 **Responsibilities**:
+
 - Transform investment plan into specific trading strategy
 - Determine order type (market/limit)
 - Calculate position size
@@ -260,15 +275,19 @@ Execute four analytical modules in order:
 ## Phase 4: Risk Management Team (Risk Debate Loop)
 
 ### 4.1 Risky Analyst
+
 **Role**: Champion high-risk/high-reward opportunities
 
 ### 4.2 Safe Analyst
+
 **Role**: Prioritize capital preservation
 
 ### 4.3 Neutral Analyst
+
 **Role**: Balance risk and return
 
 ### 4.4 Risk Judge
+
 **Role**: Final risk assessment
 **Output**: `final_trade_decision`
 
@@ -280,29 +299,35 @@ Execute four analytical modules in order:
 # Trading Decision Report - {TICKER}
 
 ## Executive Summary
+
 **FINAL DECISION: BUY/SELL/HOLD**
 **Confidence: High/Medium/Low**
 
 ## Analyst Team Reports
+
 [All four analyst reports]
 
 ## Research Team Debate
+
 [Bull/Bear arguments and Research Manager decision]
 
 ## Trading Strategy
+
 [Specific trading plan]
 
 ## Risk Assessment
+
 [Three-perspective risk analysis and Risk Judge decision]
 
 ## Execution Details
-| Parameter | Value |
-|-----------|-------|
-| Entry Price | $XXX |
-| Stop Loss | $XXX |
-| Take Profit | $XXX |
-| Position Size | XX% |
-| Risk/Reward | X:1 |
+
+| Parameter     | Value |
+| ------------- | ----- |
+| Entry Price   | $XXX  |
+| Stop Loss     | $XXX  |
+| Take Profit   | $XXX  |
+| Position Size | XX%   |
+| Risk/Reward   | X:1   |
 ```
 
 ## Configuration
