@@ -15,6 +15,7 @@ export {
   resolveRenxLogsDir,
   resolveRenxStorageRoot,
   resolveRenxTaskDir,
+  resolveRenxSkillsDir,
   RENX_HOME_ENV,
   writeGlobalConfig,
   writeProjectConfig,

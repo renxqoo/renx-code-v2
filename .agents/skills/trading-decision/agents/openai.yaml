@@ -1,0 +1,3 @@
+display_name: Trading Decision Agent
+short_description: Multi-agent framework for stock trading decisions through comprehensive analysis, structured debate, and risk assessment.
+default_prompt: Analyze [TICKER] stock and provide a trading decision (BUY/SELL/HOLD) with detailed rationale.

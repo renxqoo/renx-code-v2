@@ -50,6 +50,7 @@ type AgentMessage = {
   type?: string;
   content: unknown;
   timestamp?: number;
+  metadata?: Record<string, unknown>;
 };
 type AgentCliEvent = {
   eventType: string;
@@ -111,6 +112,7 @@ type AgentAppRunRequestLike = {
   conversationId: string;
   userInput: MessageContent;
   historyMessages?: AgentV4MessageLike[];
+  bootstrapMessages?: AgentV4MessageLike[];
   systemPrompt?: string;
   tools?: Array<{ type: string; function: Record<string, unknown> }>;
   config?: Record<string, unknown>;
@@ -217,6 +219,13 @@ export type SourceModules = {
   loadConfigToEnv: (options?: Record<string, unknown>) => string[];
   resolveRenxDatabasePath: (env?: NodeJS.ProcessEnv) => string;
   resolveRenxTaskDir: (env?: NodeJS.ProcessEnv) => string;
+  resolveRenxSkillsDir: (env?: NodeJS.ProcessEnv) => string;
+  listAvailableSkills: (options?: { skillRoots?: string[] }) => Array<{
+    name: string;
+    description: string;
+    path: string;
+  }>;
+  formatAvailableSkillsForBootstrap: (skills: Array<{ name: string; description: string }>) => string;
   createLoggerFromEnv: (env?: NodeJS.ProcessEnv, cwd?: string) => unknown;
   createAgentLoggerAdapter: (
     logger: Record<string, unknown>,
@@ -248,6 +257,10 @@ const loadSourceModules = async (): Promise<SourceModules> => {
     resolveRenxDatabasePath:
       core.resolveRenxDatabasePath as SourceModules['resolveRenxDatabasePath'],
     resolveRenxTaskDir: core.resolveRenxTaskDir as SourceModules['resolveRenxTaskDir'],
+    resolveRenxSkillsDir: core.resolveRenxSkillsDir as SourceModules['resolveRenxSkillsDir'],
+    listAvailableSkills: core.listAvailableSkills as SourceModules['listAvailableSkills'],
+    formatAvailableSkillsForBootstrap:
+      core.formatAvailableSkillsForBootstrap as SourceModules['formatAvailableSkillsForBootstrap'],
     createLoggerFromEnv: core.createLoggerFromEnv as SourceModules['createLoggerFromEnv'],
     createAgentLoggerAdapter:
       core.createAgentLoggerAdapter as SourceModules['createAgentLoggerAdapter'],

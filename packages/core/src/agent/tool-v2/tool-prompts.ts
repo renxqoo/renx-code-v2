@@ -6,6 +6,8 @@ Use local_shell as the default tool for:
 - build, test, lint, and git commands
 - focused environment checks
 
+Do not treat local_shell-only exploration as the default for broad, open-ended, project-wide analysis when the work can be split into independent branches.
+
 Prefer other tools when available:
 - use read_file when you already know the file path
 - use file_edit for precise edits to existing files
@@ -115,6 +117,8 @@ When to use the agent tool:
 - Open-ended exploration or research that will likely take multiple searches.
 - Parallel, independent branches of investigation.
 - Broad codebase search only when you are not confident a direct local_shell query will find the right match in the first few tries.
+- Project-wide analysis, architecture review, risk audit, or "deeply analyze this repository" style requests after a quick decomposition step identifies independent branches.
+- Requests such as "deeply analyze the current project", "analyze this repository", "audit this codebase", "review the architecture", "identify major risks", "全面分析当前项目", or "深度分析当前项目" unless the user explicitly asks for single-agent handling.
 
 When NOT to use the agent tool:
 - If you already know the file path, use read_file.
@@ -124,12 +128,18 @@ When NOT to use the agent tool:
 Usage notes:
 - Always include a short description (3-5 words) summarizing the subagent run.
 - Always set role explicitly to the agent you want.
+- For open-ended project-wide analysis, decompose first; if there are 2 or more independent branches, you must launch subagents for those branches instead of keeping all investigation in the parent agent.
+- For strong-trigger analysis requests, prefer launching at least 2 subagents when independent branches exist and spawn_agent is available.
+- Use the parent agent for orchestration and synthesis, not as the only investigator.
+- The parent agent should own decomposition, branch assignment, and final synthesis.
 - Use foreground execution when you need the result before continuing.
 - Use runInBackground=true only when the work is genuinely independent.
 - For background runs, use task_output to retrieve status/output later and task_stop to cancel when needed.
 - Launch multiple task calls in parallel when the work is independent.
 - The subagent result is returned to you through the tool response; summarize relevant findings to the user.
 - Provide a clear prompt that states whether the subagent should research only or also make code changes.
+- If you decide not to spawn subagents for a complex open-ended task, make that decision explicit and give the reason.
+- Do not treat a handful of parent-agent shell searches as sufficient for a strong-trigger analysis request unless a skip condition clearly applies.
 - For direct needle queries, prefer direct tools first (local_shell/read_file/file_edit).
 - Default workflow: use local_shell to locate candidates, read_file to inspect exact files, and file_edit or write_file only when you are ready to change code.`;
 

@@ -7,6 +7,7 @@ import { SubagentPlatform } from '../agent-runner';
 import { attachSubagentParentAbortCascade } from '../task-parent-abort';
 import { linkTaskToSubagentStart, resolveLinkedTaskBinding } from '../task-orchestration';
 import type { TaskStateStoreV2 } from '../task-store';
+import { TASK_TOOL_DESCRIPTION } from '../tool-prompts';
 
 const schema = z
   .object({
@@ -38,16 +39,6 @@ const schema = z
   })
   .strict();
 
-const SPAWN_AGENT_TOOL_DESCRIPTION = `Launch a subagent to handle complex, multi-step work autonomously.
-
-Usage notes:
-- role selects the configured subagent role to launch.
-- prompt should contain the actual instructions for the subagent.
-- description should be a short human-readable summary of the run.
-- Use wait_agents when you need to block for completion.
-- Use agent_status for a non-blocking status/output projection.
-- Use cancel_agent to stop a running subagent.
-- Use runInBackground=true only when the work is independent of the current turn.`;
 
 export class SpawnAgentToolV2 extends StructuredToolHandler<typeof schema> {
   constructor(
@@ -56,7 +47,7 @@ export class SpawnAgentToolV2 extends StructuredToolHandler<typeof schema> {
   ) {
     super({
       name: 'spawn_agent',
-      description: SPAWN_AGENT_TOOL_DESCRIPTION,
+      description: TASK_TOOL_DESCRIPTION,
       schema,
       outputSchema: subagentRecordSchema,
       supportsParallel: true,

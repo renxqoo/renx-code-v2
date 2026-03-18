@@ -155,4 +155,31 @@ describe('selectCompactionWindow', () => {
 
     expect(result.previousSummary).toBe('中文摘要');
   });
+
+  it('preserves fixed bootstrap user messages ahead of the summary window', () => {
+    const result = selectCompactionWindow(
+      [
+        createMessage({ messageId: 's1', type: 'system', role: 'system', content: 'sys' }),
+        createMessage({
+          messageId: 'boot_1',
+          type: 'user',
+          role: 'user',
+          content: 'Available skills for this conversation',
+          metadata: {
+            bootstrap: true,
+            bootstrapKey: 'available-skills-v1',
+            preserveInContext: true,
+            fixedPosition: 'after-system',
+          },
+        }),
+        createMessage({ messageId: 'u1', type: 'user', role: 'user', content: 'older question' }),
+        createMessage({ messageId: 'u2', type: 'user', role: 'user', content: 'latest question' }),
+      ],
+      1
+    );
+
+    expect(result.preservedPrefixMessages.map((message) => message.messageId)).toEqual(['boot_1']);
+    expect(result.pendingMessages.map((message) => message.messageId)).toEqual(['u1']);
+    expect(result.activeMessages.map((message) => message.messageId)).toEqual(['u2']);
+  });
 });

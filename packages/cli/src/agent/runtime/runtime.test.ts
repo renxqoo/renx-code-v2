@@ -1,4 +1,5 @@
 import * as path from 'node:path';
+import * as os from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./tool-confirmation', () => ({
@@ -166,6 +167,18 @@ const buildMockModules = (
     loadConfigToEnv: vi.fn().mockReturnValue([]),
     resolveRenxDatabasePath: vi.fn(() => path.join(renxHome, 'data.db')),
     resolveRenxTaskDir: vi.fn(() => path.join(renxHome, 'task')),
+    resolveRenxSkillsDir: vi.fn(() => path.join(renxHome, 'skills')),
+    listAvailableSkills: vi.fn(() => [
+      {
+        name: 'skill-creator',
+        description: 'Create skills',
+        path: path.join(renxHome, 'skills', 'skill-creator'),
+      },
+    ]),
+    formatAvailableSkillsForBootstrap: vi.fn(
+      (skills: Array<{ name: string; description: string }>) =>
+        `Available skills: ${skills.map((skill) => skill.name).join(', ')}.`
+    ),
     createLoggerFromEnv: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() })),
     createAgentLoggerAdapter: vi.fn((logger: Record<string, unknown>) => ({
       info: typeof logger.info === 'function' ? logger.info.bind(logger) : undefined,
@@ -287,6 +300,28 @@ describe('runtime', () => {
     await expect(getAgentModelId()).resolves.toBe('glm-5');
   });
 
+  it('falls back to the configured CLI default model when AGENT_MODEL is unset', async () => {
+    const modules = buildMockModules({
+      ProviderRegistry: {
+        getModelIds: () => ['minimax-2.5', 'glm-5'],
+        getModelConfig: (modelId: string) => ({
+          name: modelId === 'minimax-2.5' ? 'MiniMax 2.5' : 'GLM-5',
+          envApiKey: 'TEST_API_KEY',
+          provider: modelId === 'minimax-2.5' ? 'minimax' : 'zhipu',
+          model: modelId,
+        }),
+        createFromEnv: () => ({}),
+      },
+      loadConfigToEnv: vi.fn().mockReturnValue([]),
+    });
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    await expect(getAgentModelId()).resolves.toBe('minimax-2.5');
+    await expect(getAgentModelLabel()).resolves.toBe('MiniMax 2.5');
+  });
+
   it('uses AGENT_MODEL loaded from config before runtime initialization', async () => {
     const modules = buildMockModules({
       ProviderRegistry: {
@@ -406,6 +441,174 @@ describe('runtime', () => {
     });
   });
 
+  it('injects a single bootstrap user message describing available skills on first turn', async () => {
+    const modules = buildMockModules();
+    const appServiceClass = modules.AgentAppService as {
+      lastRequest?: {
+        bootstrapMessages?: Array<{ content?: unknown; metadata?: Record<string, unknown> }>;
+      };
+    };
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    await runAgentPrompt('Test prompt', {});
+
+    expect(appServiceClass.lastRequest?.bootstrapMessages).toHaveLength(1);
+    expect(appServiceClass.lastRequest?.bootstrapMessages?.[0]).toMatchObject({
+      content: 'Available skills: skill-creator.',
+      metadata: expect.objectContaining({
+        bootstrapKey: 'available-skills-bootstrap-v1',
+        preserveInContext: true,
+        fixedPosition: 'after-system',
+      }),
+    });
+  });
+
+  it('does not inject the skills bootstrap message again when history already contains it', async () => {
+    const modules = buildMockModules({
+      AgentAppService: class FakeAppServiceWithBootstrapHistory {
+        static lastRequest: unknown;
+
+        async listContextMessages() {
+          return [
+            {
+              messageId: 'msg_bootstrap_1',
+              role: 'user' as const,
+              type: 'user' as const,
+              content: 'Available skills: skill-creator.',
+              timestamp: Date.now(),
+              metadata: {
+                bootstrapKey: 'available-skills-bootstrap-v1',
+              },
+            },
+          ];
+        }
+
+        async getRun() {
+          return null;
+        }
+
+        async runForeground(request: unknown) {
+          FakeAppServiceWithBootstrapHistory.lastRequest = request;
+          return {
+            executionId: 'exec_runtime',
+            conversationId: 'conv_runtime',
+            messages: [],
+            events: [],
+            finishReason: 'stop' as const,
+            steps: 1,
+            run: {
+              executionId: 'exec_runtime',
+              runId: 'exec_runtime',
+              conversationId: 'conv_runtime',
+              status: 'COMPLETED' as const,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              stepIndex: 1,
+            },
+          };
+        }
+
+        async appendUserInputToRun() {
+          return { accepted: true };
+        }
+      },
+    });
+    const appServiceClass = modules.AgentAppService as {
+      lastRequest?: { bootstrapMessages?: unknown[] };
+    };
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    await runAgentPrompt('Test prompt', {});
+
+    expect(appServiceClass.lastRequest?.bootstrapMessages).toBeUndefined();
+  });
+
+  it('does not surface bootstrap or initial user_message events as follow-up user messages', async () => {
+    const modules = buildMockModules({
+      AgentAppService: class FakeAppServiceWithUserMessages {
+        async listContextMessages() {
+          return [];
+        }
+
+        async getRun() {
+          return null;
+        }
+
+        async runForeground(
+          _request: unknown,
+          callbacks?: {
+            onEvent?: (event: { eventType: string; data: unknown; createdAt: number }) => void;
+          }
+        ) {
+          await callbacks?.onEvent?.({
+            eventType: 'user_message',
+            createdAt: Date.now(),
+            data: {
+              stepIndex: 0,
+              message: {
+                messageId: 'msg_bootstrap_1',
+                role: 'user',
+                type: 'user',
+                content: 'Available skills: skill-creator.',
+                metadata: {
+                  bootstrap: true,
+                  bootstrapKey: 'available-skills-bootstrap-v1',
+                },
+              },
+            },
+          });
+          await callbacks?.onEvent?.({
+            eventType: 'user_message',
+            createdAt: Date.now(),
+            data: {
+              stepIndex: 0,
+              message: {
+                messageId: 'msg_usr_1',
+                role: 'user',
+                type: 'user',
+                content: 'Test prompt',
+              },
+            },
+          });
+
+          return {
+            executionId: 'exec_runtime',
+            conversationId: 'conv_runtime',
+            messages: [],
+            events: [],
+            finishReason: 'stop' as const,
+            steps: 1,
+            run: {
+              executionId: 'exec_runtime',
+              runId: 'exec_runtime',
+              conversationId: 'conv_runtime',
+              status: 'COMPLETED' as const,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              stepIndex: 1,
+            },
+          };
+        }
+
+        async appendUserInputToRun() {
+          return { accepted: true };
+        }
+      },
+    });
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    const onUserMessage = vi.fn();
+    await runAgentPrompt('Test prompt', { onUserMessage });
+
+    expect(onUserMessage).not.toHaveBeenCalled();
+  });
+
   it('enables full access mode from AGENT_FULL_ACCESS', async () => {
     process.env.AGENT_FULL_ACCESS = 'true';
     const modules = buildMockModules();
@@ -425,6 +628,16 @@ describe('runtime', () => {
         builtIns: expect.objectContaining({
           shell: {
             profile: { name: 'full-access-profile' },
+          },
+          skill: {
+            loaderOptions: {
+              skillRoots: [
+                path.join(os.homedir(), '.agents', 'skills'),
+                path.join(renxHome, 'skills'),
+                '/test/workspace/.agents/skills',
+                '/test/workspace/.renx/skills',
+              ],
+            },
           },
         }),
       })

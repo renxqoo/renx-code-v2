@@ -40,6 +40,7 @@ export interface RunForegroundRequest {
   executionId?: string;
   principal?: AgentInput['principal'];
   historyMessages?: Message[];
+  bootstrapMessages?: Message[];
   systemPrompt?: string;
   tools?: Tool[];
   config?: LLMGenerateOptions;
@@ -166,8 +167,9 @@ export class AgentAppService {
     const executionId = request.executionId ?? createId('exec_');
     const now = Date.now();
     const baseMessages = request.historyMessages ? [...request.historyMessages] : [];
+    const bootstrapMessages = normalizeBootstrapMessages(baseMessages, request.bootstrapMessages);
     const userMessage = createUserMessage(request.userInput);
-    const inputMessages = [...baseMessages, userMessage];
+    const inputMessages = [...baseMessages, ...bootstrapMessages, userMessage];
     const emittedMessages: Message[] = [];
     const events: CliEventEnvelope[] = [];
     let finishReason: RunFinishReason = 'error';
@@ -224,6 +226,9 @@ export class AgentAppService {
       return envelope;
     };
 
+    for (const bootstrapMessage of bootstrapMessages) {
+      await appendAndProject('user_message', { message: bootstrapMessage, stepIndex: 0 });
+    }
     await appendAndProject('user_message', { message: userMessage, stepIndex: 0 });
     await this.deps.executionStore.patch(executionId, {
       status: 'RUNNING',
@@ -832,6 +837,43 @@ function createUserMessage(content: MessageContent): Message {
 
 function createId(prefix: string): string {
   return `${prefix}${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+}
+
+function normalizeBootstrapMessages(historyMessages: Message[], bootstrapMessages?: Message[]): Message[] {
+  if (!bootstrapMessages || bootstrapMessages.length === 0) {
+    return [];
+  }
+
+  const existingKeys = new Set(
+    historyMessages
+      .map((message) => readBootstrapKey(message.metadata))
+      .filter((value): value is string => typeof value === 'string')
+  );
+  const acceptedKeys = new Set<string>();
+
+  return bootstrapMessages.filter((message) => {
+    if (message.role !== 'user' || isEmptyMessageContent(message.content)) {
+      return false;
+    }
+
+    const bootstrapKey = readBootstrapKey(message.metadata);
+    if (!bootstrapKey) {
+      return true;
+    }
+    if (existingKeys.has(bootstrapKey) || acceptedKeys.has(bootstrapKey)) {
+      return false;
+    }
+    acceptedKeys.add(bootstrapKey);
+    return true;
+  });
+}
+
+function readBootstrapKey(metadata: Message['metadata']): string | undefined {
+  if (!metadata || typeof metadata !== 'object') {
+    return undefined;
+  }
+  const value = metadata.bootstrapKey;
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

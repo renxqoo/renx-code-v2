@@ -7,3 +7,4 @@ coverage/
 *.swp
 .husky/_/
 .renx/cache/
+.renx

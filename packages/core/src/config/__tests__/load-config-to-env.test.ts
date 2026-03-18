@@ -145,7 +145,7 @@ describe('loadConfigToEnv', () => {
     const files = loadConfigToEnv({ projectRoot: tmpDir, globalDir });
     expect(files).toEqual([path.join(globalDir, 'config.json')]);
     expect(fs.existsSync(path.join(globalDir, 'config.json'))).toBe(true);
-    expect(process.env.AGENT_MODEL).toBe('qwen3.5-plus');
+    expect(process.env.AGENT_MODEL).toBe('minimax-2.5');
   });
 
   it('should load storage config', () => {

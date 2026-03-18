@@ -66,7 +66,20 @@ export const MODEL_DEFINITIONS: Record<BuiltinModelId, ModelDefinition> = {
     features: ['streaming', 'function-calling', 'vision'],
     modalities: { image: true },
   },
-  'minimax-2.5': {
+  'minimax-2.7': {
+    id: 'MiniMax-M2.7-highspeed',
+    provider: 'minimax',
+    name: 'MiniMax-2.7-highspeed',
+    baseURL: 'https://api.minimaxi.com/v1',
+    endpointPath: '/chat/completions',
+    envApiKey: 'MINIMAX_API_KEY',
+    envBaseURL: 'MINIMAX_API_URL',
+    model: 'MiniMax-M2.7-highspeed',
+    max_tokens: 8000,
+    LLMMAX_TOKENS: 200 * 1000,
+    features: ['streaming', 'function-calling'],
+  },
+    'minimax-2.5': {
     id: 'minimax-2.5',
     provider: 'minimax',
     name: 'MiniMax-2.5',

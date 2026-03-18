@@ -52,5 +52,6 @@ export {
   resolveRenxLogsDir,
   resolveRenxStorageRoot,
   resolveRenxTaskDir,
+  resolveRenxSkillsDir,
   resolveRenxDatabasePath,
 } from './paths';

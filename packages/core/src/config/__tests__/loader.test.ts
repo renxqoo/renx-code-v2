@@ -12,6 +12,7 @@ import {
   writeGlobalConfig,
   writeProjectConfig,
 } from '../loader';
+import { resolveRenxSkillsDir } from '../paths';
 import { LogLevel } from '../../logger';
 
 describe('Renx Config Loader', () => {
@@ -56,6 +57,10 @@ describe('Renx Config Loader', () => {
         path.join(path.sep, 'my', 'project', '.renx', 'config.json')
       );
     });
+
+    it('should return global skills dir', () => {
+      expect(resolveRenxSkillsDir()).toBe(path.join(renxHome, 'skills'));
+    });
   });
 
   describe('loadConfig with defaults', () => {
@@ -72,7 +77,7 @@ describe('Renx Config Loader', () => {
       expect(config.log.console).toBe(false);
       expect(config.log.file).toBe(true);
       expect(config.agent.maxSteps).toBe(10000);
-      expect(config.agent.defaultModel).toBe('qwen3.5-plus');
+      expect(config.agent.defaultModel).toBe('minimax-2.5');
       expect(config.storage.fileHistory.enabled).toBe(true);
       expect(config.sources.global).toBe(path.join(globalDir, 'config.json'));
       expect(config.sources.project).toBeNull();

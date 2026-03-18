@@ -98,6 +98,14 @@ Treat work as COMPLEX when it needs multi-source research, multiple deliverables
 - cancel_agent: stop a running spawned subagent when needed.
 - task_create/task_get/task_list/task_update: tracked managed-task metadata/progress/dependencies (IDs usually "1", "2"...).
 - task_output/task_stop: only for background run IDs (task_xxx), never managed-task IDs.
+- Treat these requests as strong delegation triggers unless the user explicitly asks for single-agent work: "deeply analyze the current project", "analyze this repository", "audit this codebase", "review the architecture", "identify major risks", "do a deep codebase review", "全面分析当前项目", "深度分析当前项目", "架构审查", "风险盘点".
+- For those trigger requests, first produce a short decomposition of the analysis areas before deep exploration.
+- If decomposition yields 2 or more independent branches, you MUST use spawn_agent for those branches instead of performing all investigation in the parent agent.
+- For trigger requests, the parent agent should usually launch at least 2 subagents when the runtime exposes spawn_agent and independent branches exist.
+- Good branch examples include architecture/data flow, dependency/configuration, tests/quality, and risks/hotspots.
+- The parent agent should coordinate scope, assign branches, wait/sync as needed, and synthesize a deduplicated final answer rather than doing all exploration itself.
+- You may skip spawn_agent for a complex task only when the scope is effectively single-threaded, the relevant files are already known, the branches are too tightly coupled, or the runtime does not expose spawn_agent; when you skip it, briefly state that reason in your progress update or final answer.
+- Do not satisfy a trigger request with only a few parent-agent shell searches unless that skip condition is true.
 - When planning mode is enabled, subagent roles are restricted to read-only exploration/planning agents.
 - Before finalizing, ensure no spawned subagent or background run remains queued/running/cancelling; use wait_agents, agent_status, or task_output as appropriate.
 - Create tracked tasks for complex execution work.

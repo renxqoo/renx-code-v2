@@ -1923,8 +1923,8 @@ describe('StatelessAgent', () => {
     manager.execute = vi.fn().mockResolvedValue({
       success: false,
       error: {
-        name: 'InvalidArgumentsError',
-        message: 'Invalid arguments format for tool write_file',
+        name: 'ToolV2ArgumentsError',
+        message: 'Invalid arguments for write_file: JSON Parse error: Unterminated string',
       },
     });
 
@@ -1951,7 +1951,9 @@ describe('StatelessAgent', () => {
     };
     expect(payload.ok).toBe(false);
     expect(payload.code).toBe('WRITE_FILE_PARTIAL_BUFFERED');
-    expect(payload.message).toContain('Invalid arguments format for tool write_file');
+    expect(payload.message).toContain(
+      'Invalid arguments for write_file: JSON Parse error: Unterminated string'
+    );
     expect(payload.buffer?.bufferId).toBe('wf_call_1');
     expect(payload.nextAction).toBe('finalize');
 

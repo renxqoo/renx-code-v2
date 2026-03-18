@@ -3,6 +3,7 @@ import { contentToText, processToolCallPairs } from '../utils/message';
 
 export type CompactionSelection = {
   systemMessage: Message | undefined;
+  preservedPrefixMessages: Message[];
   activeMessages: Message[];
   pendingMessages: Message[];
   previousSummary: string;
@@ -13,11 +14,17 @@ function splitMessages(
   keepMessagesNum: number
 ): {
   systemMessage: Message | undefined;
+  preservedPrefixMessages: Message[];
   pending: Message[];
   active: Message[];
 } {
   const systemMessage = messages.find((message) => message.role === 'system');
-  const nonSystemMessages = messages.filter((message) => message.role !== 'system');
+  const preservedPrefixMessages = messages.filter(
+    (message) => message.role !== 'system' && isPreservedPrefixMessage(message)
+  );
+  const nonSystemMessages = messages.filter(
+    (message) => message.role !== 'system' && !isPreservedPrefixMessage(message)
+  );
 
   let lastUserIndex = -1;
   for (let index = nonSystemMessages.length - 1; index >= 0; index -= 1) {
@@ -38,6 +45,7 @@ function splitMessages(
 
   return {
     systemMessage,
+    preservedPrefixMessages,
     pending: nonSystemMessages.slice(0, splitPoint),
     active: nonSystemMessages.slice(splitPoint),
   };
@@ -54,7 +62,10 @@ export function selectCompactionWindow(
   messages: Message[],
   keepMessagesNum: number
 ): CompactionSelection {
-  const { systemMessage, pending, active } = splitMessages(messages, keepMessagesNum);
+  const { systemMessage, preservedPrefixMessages, pending, active } = splitMessages(
+    messages,
+    keepMessagesNum
+  );
   const { pending: pairedPending, active: pairedActive } = processToolCallPairs(pending, active);
 
   const summaryMessages = pairedPending.filter((message) => message.type === 'summary');
@@ -63,8 +74,18 @@ export function selectCompactionWindow(
 
   return {
     systemMessage,
+    preservedPrefixMessages,
     activeMessages: pairedActive,
     pendingMessages,
     previousSummary: latestSummary ? contentToText(latestSummary.content).trim() : '',
   };
+}
+
+function isPreservedPrefixMessage(message: Message): boolean {
+  const metadata = message.metadata;
+  if (!metadata || typeof metadata !== 'object') {
+    return false;
+  }
+
+  return metadata.preserveInContext === true && metadata.fixedPosition === 'after-system';
 }

@@ -22,6 +22,7 @@ export type BuiltinModelId =
   | 'claude-opus-4.6'
   | 'glm-4.7'
   | 'minimax-2.5'
+  | 'minimax-2.7'
   | 'kimi-k2.5'
   | 'glm-5'
   | 'qwen3.5-plus'

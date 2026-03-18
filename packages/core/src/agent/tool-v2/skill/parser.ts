@@ -1,4 +1,4 @@
-import type { LoadedSkill } from './types';
+import type { LoadedSkill, SkillMetadata } from './types';
 
 export function formatSkillForContext(skill: LoadedSkill): string {
   const lines = [`## Skill: ${skill.metadata.name}`];
@@ -24,4 +24,8 @@ export function formatSkillForContext(skill: LoadedSkill): string {
   }
 
   return `${lines.join('\n')}\n`;
+}
+
+export function formatAvailableSkillsForBootstrap(skills: SkillMetadata[]): string {
+  return `Available skills: ${skills.map((skill) => skill.name).join(', ')}.`;
 }

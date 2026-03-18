@@ -50,6 +50,21 @@ export type PendingToolConfirm =
       selectedScope: ToolPermissionScope;
     });
 
+type PendingToolConfirmResolver =
+  | {
+      kind: 'approval';
+      resolve: (decision: AgentToolConfirmDecision) => void;
+    }
+  | {
+      kind: 'permission';
+      resolve: (grant: AgentToolPermissionGrant) => void;
+    };
+
+type PendingToolConfirmQueueEntry = {
+  prompt: PendingToolConfirm;
+  resolver: PendingToolConfirmResolver;
+};
+
 export type UseAgentChatResult = {
   turns: ChatTurn[];
   inputValue: string;
@@ -169,17 +184,8 @@ export const useAgentChat = (): UseAgentChatResult => {
   const activeRunPromiseRef = useRef<Promise<void> | null>(null);
   const pendingFollowUpTurnIdsRef = useRef<number[]>([]);
   const pendingToolConfirmRef = useRef<PendingToolConfirm | null>(null);
-  const pendingToolConfirmResolverRef = useRef<
-    | {
-        kind: 'approval';
-        resolve: (decision: AgentToolConfirmDecision) => void;
-      }
-    | {
-        kind: 'permission';
-        resolve: (grant: AgentToolPermissionGrant) => void;
-      }
-    | null
-  >(null);
+  const pendingToolConfirmResolverRef = useRef<PendingToolConfirmResolver | null>(null);
+  const pendingToolConfirmQueueRef = useRef<PendingToolConfirmQueueEntry[]>([]);
 
   useEffect(() => {
     pendingToolConfirmRef.current = pendingToolConfirm;
@@ -208,19 +214,67 @@ export const useAgentChat = (): UseAgentChatResult => {
     (decision: AgentToolConfirmDecision | AgentToolPermissionGrant) => {
       const resolver = pendingToolConfirmResolverRef.current;
       pendingToolConfirmResolverRef.current = null;
-      setPendingToolConfirm(null);
-      if (!resolver) {
+      if (resolver) {
+        if (resolver.kind === 'permission' && 'granted' in decision) {
+          resolver.resolve(decision);
+        }
+        if (resolver.kind === 'approval' && 'approved' in decision) {
+          resolver.resolve(decision);
+        }
+      }
+
+      const next = pendingToolConfirmQueueRef.current.shift() ?? null;
+      if (!next) {
+        setPendingToolConfirm(null);
         return;
       }
-      if (resolver.kind === 'permission' && 'granted' in decision) {
-        resolver.resolve(decision);
-        return;
-      }
-      if (resolver.kind === 'approval' && 'approved' in decision) {
-        resolver.resolve(decision);
-      }
+
+      pendingToolConfirmResolverRef.current = next.resolver;
+      setPendingToolConfirm(next.prompt);
     },
     []
+  );
+
+  const enqueuePendingToolConfirm = useCallback((entry: PendingToolConfirmQueueEntry) => {
+    if (!pendingToolConfirmResolverRef.current) {
+      pendingToolConfirmResolverRef.current = entry.resolver;
+      setPendingToolConfirm(entry.prompt);
+      return;
+    }
+
+    pendingToolConfirmQueueRef.current.push(entry);
+  }, []);
+
+  const cancelAllPendingToolConfirms = useCallback(
+    (message: string) => {
+      const currentPrompt = pendingToolConfirmRef.current;
+      const currentResolver = pendingToolConfirmResolverRef.current;
+      const queued = pendingToolConfirmQueueRef.current.splice(0);
+
+      pendingToolConfirmResolverRef.current = null;
+      setPendingToolConfirm(null);
+
+      if (currentResolver) {
+        const cancelled = buildCancelledToolPromptResult(currentPrompt, message);
+        if (currentResolver.kind === 'permission' && 'granted' in cancelled) {
+          currentResolver.resolve(cancelled);
+        }
+        if (currentResolver.kind === 'approval' && 'approved' in cancelled) {
+          currentResolver.resolve(cancelled);
+        }
+      }
+
+      for (const entry of queued) {
+        const cancelled = buildCancelledToolPromptResult(entry.prompt, message);
+        if (entry.resolver.kind === 'permission' && 'granted' in cancelled) {
+          entry.resolver.resolve(cancelled);
+        }
+        if (entry.resolver.kind === 'approval' && 'approved' in cancelled) {
+          entry.resolver.resolve(cancelled);
+        }
+      }
+    },
+    [buildCancelledToolPromptResult]
   );
 
   useEffect(() => {
@@ -253,24 +307,10 @@ export const useAgentChat = (): UseAgentChatResult => {
         currentPromise.catch(() => {}); // 防止未处理的rejection
       }
       activeAbortControllerRef.current?.abort();
-      const resolver = pendingToolConfirmResolverRef.current;
-      const prompt = pendingToolConfirmRef.current;
       pendingFollowUpTurnIdsRef.current = [];
-      pendingToolConfirmResolverRef.current = null;
-      if (resolver) {
-        const cancelled = buildCancelledToolPromptResult(
-          prompt,
-          'Tool confirmation cancelled because the UI was closed.'
-        );
-        if (resolver.kind === 'permission' && 'granted' in cancelled) {
-          resolver.resolve(cancelled);
-        }
-        if (resolver.kind === 'approval' && 'approved' in cancelled) {
-          resolver.resolve(cancelled);
-        }
-      }
+      cancelAllPendingToolConfirms('Tool confirmation cancelled because the UI was closed.');
     };
-  }, [buildCancelledToolPromptResult]);
+  }, [cancelAllPendingToolConfirms]);
 
   const appendSegment = useCallback(
     (turnId: number, segmentId: string, type: ReplySegmentType, chunk: string, data?: unknown) => {
@@ -318,6 +358,7 @@ export const useAgentChat = (): UseAgentChatResult => {
       return;
     }
 
+    cancelAllPendingToolConfirms('Tool confirmation cancelled because the request was stopped.');
     requestIdRef.current += 1;
     activeAbortControllerRef.current?.abort();
     activeAbortControllerRef.current = null;
@@ -336,15 +377,10 @@ export const useAgentChat = (): UseAgentChatResult => {
         completionMessage: 'Stopped by user.',
       })
     );
-  }, [appendEventLine, isThinking]);
+  }, [appendEventLine, cancelAllPendingToolConfirms, isThinking]);
 
   const resetConversation = useCallback(() => {
-    resolvePendingToolConfirm(
-      buildCancelledToolPromptResult(
-        pendingToolConfirmRef.current,
-        'Tool confirmation cancelled because the conversation was reset.'
-      )
-    );
+    cancelAllPendingToolConfirms('Tool confirmation cancelled because the conversation was reset.');
     requestIdRef.current += 1;
     activeAbortControllerRef.current?.abort();
     activeAbortControllerRef.current = null;
@@ -353,7 +389,7 @@ export const useAgentChat = (): UseAgentChatResult => {
     setTurns([]);
     setSelectedFiles([]);
     setContextUsagePercent(() => null);
-  }, [buildCancelledToolPromptResult, resolvePendingToolConfirm]);
+  }, [cancelAllPendingToolConfirms]);
 
   const addTurn = useCallback(
     (prompt: string, withStreamingReply = false, files: PromptFileSelection[] = []): number => {
@@ -530,34 +566,16 @@ export const useAgentChat = (): UseAgentChatResult => {
             });
           }
 
-          if (pendingToolConfirmResolverRef.current) {
-            const cancelled = buildCancelledToolPromptResult(
-              pendingToolConfirmRef.current,
-              'Superseded by a newer tool confirmation request.'
-            );
-            if (
-              pendingToolConfirmResolverRef.current.kind === 'permission' &&
-              'granted' in cancelled
-            ) {
-              pendingToolConfirmResolverRef.current.resolve(cancelled);
-            }
-            if (
-              pendingToolConfirmResolverRef.current.kind === 'approval' &&
-              'approved' in cancelled
-            ) {
-              pendingToolConfirmResolverRef.current.resolve(cancelled);
-            }
-            pendingToolConfirmResolverRef.current = null;
-          }
-
           return new Promise<AgentToolConfirmDecision>((resolve) => {
-            pendingToolConfirmResolverRef.current = {
-              kind: 'approval',
-              resolve,
-            };
-            setPendingToolConfirm({
-              ...event,
-              selectedAction: 'approve',
+            enqueuePendingToolConfirm({
+              prompt: {
+                ...event,
+                selectedAction: 'approve',
+              },
+              resolver: {
+                kind: 'approval',
+                resolve,
+              },
             });
           });
         },
@@ -569,35 +587,17 @@ export const useAgentChat = (): UseAgentChatResult => {
             });
           }
 
-          if (pendingToolConfirmResolverRef.current) {
-            const cancelled = buildCancelledToolPromptResult(
-              pendingToolConfirmRef.current,
-              'Superseded by a newer tool confirmation request.'
-            );
-            if (
-              pendingToolConfirmResolverRef.current.kind === 'permission' &&
-              'granted' in cancelled
-            ) {
-              pendingToolConfirmResolverRef.current.resolve(cancelled);
-            }
-            if (
-              pendingToolConfirmResolverRef.current.kind === 'approval' &&
-              'approved' in cancelled
-            ) {
-              pendingToolConfirmResolverRef.current.resolve(cancelled);
-            }
-            pendingToolConfirmResolverRef.current = null;
-          }
-
           return new Promise<AgentToolPermissionGrant>((resolve) => {
-            pendingToolConfirmResolverRef.current = {
-              kind: 'permission',
-              resolve,
-            };
-            setPendingToolConfirm({
-              ...event,
-              selectedAction: 'approve',
-              selectedScope: event.requestedScope,
+            enqueuePendingToolConfirm({
+              prompt: {
+                ...event,
+                selectedAction: 'approve',
+                selectedScope: event.requestedScope,
+              },
+              resolver: {
+                kind: 'permission',
+                resolve,
+              },
             });
           });
         },
@@ -744,6 +744,7 @@ export const useAgentChat = (): UseAgentChatResult => {
     appendEventLine,
     appendSegment,
     attachmentCapabilities,
+    enqueuePendingToolConfirm,
     inputValue,
     addTurn,
     isThinking,

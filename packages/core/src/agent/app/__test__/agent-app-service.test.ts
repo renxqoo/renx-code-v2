@@ -177,6 +177,84 @@ describe('AgentAppService', () => {
     expect(runLogs.some((log) => log.message.includes('run.start'))).toBe(true);
   });
 
+  it('inserts bootstrap user messages once before the real user input', async () => {
+    const provider = createProvider();
+    const manager = createToolManager();
+    provider.generateStream = vi.fn().mockImplementation(() =>
+      toStream([
+        {
+          index: 0,
+          choices: [{ index: 0, delta: { content: 'Hello from bootstrap run' } }],
+        },
+        {
+          index: 0,
+          choices: [{ index: 0, delta: { finish_reason: 'stop' } as unknown as ChunkDelta }],
+        },
+      ])
+    );
+
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'renx-app-service-bootstrap-'));
+    store = new SqliteAgentAppStore(path.join(tempDir, 'agent.db'));
+    const agent = new StatelessAgent(provider, manager, {
+      maxRetryCount: 2,
+      backoffConfig: { initialDelayMs: 1, maxDelayMs: 1, base: 2, jitter: false },
+    });
+    const app = new AgentAppService({
+      agent,
+      executionStore: store,
+      eventStore: store,
+      messageStore: store,
+    });
+
+    const bootstrapMessage = {
+      messageId: 'msg_bootstrap_1',
+      type: 'user' as const,
+      role: 'user' as const,
+      content: 'Available skills for this conversation:\n- skill-creator: Create skills.',
+      timestamp: 1,
+      metadata: {
+        bootstrap: true,
+        bootstrapKey: 'available-skills-v1',
+        preserveInContext: true,
+        fixedPosition: 'after-system',
+      },
+    };
+
+    await app.runForeground({
+      conversationId: 'conv_bootstrap',
+      executionId: 'exec_bootstrap_1',
+      userInput: 'First prompt',
+      bootstrapMessages: [bootstrapMessage],
+      maxSteps: 3,
+    });
+
+    await app.runForeground({
+      conversationId: 'conv_bootstrap',
+      executionId: 'exec_bootstrap_2',
+      userInput: 'Second prompt',
+      historyMessages: await app.listContextMessages('conv_bootstrap'),
+      bootstrapMessages: [bootstrapMessage],
+      maxSteps: 3,
+    });
+
+    const historyMessages = await store.list('conv_bootstrap');
+    expect(historyMessages.map((message) => message.role)).toEqual([
+      'user',
+      'user',
+      'assistant',
+      'user',
+      'assistant',
+    ]);
+    expect(historyMessages.filter((message) => message.messageId === 'msg_bootstrap_1')).toHaveLength(1);
+
+    const firstRunEvents = await app.listRunEvents('exec_bootstrap_1');
+    expect(
+      firstRunEvents
+        .filter((event) => event.eventType === 'user_message')
+        .map((event) => ((event.data as { message?: { messageId?: string } }).message?.messageId))
+    ).toEqual(['msg_bootstrap_1', expect.stringMatching(/^msg_usr_/)]);
+  });
+
   it('emits usage callback with cumulative totals and agent-calculated context usage', async () => {
     const provider = createProvider();
     const manager = createToolManager();

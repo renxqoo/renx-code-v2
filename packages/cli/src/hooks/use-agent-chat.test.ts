@@ -257,4 +257,98 @@ describe('useAgentChat', () => {
     });
     expect(result.current.pendingToolConfirm).toBe(null);
   });
+
+  it('queues multiple tool confirmations instead of superseding the active one', async () => {
+    let firstDecision:
+      | {
+          approved: boolean;
+          message?: string;
+        }
+      | undefined;
+    let secondDecision:
+      | {
+          approved: boolean;
+          message?: string;
+        }
+      | undefined;
+
+    mockRunAgentPrompt.mockImplementation(
+      async (_prompt: unknown, handlers: Record<string, unknown>) => {
+        const confirm = handlers.onToolConfirmRequest as
+          | ((event: {
+              kind: 'approval';
+              toolCallId: string;
+              toolName: string;
+              reason?: string;
+              arguments: string;
+            }) => Promise<{ approved: boolean; message?: string }>)
+          | undefined;
+
+        if (!confirm) {
+          throw new Error('Missing confirm handler');
+        }
+
+        const firstPromise = confirm({
+          kind: 'approval',
+          toolCallId: 'call_1',
+          toolName: 'cancel_agent',
+          reason: 'Cancel first subagent',
+          arguments: '{"agentId":"subexec_1"}',
+        });
+        const secondPromise = confirm({
+          kind: 'approval',
+          toolCallId: 'call_2',
+          toolName: 'cancel_agent',
+          reason: 'Cancel second subagent',
+          arguments: '{"agentId":"subexec_2"}',
+        });
+
+        firstDecision = await firstPromise;
+        secondDecision = await secondPromise;
+
+        return {
+          text: 'done',
+          completionReason: 'stop',
+          durationSeconds: 0,
+          modelLabel: 'glm-5',
+        };
+      }
+    );
+
+    const { result } = renderHook(() => useAgentChat());
+
+    await waitFor(() => {
+      expect(result.current.modelLabel).toBe('glm-5');
+    });
+
+    act(() => {
+      result.current.setInputValue('cancel subagents');
+    });
+    act(() => {
+      result.current.submitInput();
+    });
+
+    await waitFor(() => {
+      expect(result.current.pendingToolConfirm?.toolCallId).toBe('call_1');
+    });
+
+    act(() => {
+      result.current.submitToolConfirmSelection();
+    });
+
+    await waitFor(() => {
+      expect(firstDecision).toEqual({ approved: true });
+      expect(result.current.pendingToolConfirm?.toolCallId).toBe('call_2');
+    });
+
+    act(() => {
+      result.current.submitToolConfirmSelection();
+    });
+
+    await waitFor(() => {
+      expect(secondDecision).toEqual({ approved: true });
+      expect(result.current.pendingToolConfirm).toBe(null);
+      expect(result.current.isThinking).toBe(false);
+    });
+  });
 });

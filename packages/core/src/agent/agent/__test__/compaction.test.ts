@@ -356,6 +356,43 @@ describe('renx compaction', () => {
     expect(generateMock).not.toHaveBeenCalled();
   });
 
+  it('keeps preserved bootstrap user messages immediately after system during compaction', async () => {
+    const generateMock = vi.fn().mockResolvedValue({
+      choices: [{ message: { content: 'Summary text' } }],
+    });
+    const provider = createProvider({
+      generate: generateMock as unknown as LLMProvider['generate'],
+    });
+    const messages: Message[] = [
+      createMessage({ messageId: 's1', type: 'system', role: 'system', content: 'sys' }),
+      createMessage({
+        messageId: 'boot_1',
+        type: 'user',
+        role: 'user',
+        content: 'Available skills for this conversation',
+        metadata: {
+          bootstrap: true,
+          bootstrapKey: 'available-skills-v1',
+          preserveInContext: true,
+          fixedPosition: 'after-system',
+        },
+      }),
+      createMessage({ messageId: 'u1', type: 'user', role: 'user', content: 'older question' }),
+      createMessage({ messageId: 'u2', type: 'user', role: 'user', content: 'latest question' }),
+    ];
+
+    const result = await compact(messages, { provider, keepMessagesNum: 1 });
+    const summaryMessage = findSummaryMessage(result.messages);
+
+    expect(result.messages.map((message) => message.messageId)).toEqual([
+      's1',
+      'boot_1',
+      summaryMessage!.messageId,
+      'u2',
+    ]);
+    expect(result.removedMessageIds).toEqual(['u1']);
+  });
+
   it('compact throws when provider.generate rejects', async () => {
     const provider = createProvider({
       generate: vi

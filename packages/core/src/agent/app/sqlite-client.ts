@@ -122,7 +122,16 @@ export class AgentAppSqliteClient {
       db.exec('COMMIT;');
       return result;
     } catch (error) {
-      db.exec('ROLLBACK;');
+      try {
+        db.exec('ROLLBACK;');
+      } catch (rollbackError) {
+        if (!isNoActiveTransactionRollbackError(rollbackError)) {
+          throw new AggregateError(
+            [error, rollbackError],
+            'SQLite transaction failed and rollback also failed.'
+          );
+        }
+      }
       throw error;
     }
   }
@@ -175,3 +184,11 @@ export class AgentAppSqliteClient {
 }
 
 export const AGENT_APP_SQLITE_CLIENT_MODULE = 'renx-app-sqlite-client';
+
+function isNoActiveTransactionRollbackError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return /cannot rollback\s*-\s*no transaction is active/i.test(error.message);
+}

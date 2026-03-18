@@ -1,3 +1,6 @@
+import { homedir } from 'node:os';
+import * as path from 'node:path';
+
 import type {
   AgentContextUsageEvent,
   AgentEventHandlers,
@@ -45,6 +48,7 @@ type RuntimeCore = {
   maxSteps: number;
   conversationId: string;
   workspaceRoot: string;
+  skillRoots: string[];
   parentTools: ToolSchemaLike[];
   agent: StatelessAgentLike;
   appService: AgentAppServiceLike;
@@ -88,11 +92,12 @@ const syncPreferredModelIdFromEnv = (): string | undefined => {
   return getPreferredModelId();
 };
 
-const DEFAULT_MODEL = 'qwen3.5-plus';
+const DEFAULT_MODEL = 'minimax-2.7';
 const DEFAULT_MAX_STEPS = 10000;
 const DEFAULT_MAX_RETRY_COUNT = 10;
 const PARENT_HIDDEN_TOOL_NAMES = new Set(['file_history_list', 'file_history_restore']);
 const AGENT_FULL_ACCESS_ENV = 'AGENT_FULL_ACCESS';
+const AVAILABLE_SKILLS_BOOTSTRAP_KEY = 'available-skills-bootstrap-v1';
 
 const parsePositiveInt = (raw: string | undefined, fallback: number): number => {
   if (!raw || raw.trim().length === 0) {
@@ -263,6 +268,54 @@ const parseJsonObject = (raw: string): Record<string, unknown> => {
   }
 };
 
+const resolveSkillRoots = (modules: SourceModules, workspaceRoot: string): string[] => {
+  return [
+    path.join(homedir(), '.agents', 'skills'),
+    modules.resolveRenxSkillsDir(process.env),
+    path.join(workspaceRoot, '.agents', 'skills'),
+    path.join(workspaceRoot, '.renx', 'skills'),
+  ].filter((value, index, array) => value.length > 0 && array.indexOf(value) === index);
+};
+
+const hasAvailableSkillsBootstrapMessage = (messages: AgentV4MessageLike[]): boolean => {
+  return messages.some((message) => {
+    const metadata =
+      message && typeof message === 'object' ? (message as { metadata?: Record<string, unknown> }).metadata : undefined;
+    return metadata?.bootstrapKey === AVAILABLE_SKILLS_BOOTSTRAP_KEY;
+  });
+};
+
+const createAvailableSkillsBootstrapMessage = (
+  modules: SourceModules,
+  skillRoots: string[]
+): AgentV4MessageLike | null => {
+  const skills = modules.listAvailableSkills({ skillRoots });
+  if (skills.length === 0) {
+    return null;
+  }
+
+  return {
+    messageId: `msg_bootstrap_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+    role: 'user',
+    type: 'user',
+    content: modules.formatAvailableSkillsForBootstrap(skills),
+    timestamp: Date.now(),
+    metadata: {
+      synthetic: true,
+      bootstrap: true,
+      bootstrapKey: AVAILABLE_SKILLS_BOOTSTRAP_KEY,
+      preserveInContext: true,
+      fixedPosition: 'after-system',
+    },
+  };
+};
+
+const isBootstrapUserMessagePayload = (payload: Record<string, unknown>): boolean => {
+  const messagePayload = asRecord(payload.message);
+  const metadata = asRecord(messagePayload.metadata);
+  return metadata.bootstrap === true || metadata.bootstrapKey === AVAILABLE_SKILLS_BOOTSTRAP_KEY;
+};
+
 const createExecutionId = (): string => {
   return `exec_cli_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 };
@@ -426,6 +479,7 @@ const createRuntime = async (): Promise<RuntimeCore> => {
     baseDir: modules.resolveRenxTaskDir(process.env),
   });
   const fullAccessEnabled = isFullAccessEnabled(process.env);
+  const skillRoots = resolveSkillRoots(modules, workspaceRoot);
   const deferredSubagentAppService = createDeferredSubagentAppService();
   const runtimeCompositionRef: {
     current?:
@@ -452,7 +506,7 @@ const createRuntime = async (): Promise<RuntimeCore> => {
         : undefined,
       skill: {
         loaderOptions: {
-          workingDir: workspaceRoot,
+          skillRoots,
         },
       },
       task: {
@@ -511,6 +565,7 @@ const createRuntime = async (): Promise<RuntimeCore> => {
     maxSteps,
     conversationId,
     workspaceRoot,
+    skillRoots,
     parentTools,
     agent,
     appService,
@@ -649,12 +704,16 @@ export const runAgentPrompt = async (
       conversationId: runtime.conversationId,
     };
     const historyMessages = await runtime.appService.listContextMessages(runtime.conversationId);
+    const bootstrapMessage = hasAvailableSkillsBootstrapMessage(historyMessages)
+      ? null
+      : createAvailableSkillsBootstrapMessage(runtime.modules, runtime.skillRoots);
     result = await runtime.appService.runForeground(
       {
         executionId,
         conversationId: runtime.conversationId,
         userInput: prompt,
         historyMessages: historyMessages as AgentV4MessageLike[],
+        bootstrapMessages: bootstrapMessage ? [bootstrapMessage] : undefined,
         systemPrompt: runtime.modules.buildSystemPrompt({
           directory: runtime.workspaceRoot,
           runtimeToolNames: runtime.parentTools
@@ -779,8 +838,13 @@ export const runAgentPrompt = async (
               break;
             }
             case 'user_message': {
-              streamedState.consumedUserMessageCount += 1;
-              if (streamedState.consumedUserMessageCount > 1) {
+              if (!isBootstrapUserMessagePayload(payload)) {
+                streamedState.consumedUserMessageCount += 1;
+              }
+              if (
+                !isBootstrapUserMessagePayload(payload) &&
+                streamedState.consumedUserMessageCount > 1
+              ) {
                 const messagePayload = asRecord(payload.message);
                 const content = messagePayload.content;
                 const text =

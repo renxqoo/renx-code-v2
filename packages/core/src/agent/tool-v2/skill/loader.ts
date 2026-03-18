@@ -12,24 +12,24 @@ interface ParsedSkillDocument {
 }
 
 export class SkillLoader {
-  private readonly metadataByName = new Map<string, SkillMetadata>();
+  private readonly metadataByCanonicalName = new Map<string, SkillMetadata>();
 
   constructor(private readonly options: SkillLoaderOptions = {}) {
     this.scanRoots();
   }
 
   hasSkill(name: string): boolean {
-    return this.metadataByName.has(name);
+    return this.metadataByCanonicalName.has(toCanonicalSkillName(name));
   }
 
   getAllMetadata(): SkillMetadata[] {
-    return Array.from(this.metadataByName.values()).sort((left, right) =>
+    return Array.from(this.metadataByCanonicalName.values()).sort((left, right) =>
       left.name.localeCompare(right.name)
     );
   }
 
   async loadSkill(name: string): Promise<LoadedSkill | null> {
-    const metadata = this.metadataByName.get(name);
+    const metadata = this.metadataByCanonicalName.get(toCanonicalSkillName(name));
     if (!metadata) {
       return null;
     }
@@ -71,8 +71,9 @@ export class SkillLoader {
         const parsed = parseSkillDocument(raw, entry.name);
         const name = parsed.metadata.name?.trim() || entry.name;
         const description = parsed.metadata.description?.trim() || '';
+        const canonicalName = toCanonicalSkillName(name);
 
-        this.metadataByName.set(name, {
+        this.metadataByCanonicalName.set(canonicalName, {
           name,
           description,
           path: skillDir,
@@ -106,9 +107,13 @@ export function resetSkillLoader(): void {
   activeLoaderKey = null;
 }
 
+export function listAvailableSkills(options?: SkillLoaderOptions): SkillMetadata[] {
+  return getSkillLoader(options).getAllMetadata();
+}
+
 function toLoaderKey(options?: SkillLoaderOptions): string {
   return JSON.stringify({
-    skillRoots: [...(options?.skillRoots || [])].sort(),
+    skillRoots: options?.skillRoots || [],
   });
 }
 
@@ -193,4 +198,8 @@ function extractShellCommands(content: string): string[] {
 function normalizeFileRef(value: string | undefined): string | undefined {
   const normalized = value?.trim().replace(/[.,;:!?]+$/g, '');
   return normalized && normalized.length > 0 ? normalized : undefined;
+}
+
+function toCanonicalSkillName(name: string): string {
+  return name.trim().toLowerCase();
 }

@@ -198,13 +198,15 @@ export async function compact(
   const summaryMessage = createSummaryMessage(summaryContent);
   const compactedMessages = [
     ...(selection.systemMessage ? [selection.systemMessage] : []),
+    ...selection.preservedPrefixMessages,
     summaryMessage,
     ...selection.activeMessages,
   ];
   const removedMessageIds = collectRemovedMessageIds(
     messages,
     new Set(selection.activeMessages),
-    selection.systemMessage
+    selection.systemMessage,
+    new Set(selection.preservedPrefixMessages)
   );
 
   logger?.info?.(
@@ -264,10 +266,16 @@ function estimateToolCallTokens(message: TokenCountableMessage): number {
 function collectRemovedMessageIds(
   allMessages: Message[],
   keptActiveMessages: Set<Message>,
-  systemMessage?: Message
+  systemMessage?: Message,
+  preservedPrefixMessages?: Set<Message>
 ): string[] {
   return allMessages.flatMap((message) => {
-    if (message === systemMessage || keptActiveMessages.has(message) || !message.messageId) {
+    if (
+      message === systemMessage ||
+      keptActiveMessages.has(message) ||
+      preservedPrefixMessages?.has(message) ||
+      !message.messageId
+    ) {
       return [];
     }
 

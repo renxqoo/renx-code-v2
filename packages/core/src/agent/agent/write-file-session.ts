@@ -292,7 +292,12 @@ export function shouldEnrichWriteFileFailure(
     return false;
   }
   const errorName = error?.name;
-  return errorName === 'InvalidArgumentsError' || errorName === 'ToolValidationError';
+  return (
+    errorName === 'InvalidArgumentsError' ||
+    errorName === 'ToolValidationError' ||
+    errorName === 'ToolV2ArgumentsError' ||
+    errorName === 'ToolV2ValidationError'
+  );
 }
 
 export async function cleanupWriteFileBufferIfNeeded(

@@ -617,7 +617,7 @@ const handlers = {
 系统支持多种 AI 模型，通过环境变量配置：
 
 ```typescript
-const DEFAULT_MODEL = 'qwen3.5-plus';
+const DEFAULT_MODEL = 'minimax-2.5';
 const DEFAULT_MAX_STEPS = 10000;
 const DEFAULT_MAX_RETRY_COUNT = 10;
 

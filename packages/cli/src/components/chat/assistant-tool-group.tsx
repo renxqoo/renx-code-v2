@@ -864,19 +864,25 @@ export const AssistantToolGroup = ({ group }: AssistantToolGroupProps) => {
   const _hasInvocationDetails = Boolean(invocationDetails);
   const hasOutput = outputText.length > 0;
   const specialPresentation = buildSpecialToolPresentation(toolName, parsedUse, parsedResult);
+  const useCommandAsTitle = toolName === 'local_shell' && Boolean(commandText);
   const titleDetail =
-    specialPresentation?.headerDetail ??
-    compactDetail(commandText, 64) ??
-    compactDetail(invocationDetails, 64);
+    useCommandAsTitle
+      ? undefined
+      : specialPresentation?.headerDetail ??
+        compactDetail(commandText, 64) ??
+        compactDetail(invocationDetails, 64);
+  const titleText = useCommandAsTitle
+    ? `$ ${commandText}`
+    : (specialPresentation?.toolLabel ?? formatToolName(toolName));
   const defaultSections: ToolSection[] = [];
-  if (commandText && !titleDetail) {
+  if (commandText && !titleDetail && !useCommandAsTitle) {
     defaultSections.push({
       label: 'command',
       content: `$ ${commandText}`,
       tone: 'code',
     });
   }
-  if (invocationDetails && !titleDetail) {
+  if (invocationDetails && !titleDetail && !useCommandAsTitle) {
     defaultSections.push({
       label: 'arguments',
       content: invocationDetails,
@@ -905,8 +911,12 @@ export const AssistantToolGroup = ({ group }: AssistantToolGroupProps) => {
     <box flexDirection="column">
       <box paddingLeft={3}>
         <text fg={uiTheme.text} attributes={uiTheme.typography.note} wrapMode="word">
-          <span fg={uiTheme.accent}>{icon}</span>{' '}
-          {specialPresentation?.toolLabel ?? formatToolName(toolName)}
+          {useCommandAsTitle ? null : (
+            <>
+              <span fg={uiTheme.accent}>{icon}</span>{' '}
+            </>
+          )}
+          {titleText}
           {titleDetail ? <span fg={uiTheme.muted}>({titleDetail})</span> : null}
           <span fg={uiTheme.subtle}> ({statusText})</span>
         </text>

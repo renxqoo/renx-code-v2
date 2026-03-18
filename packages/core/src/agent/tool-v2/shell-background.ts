@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -27,6 +28,7 @@ export interface FileShellBackgroundExecutionStoreOptions {
 export class FileShellBackgroundExecutionStore implements ShellBackgroundExecutionStore {
   private readonly baseDir: string;
   private readonly filePath: string;
+  private operationChain: Promise<unknown> = Promise.resolve();
 
   constructor(options: FileShellBackgroundExecutionStoreOptions = {}) {
     this.baseDir = path.resolve(
@@ -36,43 +38,54 @@ export class FileShellBackgroundExecutionStore implements ShellBackgroundExecuti
   }
 
   async get(taskId: string): Promise<ShellBackgroundExecutionRecord | null> {
-    const state = await this.readState();
-    return state.records.find((record) => record.taskId === taskId) || null;
+    return this.runExclusive(async () => {
+      const state = await this.readState();
+      return state.records.find((record) => record.taskId === taskId) || null;
+    });
   }
 
   async list(): Promise<ShellBackgroundExecutionRecord[]> {
-    const state = await this.readState();
-    return [...state.records].sort((left, right) => right.createdAt - left.createdAt);
+    return this.runExclusive(async () => {
+      const state = await this.readState();
+      return [...state.records].sort((left, right) => right.createdAt - left.createdAt);
+    });
   }
 
   async save(record: ShellBackgroundExecutionRecord): Promise<ShellBackgroundExecutionRecord> {
-    const state = await this.readState();
-    const index = state.records.findIndex((entry) => entry.taskId === record.taskId);
-    if (index >= 0) {
-      state.records[index] = record;
-    } else {
-      state.records.push(record);
-    }
-    await this.writeState(state);
-    return record;
+    return this.runExclusive(async () => {
+      const state = await this.readState();
+      const index = state.records.findIndex((entry) => entry.taskId === record.taskId);
+      if (index >= 0) {
+        state.records[index] = record;
+      } else {
+        state.records.push(record);
+      }
+      await this.writeState(state);
+      return record;
+    });
   }
 
   private async readState(): Promise<StoreFile> {
     await fs.mkdir(this.baseDir, { recursive: true });
     try {
       const raw = await fs.readFile(this.filePath, 'utf8');
-      const parsed = JSON.parse(raw) as Partial<StoreFile>;
-      return {
-        schemaVersion: 1,
-        records: parsed.records || [],
-      };
+      try {
+        const parsed = JSON.parse(raw) as Partial<StoreFile>;
+        if (!Array.isArray(parsed.records)) {
+          throw new Error('Invalid shell background execution store format');
+        }
+        return {
+          schemaVersion: 1,
+          records: parsed.records,
+        };
+      } catch {
+        await this.quarantineCorruptedState(raw);
+        return this.createEmptyState();
+      }
     } catch (error) {
       const nodeError = error as NodeJS.ErrnoException;
       if (nodeError.code === 'ENOENT') {
-        return {
-          schemaVersion: 1,
-          records: [],
-        };
+        return this.createEmptyState();
       }
       throw error;
     }
@@ -80,7 +93,48 @@ export class FileShellBackgroundExecutionStore implements ShellBackgroundExecuti
 
   private async writeState(state: StoreFile): Promise<void> {
     await fs.mkdir(this.baseDir, { recursive: true });
-    await fs.writeFile(this.filePath, JSON.stringify(state, null, 2), 'utf8');
+    const tempPath = path.join(
+      this.baseDir,
+      `.${path.basename(this.filePath)}.${process.pid}.${randomUUID()}.tmp`
+    );
+    await fs.writeFile(tempPath, JSON.stringify(state, null, 2), 'utf8');
+    try {
+      await fs.rename(tempPath, this.filePath);
+    } finally {
+      await fs.rm(tempPath, { force: true });
+    }
+  }
+
+  private createEmptyState(): StoreFile {
+    return {
+      schemaVersion: 1,
+      records: [],
+    };
+  }
+
+  private async quarantineCorruptedState(raw: string): Promise<void> {
+    const corruptPath = path.join(
+      this.baseDir,
+      `background-executions.corrupt-${Date.now()}-${randomUUID()}.json`
+    );
+    try {
+      await fs.rename(this.filePath, corruptPath);
+    } catch (error) {
+      const nodeError = error as NodeJS.ErrnoException;
+      if (nodeError.code !== 'ENOENT') {
+        await fs.writeFile(corruptPath, raw, 'utf8');
+        await fs.rm(this.filePath, { force: true });
+      }
+    }
+  }
+
+  private async runExclusive<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.operationChain.then(operation, operation);
+    this.operationChain = next.then(
+      () => undefined,
+      () => undefined
+    );
+    return next;
   }
 }
 

@@ -25,6 +25,10 @@ export function resolveRenxTaskDir(env: NodeJS.ProcessEnv = process.env): string
   return path.join(resolveRenxHome(env), 'task');
 }
 
+export function resolveRenxSkillsDir(env: NodeJS.ProcessEnv = process.env): string {
+  return path.join(resolveRenxHome(env), 'skills');
+}
+
 export function resolveRenxDatabasePath(env: NodeJS.ProcessEnv = process.env): string {
   return path.join(resolveRenxHome(env), 'data.db');
 }

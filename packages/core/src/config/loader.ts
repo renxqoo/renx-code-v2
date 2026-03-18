@@ -41,7 +41,7 @@ const DEFAULTS: RenxConfig = {
   },
   agent: {
     maxSteps: 10000,
-    defaultModel: 'qwen3.5-plus',
+    defaultModel: 'minimax-2.5',
   },
 };
 
@@ -390,7 +390,7 @@ function resolveConfig(
     },
     agent: {
       maxSteps: merged.agent?.maxSteps ?? 10000,
-      defaultModel: merged.agent?.defaultModel ?? 'qwen3.5-plus',
+      defaultModel: merged.agent?.defaultModel ?? 'minimax-2.5',
       permissions: {
         fullAccess: merged.agent?.permissions?.fullAccess ?? false,
         approvalPolicy: merged.agent?.permissions?.approvalPolicy,
