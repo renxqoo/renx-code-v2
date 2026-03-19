@@ -217,6 +217,7 @@ export type SourceModules = {
   ProviderRegistry: ProviderRegistryLike;
   loadEnvFiles: (cwd?: string) => Promise<string[]>;
   loadConfigToEnv: (options?: Record<string, unknown>) => string[];
+  resolveDefaultSkillRoots: (workspaceRoot: string, env?: NodeJS.ProcessEnv) => string[];
   resolveRenxDatabasePath: (env?: NodeJS.ProcessEnv) => string;
   resolveRenxTaskDir: (env?: NodeJS.ProcessEnv) => string;
   resolveRenxSkillsDir: (env?: NodeJS.ProcessEnv) => string;
@@ -254,6 +255,8 @@ const loadSourceModules = async (): Promise<SourceModules> => {
     ProviderRegistry: core.ProviderRegistry as ProviderRegistryLike,
     loadEnvFiles: core.loadEnvFiles as SourceModules['loadEnvFiles'],
     loadConfigToEnv: core.loadConfigToEnv as SourceModules['loadConfigToEnv'],
+    resolveDefaultSkillRoots:
+      core.resolveDefaultSkillRoots as SourceModules['resolveDefaultSkillRoots'],
     resolveRenxDatabasePath:
       core.resolveRenxDatabasePath as SourceModules['resolveRenxDatabasePath'],
     resolveRenxTaskDir: core.resolveRenxTaskDir as SourceModules['resolveRenxTaskDir'],

@@ -26,6 +26,11 @@ type ContinuationRequestState = {
   requestInputMessageCount: number;
 };
 
+type ContinuationCandidate = {
+  metadata: NonNullable<ReturnType<typeof readContinuationMetadata>>;
+  continuationWindow: ReturnType<typeof processToolCallPairs>;
+};
+
 function createContinuationRequestState(
   messages: Message[],
   config: AgentInput['config']
@@ -57,23 +62,10 @@ function buildFullRequestPlan(
   };
 }
 
-export function buildLLMRequestPlan(
-  messages: Message[],
-  config: AgentInput['config'],
-  enableServerSideContinuation: boolean
-): LLMRequestPlan {
-  const state = createContinuationRequestState(messages, config);
-
-  const explicitPreviousResponseId =
-    typeof config?.previous_response_id === 'string' &&
-    config.previous_response_id.trim().length > 0
-      ? config.previous_response_id
-      : undefined;
-
-  if (explicitPreviousResponseId || !enableServerSideContinuation) {
-    return buildFullRequestPlan(state, config);
-  }
-
+function findReusableContinuationCandidate(
+  state: ContinuationRequestState,
+  explicitPreviousResponseId?: string
+): ContinuationCandidate | undefined {
   for (let index = state.llmSourceMessages.length - 1; index >= 0; index -= 1) {
     const candidate = state.llmSourceMessages[index];
     if (candidate.role !== 'assistant') {
@@ -82,6 +74,13 @@ export function buildLLMRequestPlan(
 
     const metadata = readContinuationMetadata(candidate);
     if (!metadata) {
+      continue;
+    }
+
+    if (
+      explicitPreviousResponseId &&
+      metadata.responseId !== explicitPreviousResponseId
+    ) {
       continue;
     }
 
@@ -111,25 +110,57 @@ export function buildLLMRequestPlan(
       state.llmSourceMessages.slice(0, index + 1),
       state.llmSourceMessages.slice(index + 1)
     );
-    const deltaSourceMessages = continuationWindow.active;
-    if (deltaSourceMessages.length === 0) {
+    if (continuationWindow.active.length === 0) {
       continue;
     }
 
     return {
+      metadata,
+      continuationWindow,
+    };
+  }
+
+  return undefined;
+}
+
+export function buildLLMRequestPlan(
+  messages: Message[],
+  config: AgentInput['config'],
+  enableServerSideContinuation: boolean
+): LLMRequestPlan {
+  const state = createContinuationRequestState(messages, config);
+
+  const explicitPreviousResponseId =
+    typeof config?.previous_response_id === 'string' &&
+    config.previous_response_id.trim().length > 0
+      ? config.previous_response_id
+      : undefined;
+
+  if (!enableServerSideContinuation) {
+    return buildFullRequestPlan(state, config);
+  }
+
+  const reusableCandidate = findReusableContinuationCandidate(state, explicitPreviousResponseId);
+  if (reusableCandidate) {
+    const deltaSourceMessages = reusableCandidate.continuationWindow.active;
+    return {
       requestMessages: deltaSourceMessages.map((msg) => convertMessageToLLMMessage(msg)),
       requestConfig: {
         ...(config || {}),
-        previous_response_id: metadata.responseId,
+        previous_response_id: reusableCandidate.metadata.responseId,
       },
       requestConfigHash: state.requestConfigHash,
       requestInputHash: state.requestInputHash,
       requestInputMessageCount: state.requestInputMessageCount,
       continuationMode: 'incremental',
-      previousResponseIdUsed: metadata.responseId,
-      continuationBaselineMessageCount: continuationWindow.pending.length,
+      previousResponseIdUsed: reusableCandidate.metadata.responseId,
+      continuationBaselineMessageCount: reusableCandidate.continuationWindow.pending.length,
       continuationDeltaMessageCount: deltaSourceMessages.length,
     };
+  }
+
+  if (explicitPreviousResponseId) {
+    return buildFullRequestPlan(state, config);
   }
 
   return buildFullRequestPlan(state, config);

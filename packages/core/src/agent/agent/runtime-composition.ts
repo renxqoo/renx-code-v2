@@ -232,12 +232,14 @@ export function createLLMStreamRuntimeDeps(
   deps: Pick<LLMStreamRuntimeDeps, 'llmProvider' | 'enableServerSideContinuation'> & {
     throwIfAborted: (signal?: AbortSignal) => void;
     logError: (message: string, error: unknown, context?: Record<string, unknown>) => void;
+    logDebug: (message: string, context?: Record<string, unknown>, data?: unknown) => void;
   }
 ): LLMStreamRuntimeDeps {
   return {
     llmProvider: deps.llmProvider,
     enableServerSideContinuation: deps.enableServerSideContinuation,
     throwIfAborted: deps.throwIfAborted,
+    logDebug: deps.logDebug,
     logError: deps.logError,
   };
 }

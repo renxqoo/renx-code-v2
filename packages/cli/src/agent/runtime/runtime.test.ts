@@ -165,6 +165,13 @@ const buildMockModules = (
     buildSystemPrompt: vi.fn(() => 'Test system prompt'),
     loadEnvFiles: vi.fn().mockResolvedValue([]),
     loadConfigToEnv: vi.fn().mockReturnValue([]),
+    resolveDefaultSkillRoots: vi.fn((workspaceRoot: string) => [
+      path.join(os.homedir(), '.agents', 'skills'),
+      path.join(renxHome, 'skills'),
+      path.join(workspaceRoot, '.agents', 'skills'),
+      path.join(workspaceRoot, '.renx', 'skills'),
+      path.join(workspaceRoot, 'packages', 'core', 'src', 'skills'),
+    ]),
     resolveRenxDatabasePath: vi.fn(() => path.join(renxHome, 'data.db')),
     resolveRenxTaskDir: vi.fn(() => path.join(renxHome, 'task')),
     resolveRenxSkillsDir: vi.fn(() => path.join(renxHome, 'skills')),
@@ -238,6 +245,7 @@ describe('runtime', () => {
   const originalRenxHome = process.env.RENX_HOME;
   const originalAgentModel = process.env.AGENT_MODEL;
   const originalFullAccess = process.env.AGENT_FULL_ACCESS;
+  const originalServerSideContinuation = process.env.AGENT_ENABLE_SERVER_SIDE_CONTINUATION;
   const originalPromptCacheKey = process.env.AGENT_PROMPT_CACHE_KEY;
   const originalPromptCacheRetention = process.env.AGENT_PROMPT_CACHE_RETENTION;
   const renxHome = path.join(process.cwd(), '.tmp-renx-home');
@@ -252,6 +260,7 @@ describe('runtime', () => {
     delete process.env.AGENT_TOOL_FILESYSTEM_MODE;
     delete process.env.AGENT_TOOL_NETWORK_MODE;
     delete process.env.AGENT_FULL_ACCESS;
+    delete process.env.AGENT_ENABLE_SERVER_SIDE_CONTINUATION;
     delete process.env.AGENT_PROMPT_CACHE_KEY;
     delete process.env.AGENT_PROMPT_CACHE_RETENTION;
     mockResolveWorkspaceRoot.mockReturnValue('/test/workspace');
@@ -279,6 +288,11 @@ describe('runtime', () => {
       delete process.env.AGENT_FULL_ACCESS;
     } else {
       process.env.AGENT_FULL_ACCESS = originalFullAccess;
+    }
+    if (originalServerSideContinuation === undefined) {
+      delete process.env.AGENT_ENABLE_SERVER_SIDE_CONTINUATION;
+    } else {
+      process.env.AGENT_ENABLE_SERVER_SIDE_CONTINUATION = originalServerSideContinuation;
     }
     if (originalPromptCacheKey === undefined) {
       delete process.env.AGENT_PROMPT_CACHE_KEY;
@@ -634,8 +648,9 @@ describe('runtime', () => {
               skillRoots: [
                 path.join(os.homedir(), '.agents', 'skills'),
                 path.join(renxHome, 'skills'),
-                '/test/workspace/.agents/skills',
-                '/test/workspace/.renx/skills',
+                path.join('/test/workspace', '.agents', 'skills'),
+                path.join('/test/workspace', '.renx', 'skills'),
+                path.join('/test/workspace', 'packages', 'core', 'src', 'skills'),
               ],
             },
           },
@@ -651,6 +666,79 @@ describe('runtime', () => {
           approvalPolicy: 'unless-trusted',
           trustLevel: 'trusted',
         },
+      })
+    );
+  });
+
+  it('enables server-side continuation by default for responses models', async () => {
+    const modules = buildMockModules({
+      ProviderRegistry: {
+        getModelIds: () => ['gpt-5.4', 'glm-5'],
+        getModelConfig: (modelId: string) => ({
+          name: modelId === 'gpt-5.4' ? 'GPT-5.4' : 'GLM-5',
+          envApiKey: 'TEST_API_KEY',
+          provider: modelId === 'gpt-5.4' ? 'openai' : 'zhipu',
+          model: modelId,
+          endpointPath: modelId === 'gpt-5.4' ? '/responses' : '/chat/completions',
+        }),
+        createFromEnv: () => ({}),
+      },
+      loadConfigToEnv: vi.fn(() => {
+        process.env.AGENT_MODEL = 'gpt-5.4';
+        return ['C:\\Users\\Administrator\\.renx\\config.json'];
+      }),
+    });
+    const createEnterpriseAgentAppService = modules.createEnterpriseAgentAppService as ReturnType<
+      typeof vi.fn
+    >;
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    await runAgentPrompt('Test prompt', {});
+
+    expect(createEnterpriseAgentAppService).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentConfig: expect.objectContaining({
+          enableServerSideContinuation: true,
+        }),
+      })
+    );
+  });
+
+  it('allows disabling server-side continuation via env override', async () => {
+    process.env.AGENT_ENABLE_SERVER_SIDE_CONTINUATION = 'false';
+    const modules = buildMockModules({
+      ProviderRegistry: {
+        getModelIds: () => ['gpt-5.4', 'glm-5'],
+        getModelConfig: (modelId: string) => ({
+          name: modelId === 'gpt-5.4' ? 'GPT-5.4' : 'GLM-5',
+          envApiKey: 'TEST_API_KEY',
+          provider: modelId === 'gpt-5.4' ? 'openai' : 'zhipu',
+          model: modelId,
+          endpointPath: modelId === 'gpt-5.4' ? '/responses' : '/chat/completions',
+        }),
+        createFromEnv: () => ({}),
+      },
+      loadConfigToEnv: vi.fn(() => {
+        process.env.AGENT_MODEL = 'gpt-5.4';
+        return ['C:\\Users\\Administrator\\.renx\\config.json'];
+      }),
+    });
+    const createEnterpriseAgentAppService = modules.createEnterpriseAgentAppService as ReturnType<
+      typeof vi.fn
+    >;
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    await runAgentPrompt('Test prompt', {});
+
+    expect(createEnterpriseAgentAppService).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentConfig: expect.objectContaining({
+          enableServerSideContinuation: false,
+        }),
       })
     );
   });

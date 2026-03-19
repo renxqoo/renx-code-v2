@@ -48,6 +48,7 @@ export {
 
 export {
   RENX_HOME_ENV,
+  resolveDefaultSkillRoots,
   resolveRenxHome,
   resolveRenxLogsDir,
   resolveRenxStorageRoot,

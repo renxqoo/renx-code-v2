@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { createStreamingReply, orderReplySegments } from './turn-updater';
+import {
+  SHELL_STREAM_HEAD_CHARS,
+  SHELL_STREAM_MAX_CHARS,
+  SHELL_STREAM_TAIL_CHARS,
+  SHELL_STREAM_TRUNCATION_MARKER,
+  appendToSegment,
+  createStreamingReply,
+  orderReplySegments,
+} from './turn-updater';
 import type { ReplySegment } from '../types/chat';
 
 describe('createStreamingReply', () => {
@@ -66,5 +74,37 @@ describe('orderReplySegments', () => {
       '1:tool:call_2:stdout',
       '1:tool-result:call_2',
     ]);
+  });
+});
+
+describe('appendToSegment', () => {
+  it('bounds shell stream segments and keeps the latest tail when output keeps growing', () => {
+    let segments: ReplySegment[] = [];
+    const segmentId = '1:tool:call_1:stdout';
+
+    segments = appendToSegment(segments, segmentId, 'code', 'a'.repeat(SHELL_STREAM_MAX_CHARS));
+    segments = appendToSegment(segments, segmentId, 'code', 'b'.repeat(4000));
+    segments = appendToSegment(segments, segmentId, 'code', 'c'.repeat(4000));
+
+    const streamSegment = segments.find((segment) => segment.id === segmentId);
+    expect(streamSegment).toBeDefined();
+    expect(streamSegment?.content).toContain(SHELL_STREAM_TRUNCATION_MARKER);
+    expect(streamSegment?.content.startsWith('a'.repeat(SHELL_STREAM_HEAD_CHARS))).toBe(true);
+    expect(streamSegment?.content.endsWith('b'.repeat(4000) + 'c'.repeat(4000))).toBe(true);
+    expect(streamSegment?.content.length).toBe(
+      SHELL_STREAM_HEAD_CHARS +
+        SHELL_STREAM_TRUNCATION_MARKER.length +
+        SHELL_STREAM_TAIL_CHARS
+    );
+  });
+
+  it('does not truncate non-stream code segments', () => {
+    const segmentId = '1:tool-result:call_1';
+    const content = 'x'.repeat(SHELL_STREAM_MAX_CHARS + 1000);
+    const segments = appendToSegment([], segmentId, 'code', content);
+
+    const resultSegment = segments.find((segment) => segment.id === segmentId);
+    expect(resultSegment?.content).toBe(content);
+    expect(resultSegment?.content).not.toContain(SHELL_STREAM_TRUNCATION_MARKER);
   });
 });

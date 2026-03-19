@@ -142,6 +142,7 @@ describe('runtime-composition', () => {
           llmProvider: {} as never,
           enableServerSideContinuation: false,
           throwIfAborted: () => undefined,
+          logDebug: () => undefined,
           logError: () => undefined,
         }) as never
     );
@@ -216,6 +217,7 @@ describe('runtime-composition', () => {
 
   it('keeps llm stream dependencies narrowly scoped', () => {
     const throwIfAborted = vi.fn();
+    const logDebug = vi.fn();
     const logError = vi.fn();
     const llmProvider = { stream: vi.fn() };
 
@@ -223,6 +225,7 @@ describe('runtime-composition', () => {
       llmProvider: llmProvider as never,
       enableServerSideContinuation: true,
       throwIfAborted,
+      logDebug,
       logError,
     });
 
@@ -230,6 +233,7 @@ describe('runtime-composition', () => {
       llmProvider,
       enableServerSideContinuation: true,
       throwIfAborted,
+      logDebug,
       logError,
     });
   });

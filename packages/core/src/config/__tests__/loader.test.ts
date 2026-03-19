@@ -12,7 +12,7 @@ import {
   writeGlobalConfig,
   writeProjectConfig,
 } from '../loader';
-import { resolveRenxSkillsDir } from '../paths';
+import { resolveDefaultSkillRoots, resolveRenxSkillsDir } from '../paths';
 import { LogLevel } from '../../logger';
 
 describe('Renx Config Loader', () => {
@@ -60,6 +60,25 @@ describe('Renx Config Loader', () => {
 
     it('should return global skills dir', () => {
       expect(resolveRenxSkillsDir()).toBe(path.join(renxHome, 'skills'));
+    });
+
+    it('should return default skill roots', () => {
+      const workspaceRoot = path.resolve('my', 'project');
+      expect(resolveDefaultSkillRoots(workspaceRoot)).toEqual([
+        path.join(os.homedir(), '.agents', 'skills'),
+        path.join(renxHome, 'skills'),
+        path.join(workspaceRoot, '.agents', 'skills'),
+        path.join(workspaceRoot, '.renx', 'skills'),
+        path.resolve(workspaceRoot, '..', 'core', 'src', 'skills'),
+        path.join(workspaceRoot, 'packages', 'core', 'src', 'skills'),
+      ]);
+    });
+
+    it('should include sibling core skills when workspace root is packages/cli', () => {
+      const workspaceRoot = path.resolve('repo', 'packages', 'cli');
+      expect(resolveDefaultSkillRoots(workspaceRoot)).toContain(
+        path.resolve(workspaceRoot, '..', 'core', 'src', 'skills')
+      );
     });
   });
 

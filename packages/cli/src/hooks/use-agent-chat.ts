@@ -362,6 +362,7 @@ export const useAgentChat = (): UseAgentChatResult => {
     requestIdRef.current += 1;
     activeAbortControllerRef.current?.abort();
     activeAbortControllerRef.current = null;
+    activeRunPromiseRef.current = null;
     setIsThinking(false);
 
     const activeTurnId = activeTurnIdRef.current;
@@ -384,6 +385,7 @@ export const useAgentChat = (): UseAgentChatResult => {
     requestIdRef.current += 1;
     activeAbortControllerRef.current?.abort();
     activeAbortControllerRef.current = null;
+    activeRunPromiseRef.current = null;
     activeTurnIdRef.current = null;
     setIsThinking(false);
     setTurns([]);

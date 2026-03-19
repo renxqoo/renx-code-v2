@@ -14,7 +14,6 @@ import { LspToolV2 } from '../handlers/lsp';
 import { ReadFileToolV2 } from '../handlers/read-file';
 import { RequestPermissionsToolV2 } from '../handlers/request-permissions';
 import { WebFetchToolV2 } from '../handlers/web-fetch';
-import { WebSearchToolV2 } from '../handlers/web-search';
 import { WriteFileToolV2 } from '../handlers/write-file';
 
 describe('tool-v2 enterprise system', () => {
@@ -223,6 +222,8 @@ describe('tool-v2 enterprise system', () => {
       }
       expect(finalizeResult.structured).toMatchObject({
         code: 'WRITE_FILE_FINALIZE_OK',
+        message:
+          'Buffered write finalized to the target file. Do not continue this document with write_file, because a new write_file call on the same path will overwrite the file. If further changes are needed, use edit_file or an explicit append operation.',
         nextAction: 'none',
       });
       expect(await fs.readFile(targetFile, 'utf8')).toBe(largeContent);
@@ -412,43 +413,6 @@ describe('tool-v2 enterprise system', () => {
     }
   });
 
-  it('enforces network policy for web_search before issuing outbound requests', async () => {
-    const originalFetch = globalThis.fetch;
-    const fetchMock = vi.fn();
-    const originalApiKey = process.env.TAVILY_API_KEY;
-    process.env.TAVILY_API_KEY = 'test-key';
-    vi.stubGlobal('fetch', fetchMock);
-
-    try {
-      const webSystem = new EnterpriseToolSystem([new WebSearchToolV2()]);
-      const result = await webSystem.execute(
-        {
-          toolCallId: 'web-search-restricted',
-          toolName: 'web_search',
-          arguments: JSON.stringify({
-            query: 'production readiness',
-            provider: 'tavily',
-          }),
-        },
-        createContext(workspaceDir, new ToolSessionState())
-      );
-
-      expect(result.success).toBe(false);
-      if (result.success) {
-        return;
-      }
-      expect(result.error.errorCode).toBe('TOOL_V2_PERMISSION_DENIED');
-      expect(result.output).toContain('Network access denied');
-      expect(fetchMock).not.toHaveBeenCalled();
-    } finally {
-      if (originalApiKey === undefined) {
-        delete process.env.TAVILY_API_KEY;
-      } else {
-        process.env.TAVILY_API_KEY = originalApiKey;
-      }
-      vi.stubGlobal('fetch', originalFetch);
-    }
-  });
 });
 
 function createContext(

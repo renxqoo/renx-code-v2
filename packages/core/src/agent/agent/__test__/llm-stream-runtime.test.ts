@@ -41,6 +41,7 @@ function createDeps(provider: LLMProvider): LLMStreamRuntimeDeps {
         throw new Error('aborted');
       }
     },
+    logDebug: vi.fn(),
     logError: vi.fn(),
   };
 }
@@ -188,5 +189,81 @@ describe('llm-stream-runtime', () => {
         })
       )
     ).rejects.toThrow('LLM returned an empty assistant response');
+  });
+
+  it('logs request planning and cache-aware usage details for debugging', async () => {
+    const provider = createProvider(
+      toStream([
+        {
+          id: 'resp_2',
+          index: 0,
+          choices: [{ index: 0, delta: { content: 'Hello again' } }],
+        },
+        {
+          index: 0,
+          usage: {
+            input_tokens: 1200,
+            output_tokens: 10,
+            prompt_tokens: 1200,
+            completion_tokens: 10,
+            total_tokens: 1210,
+            input_tokens_details: {
+              cached_tokens: 768,
+            },
+          },
+        },
+        {
+          index: 0,
+          choices: [{ index: 0, delta: { finish_reason: 'stop' } as unknown as ChunkDelta }],
+        },
+      ])
+    );
+    const deps = createDeps(provider);
+
+    await collectEvents(
+      callLLMAndProcessStream(deps, {
+        messages: [
+          {
+            messageId: 'u1',
+            role: 'user',
+            type: 'user',
+            content: 'hello',
+            timestamp: 1,
+          } as Message,
+        ],
+        config: undefined,
+        executionId: 'exec_1',
+        stepIndex: 2,
+      })
+    );
+
+    expect(deps.logDebug).toHaveBeenCalledWith(
+      '[Agent] llm.request.plan',
+      expect.objectContaining({
+        executionId: 'exec_1',
+        stepIndex: 2,
+        messageCount: 1,
+      }),
+      expect.objectContaining({
+        continuationMode: 'full',
+        requestInputMessageCount: 1,
+        requestMessageCount: 1,
+        hasPreviousResponseId: false,
+      })
+    );
+    expect(deps.logDebug).toHaveBeenCalledWith(
+      '[Agent] llm.stream.usage',
+      expect.objectContaining({
+        executionId: 'exec_1',
+        stepIndex: 2,
+        messageCount: 1,
+      }),
+      expect.objectContaining({
+        promptTokens: 1200,
+        completionTokens: 10,
+        totalTokens: 1210,
+        promptCacheHitTokens: 768,
+      })
+    );
   });
 });

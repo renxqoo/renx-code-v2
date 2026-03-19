@@ -11,6 +11,7 @@ export {
   loadEnvFiles,
   loadRuntimeConfigFromEnv,
   resolveRenxDatabasePath,
+  resolveDefaultSkillRoots,
   resolveRenxHome,
   resolveRenxLogsDir,
   resolveRenxStorageRoot,

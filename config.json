@@ -1,0 +1,20 @@
+{
+  "log": {
+    "level": "INFO",
+    "format": "pretty",
+    "console": false,
+    "file": true
+  },
+  "storage": {
+    "fileHistory": {
+      "enabled": true,
+      "maxPerFile": 20,
+      "maxAgeDays": 14,
+      "maxTotalMb": 500
+    }
+  },
+  "agent": {
+    "maxSteps": 10000,
+    "defaultModel": "minimax-2.5"
+  }
+}

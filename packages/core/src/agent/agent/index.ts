@@ -38,6 +38,7 @@ import {
   emitTrace as pushTrace,
   endSpan as finishSpan,
   extractErrorCode as parseErrorCode,
+  logDebug as writeDebugLog,
   logError as writeErrorLog,
   logInfo as writeInfoLog,
   logWarn as writeWarnLog,
@@ -348,6 +349,7 @@ export class StatelessAgent extends EventEmitter {
       llmProvider: this.llmProvider,
       enableServerSideContinuation: this.config.enableServerSideContinuation,
       throwIfAborted: this.throwIfAborted.bind(this),
+      logDebug: this.logDebug.bind(this),
       logError: this.logError.bind(this),
     });
   }
@@ -560,6 +562,10 @@ export class StatelessAgent extends EventEmitter {
 
   private logInfo(message: string, context?: Record<string, unknown>, data?: unknown): void {
     writeInfoLog(this.logger, message, context, data);
+  }
+
+  private logDebug(message: string, context?: Record<string, unknown>, data?: unknown): void {
+    writeDebugLog(this.logger, message, context, data);
   }
 
   private logWarn(message: string, context?: Record<string, unknown>, data?: unknown): void {

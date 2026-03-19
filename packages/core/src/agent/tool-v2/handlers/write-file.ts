@@ -256,7 +256,8 @@ export class WriteFileToolV2 extends StructuredToolHandler<typeof schema> {
     return this.protocolResult({
       ok: true,
       code: 'WRITE_FILE_FINALIZE_OK',
-      message: 'Buffered content finalized to target file',
+      message:
+        'Buffered write finalized to the target file. Do not continue this document with write_file, because a new write_file call on the same path will overwrite the file. If further changes are needed, use edit_file or an explicit append operation.',
       nextAction: 'none',
     });
   }

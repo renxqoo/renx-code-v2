@@ -20,6 +20,7 @@ export type LLMStreamRuntimeDeps = {
   llmProvider: LLMProvider;
   enableServerSideContinuation: boolean;
   throwIfAborted: (signal?: AbortSignal) => void;
+  logDebug: (message: string, context?: Record<string, unknown>, data?: unknown) => void;
   logError: (message: string, error: unknown, context?: Record<string, unknown>) => void;
 };
 
@@ -31,6 +32,40 @@ type CallLLMAndProcessStreamArgs = {
   stepIndex?: number;
   writeBufferSessions?: Map<string, WriteBufferRuntime>;
 };
+
+function readObject(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function summarizePromptCacheUsage(usage: unknown): Record<string, number> | undefined {
+  const usageRecord = readObject(usage);
+  if (!usageRecord) {
+    return undefined;
+  }
+
+  const inputTokensDetails = readObject(usageRecord.input_tokens_details);
+  const summary = {
+    promptTokens:
+      readNumber(usageRecord.prompt_tokens) ?? readNumber(usageRecord.input_tokens) ?? 0,
+    completionTokens:
+      readNumber(usageRecord.completion_tokens) ?? readNumber(usageRecord.output_tokens) ?? 0,
+    totalTokens: readNumber(usageRecord.total_tokens) ?? 0,
+    promptCacheHitTokens:
+      readNumber(usageRecord.prompt_cache_hit_tokens) ??
+      readNumber(inputTokensDetails?.cached_tokens) ??
+      0,
+    promptCacheMissTokens: readNumber(usageRecord.prompt_cache_miss_tokens) ?? 0,
+  };
+
+  return Object.values(summary).some((value) => value > 0) ? summary : undefined;
+}
 
 function createAssistantMessage(): Message {
   // Create one mutable assistant message shell and progressively fill it as
@@ -97,6 +132,21 @@ export async function* callLLMAndProcessStream(
   // Continuation planning is decided before opening the provider stream so the
   // rest of this function only deals with one normalized request shape.
   const requestPlan = buildLLMRequestPlan(messages, config, deps.enableServerSideContinuation);
+  deps.logDebug('[Agent] llm.request.plan', {
+    executionId,
+    stepIndex,
+    messageCount: messages.length,
+  }, {
+    continuationMode: requestPlan.continuationMode,
+    previousResponseIdUsed: requestPlan.previousResponseIdUsed,
+    continuationBaselineMessageCount: requestPlan.continuationBaselineMessageCount,
+    continuationDeltaMessageCount: requestPlan.continuationDeltaMessageCount,
+    requestInputMessageCount: requestPlan.requestInputMessageCount,
+    requestMessageCount: requestPlan.requestMessages.length,
+    hasPreviousResponseId:
+      typeof requestPlan.requestConfig?.previous_response_id === 'string' &&
+      requestPlan.requestConfig.previous_response_id.trim().length > 0,
+  });
   const stream = deps.llmProvider.generateStream(
     requestPlan.requestMessages,
     requestPlan.requestConfig
@@ -122,6 +172,15 @@ export async function* callLLMAndProcessStream(
 
     if (chunk.usage) {
       assistantMessage.usage = chunk.usage;
+      deps.logDebug(
+        '[Agent] llm.stream.usage',
+        {
+          executionId,
+          stepIndex,
+          messageCount: messages.length,
+        },
+        summarizePromptCacheUsage(chunk.usage) ?? chunk.usage
+      );
     }
 
     if (finished) {

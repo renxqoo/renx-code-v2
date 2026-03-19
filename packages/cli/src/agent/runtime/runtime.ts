@@ -1,6 +1,3 @@
-import { homedir } from 'node:os';
-import * as path from 'node:path';
-
 import type {
   AgentContextUsageEvent,
   AgentEventHandlers,
@@ -97,6 +94,7 @@ const DEFAULT_MAX_STEPS = 10000;
 const DEFAULT_MAX_RETRY_COUNT = 10;
 const PARENT_HIDDEN_TOOL_NAMES = new Set(['file_history_list', 'file_history_restore']);
 const AGENT_FULL_ACCESS_ENV = 'AGENT_FULL_ACCESS';
+const AGENT_ENABLE_SERVER_SIDE_CONTINUATION_ENV = 'AGENT_ENABLE_SERVER_SIDE_CONTINUATION';
 const AVAILABLE_SKILLS_BOOTSTRAP_KEY = 'available-skills-bootstrap-v1';
 
 const parsePositiveInt = (raw: string | undefined, fallback: number): number => {
@@ -113,6 +111,39 @@ const parsePositiveInt = (raw: string | undefined, fallback: number): number => 
 const isFullAccessEnabled = (env: NodeJS.ProcessEnv = process.env): boolean => {
   const raw = env[AGENT_FULL_ACCESS_ENV]?.trim().toLowerCase();
   return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+};
+
+const parseBooleanEnv = (raw: string | undefined): boolean | undefined => {
+  if (!raw || raw.trim().length === 0) {
+    return undefined;
+  }
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on') {
+    return true;
+  }
+  if (
+    normalized === '0' ||
+    normalized === 'false' ||
+    normalized === 'no' ||
+    normalized === 'off'
+  ) {
+    return false;
+  }
+  return undefined;
+};
+
+const isResponsesModelConfig = (modelConfig: { endpointPath?: string; provider?: string }): boolean =>
+  modelConfig.endpointPath === '/responses' || modelConfig.provider === 'openai';
+
+const isServerSideContinuationEnabled = (
+  modelConfig: { endpointPath?: string; provider?: string },
+  env: NodeJS.ProcessEnv = process.env
+): boolean => {
+  const explicit = parseBooleanEnv(env[AGENT_ENABLE_SERVER_SIDE_CONTINUATION_ENV]);
+  if (explicit !== undefined) {
+    return explicit;
+  }
+  return isResponsesModelConfig(modelConfig);
 };
 
 const resolvePromptCacheConfig = (conversationId: string): Record<string, unknown> | undefined => {
@@ -269,12 +300,7 @@ const parseJsonObject = (raw: string): Record<string, unknown> => {
 };
 
 const resolveSkillRoots = (modules: SourceModules, workspaceRoot: string): string[] => {
-  return [
-    path.join(homedir(), '.agents', 'skills'),
-    modules.resolveRenxSkillsDir(process.env),
-    path.join(workspaceRoot, '.agents', 'skills'),
-    path.join(workspaceRoot, '.renx', 'skills'),
-  ].filter((value, index, array) => value.length > 0 && array.indexOf(value) === index);
+  return modules.resolveDefaultSkillRoots(workspaceRoot, process.env);
 };
 
 const hasAvailableSkillsBootstrapMessage = (messages: AgentV4MessageLike[]): boolean => {
@@ -534,6 +560,7 @@ const createRuntime = async (): Promise<RuntimeCore> => {
     agentConfig: {
       maxRetryCount: parsePositiveInt(process.env.AGENT_MAX_RETRY_COUNT, DEFAULT_MAX_RETRY_COUNT),
       enableCompaction: true,
+      enableServerSideContinuation: isServerSideContinuationEnabled(modelConfig, process.env),
       logger: agentLogger,
     },
     storePath: resolveDbPath(modules),

@@ -29,6 +29,20 @@ export function resolveRenxSkillsDir(env: NodeJS.ProcessEnv = process.env): stri
   return path.join(resolveRenxHome(env), 'skills');
 }
 
+export function resolveDefaultSkillRoots(
+  workspaceRoot: string,
+  env: NodeJS.ProcessEnv = process.env
+): string[] {
+  return [
+    path.join(homedir(), '.agents', 'skills'),
+    resolveRenxSkillsDir(env),
+    path.join(workspaceRoot, '.agents', 'skills'),
+    path.join(workspaceRoot, '.renx', 'skills'),
+    path.resolve(workspaceRoot, '..', 'core', 'src', 'skills'),
+    path.join(workspaceRoot, 'packages', 'core', 'src', 'skills'),
+  ].filter((value, index, array) => value.length > 0 && array.indexOf(value) === index);
+}
+
 export function resolveRenxDatabasePath(env: NodeJS.ProcessEnv = process.env): string {
   return path.join(resolveRenxHome(env), 'data.db');
 }

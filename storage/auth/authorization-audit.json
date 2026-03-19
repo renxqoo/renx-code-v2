@@ -1,0 +1,29 @@
+[
+  {
+    "auditId": "audit_1773933678516_59ada002",
+    "toolCallId": "call_function_ceiczyjvfskd_1",
+    "principalId": "agent-runtime",
+    "sessionId": "exec_cli_1773933670707_3s1bryk6g",
+    "toolName": "skill",
+    "decision": "allow",
+    "reason": "Authorization approved",
+    "policyVersion": "full-access",
+    "resources": [],
+    "rulesMatched": [
+      "default-policy",
+      "permissions-satisfied",
+      "approval-not-required"
+    ],
+    "tags": [
+      "read-only",
+      "system",
+      "internal",
+      "permissions",
+      "approval"
+    ],
+    "createdAt": 1773933678516,
+    "metadata": {
+      "sessionId": "exec_cli_1773933670707_3s1bryk6g"
+    }
+  }
+]

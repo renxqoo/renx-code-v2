@@ -105,11 +105,11 @@ The agent tool launches specialized subagents that autonomously handle complex w
 
 Available subagent types and their default tools:
 - Bash: terminal and command execution specialist. Use for focused shell work. (Tools: local_shell)
-- general-purpose: broad multi-step research and implementation agent. Use when the task may require several rounds of searching, reading, editing, and verification. (Tools: local_shell, read_file, file_edit, write_file, file_history_list, file_history_restore, skill, web_fetch, web_search)
+- general-purpose: broad multi-step research and implementation agent. Use when the task may require several rounds of searching, reading, editing, and verification. (Tools: local_shell, read_file, file_edit, write_file, file_history_list, file_history_restore, skill, web_fetch)
 - Explore: fast codebase exploration and discovery agent. Use for open-ended codebase exploration and multi-round keyword searches. (Tools: local_shell, read_file, skill)
 - Restore: focused rollback agent for restoring a file from saved history when the parent agent already knows the target path. (Tools: local_shell, read_file, file_history_list, file_history_restore)
 - Plan: implementation planning and architecture strategy agent. Use when you need a concrete implementation plan, critical file list, risks, and trade-offs before editing code. (Tools: local_shell, read_file, skill)
-- research-agent: long-form research and synthesis agent. Use when you need evidence collection and structured findings from local project context. (Tools: local_shell, read_file, skill, web_fetch, web_search)
+- research-agent: long-form research and synthesis agent. Use when you need evidence collection and structured findings from local project context. (Tools: local_shell, read_file, skill, web_fetch)
 - find-skills: local skill lookup + installation guidance agent. Use to discover the right skill, prefer local skills first, and fall back to verified installation steps when needed. (Tools: skill, local_shell)
 
 When to use the agent tool:

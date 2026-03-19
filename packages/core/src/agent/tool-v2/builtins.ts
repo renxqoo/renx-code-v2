@@ -28,7 +28,6 @@ import { TaskUpdateToolV2 } from './handlers/task-update';
 import { WaitAgentsToolV2 } from './handlers/wait-agents';
 import { SkillToolV2, type SkillToolV2Options } from './handlers/skill';
 import { WebFetchToolV2 } from './handlers/web-fetch';
-import { WebSearchToolV2 } from './handlers/web-search';
 import { WriteFileToolV2 } from './handlers/write-file';
 import { getTaskStateStoreV2 } from './task-store';
 
@@ -56,7 +55,6 @@ export function createBuiltInToolHandlersV2(
     new LspToolV2(),
     new WriteFileToolV2(),
     new WebFetchToolV2(),
-    new WebSearchToolV2(),
     new SkillToolV2(options?.skill),
     new RequestPermissionsToolV2(),
     new LocalShellToolV2({

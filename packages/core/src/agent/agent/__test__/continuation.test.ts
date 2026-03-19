@@ -81,6 +81,53 @@ describe('continuation', () => {
     });
   });
 
+  it('reuses a matching baseline when previous_response_id is explicitly provided', () => {
+    const config = {
+      temperature: 0.2,
+      previous_response_id: 'resp_1',
+    };
+    const previousUser = createMessage({
+      messageId: 'u1',
+      role: 'user',
+      type: 'user',
+      content: 'first request',
+    });
+    const assistant = createMessage({
+      messageId: 'a1',
+      role: 'assistant',
+      type: 'assistant-text',
+      content: 'first answer',
+    });
+    const latestUser = createMessage({
+      messageId: 'u2',
+      role: 'user',
+      type: 'user',
+      content: 'follow-up',
+    });
+
+    const baselineConfig = { temperature: 0.2 };
+    const requestMessages = [convertMessageToLLMMessage(previousUser)];
+    assistant.metadata = {
+      responseId: 'resp_1',
+      llmRequestConfigHash: hashValueForContinuation(normalizeContinuationConfig(baselineConfig)),
+      llmRequestInputHash: hashValueForContinuation(requestMessages),
+      llmRequestInputMessageCount: requestMessages.length,
+      llmResponseMessageHash: hashValueForContinuation(convertMessageToLLMMessage(assistant)),
+    };
+
+    const plan = buildLLMRequestPlan([previousUser, assistant, latestUser], config, true);
+
+    expect(plan.continuationMode).toBe('incremental');
+    expect(plan.previousResponseIdUsed).toBe('resp_1');
+    expect(plan.continuationBaselineMessageCount).toBe(2);
+    expect(plan.continuationDeltaMessageCount).toBe(1);
+    expect(plan.requestMessages).toEqual([convertMessageToLLMMessage(latestUser)]);
+    expect(plan.requestConfig).toMatchObject({
+      temperature: 0.2,
+      previous_response_id: 'resp_1',
+    });
+  });
+
   it('stores continuation metadata back onto the assistant message', () => {
     const assistant = createMessage({
       messageId: 'a1',

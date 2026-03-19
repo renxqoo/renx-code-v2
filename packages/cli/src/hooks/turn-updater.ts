@@ -7,6 +7,35 @@
 } from '../types/chat';
 
 const DEFAULT_AGENT_LABEL = '';
+export const SHELL_STREAM_MAX_CHARS = 16000;
+export const SHELL_STREAM_HEAD_CHARS = Math.ceil(SHELL_STREAM_MAX_CHARS / 2);
+export const SHELL_STREAM_TAIL_CHARS = Math.floor(SHELL_STREAM_MAX_CHARS / 2);
+export const SHELL_STREAM_TRUNCATION_MARKER = '\n... [earlier output truncated in UI] ...\n';
+
+const isShellStreamSegmentId = (segmentId: string): boolean => {
+  return /^\d+:tool:[^:]+:(stdout|stderr)$/.test(segmentId);
+};
+
+const appendShellStreamChunk = (current: string, chunk: string): string => {
+  if (!chunk) {
+    return current;
+  }
+
+  const markerIndex = current.indexOf(SHELL_STREAM_TRUNCATION_MARKER);
+  if (markerIndex >= 0) {
+    const head = current.slice(0, markerIndex).slice(0, SHELL_STREAM_HEAD_CHARS);
+    const tail = current.slice(markerIndex + SHELL_STREAM_TRUNCATION_MARKER.length);
+    const nextTail = `${tail}${chunk}`.slice(-SHELL_STREAM_TAIL_CHARS);
+    return `${head}${SHELL_STREAM_TRUNCATION_MARKER}${nextTail}`;
+  }
+
+  const next = `${current}${chunk}`;
+  if (next.length <= SHELL_STREAM_MAX_CHARS) {
+    return next;
+  }
+
+  return `${next.slice(0, SHELL_STREAM_HEAD_CHARS)}${SHELL_STREAM_TRUNCATION_MARKER}${next.slice(-SHELL_STREAM_TAIL_CHARS)}`;
+};
 
 export const createStreamingReply = (modelLabel: string): AssistantReply => ({
   agentLabel: DEFAULT_AGENT_LABEL,
@@ -52,7 +81,9 @@ export const appendToSegment = (
     segment.id === segmentId
       ? {
           ...segment,
-          content: `${segment.content}${chunk}`,
+          content: isShellStreamSegmentId(segmentId)
+            ? appendShellStreamChunk(segment.content, chunk)
+            : `${segment.content}${chunk}`,
           ...(data !== undefined ? { data } : {}),
         }
       : segment

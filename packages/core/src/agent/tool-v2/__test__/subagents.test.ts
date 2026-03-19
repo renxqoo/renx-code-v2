@@ -401,6 +401,7 @@ describe('tool-v2 subagent tools', () => {
     expect(DEFAULT_SUBAGENT_ROLES['general-purpose']?.allowedTools).not.toEqual(
       expect.arrayContaining(['glob', 'grep'])
     );
+    expect(DEFAULT_SUBAGENT_ROLES['general-purpose']?.allowedTools).not.toContain('web_search');
     expect(DEFAULT_SUBAGENT_ROLES['Restore']?.allowedTools).toEqual(
       expect.arrayContaining(['file_history_list', 'file_history_restore', 'local_shell'])
     );
@@ -414,6 +415,7 @@ describe('tool-v2 subagent tools', () => {
     const shell = specs.find((spec) => spec.name === 'local_shell');
 
     expect(specs.map((spec) => spec.name)).not.toEqual(expect.arrayContaining(['glob', 'grep']));
+    expect(specs.map((spec) => spec.name)).not.toContain('web_search');
     expect(shell?.description).toContain('Execute a shell command with explicit policy');
     expect(shell?.description).toContain('Use local_shell for:');
     expect(shell?.description).toContain('Windows: prefer PowerShell command shapes');

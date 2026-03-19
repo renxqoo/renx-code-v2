@@ -113,6 +113,15 @@ export function logInfo(
   logger.info?.(message, context, data);
 }
 
+export function logDebug(
+  logger: AgentLogger,
+  message: string,
+  context?: Record<string, unknown>,
+  data?: unknown
+): void {
+  logger.debug?.(message, context, data);
+}
+
 export function logWarn(
   logger: AgentLogger,
   message: string,

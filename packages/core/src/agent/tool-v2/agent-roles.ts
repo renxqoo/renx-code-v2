@@ -23,7 +23,6 @@ export const DEFAULT_SUBAGENT_ROLES: Record<string, SubagentRole> = {
       'file_history_restore',
       'skill',
       'web_fetch',
-      'web_search',
     ],
     defaultMaxSteps: 12,
   },
@@ -56,7 +55,7 @@ export const DEFAULT_SUBAGENT_ROLES: Record<string, SubagentRole> = {
     description: 'Research-focused subagent for evidence gathering and synthesis.',
     systemPrompt:
       'You are a research subagent. Use local_shell for local search and repository inspection, use read_file once you identify exact files, collect evidence carefully, and synthesize concise findings.',
-    allowedTools: ['local_shell', 'read_file', 'skill', 'web_fetch', 'web_search'],
+    allowedTools: ['local_shell', 'read_file', 'skill', 'web_fetch'],
     defaultMaxSteps: 10,
   },
   'research-agent': {
@@ -64,7 +63,7 @@ export const DEFAULT_SUBAGENT_ROLES: Record<string, SubagentRole> = {
     description: 'Research-focused subagent for evidence gathering and synthesis.',
     systemPrompt:
       'You are a research-focused subagent. Use local_shell for local search and repository inspection, use read_file once you identify exact files, collect evidence carefully, prefer direct citations from tool results, and synthesize concise findings.',
-    allowedTools: ['local_shell', 'read_file', 'skill', 'web_fetch', 'web_search'],
+    allowedTools: ['local_shell', 'read_file', 'skill', 'web_fetch'],
     defaultMaxSteps: 10,
   },
   planner: {
@@ -114,7 +113,7 @@ Your response must include:
 ### Next Step
 What the parent agent should do next.
 Keep the response **concise, clear, and action-oriented**.`,
-    allowedTools: ['local_shell', 'read_file', 'skill', 'web_search', 'web_fetch'],
+    allowedTools: ['local_shell', 'read_file', 'skill', 'web_fetch'],
     defaultMaxSteps: 8,
   },
 };

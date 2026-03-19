@@ -179,6 +179,70 @@ describe('useAgentChat', () => {
     ).toBe(true);
   });
 
+  it('allows submitting a new message immediately after user stop even if the previous run promise is still pending', async () => {
+    let firstAbortSignal: AbortSignal | undefined;
+
+    mockRunAgentPrompt
+      .mockImplementationOnce(
+        async (_prompt: unknown, _handlers: Record<string, unknown>, options?: { abortSignal?: AbortSignal }) => {
+          firstAbortSignal = options?.abortSignal;
+          return new Promise(() => {
+            // Simulate a stuck runtime promise that never settles after abort.
+          });
+        }
+      )
+      .mockResolvedValueOnce({
+        text: 'second reply',
+        completionReason: 'stop',
+        durationSeconds: 0,
+        modelLabel: 'glm-5',
+      });
+
+    const { result } = renderHook(() => useAgentChat());
+
+    await waitFor(() => {
+      expect(result.current.modelLabel).toBe('glm-5');
+    });
+
+    act(() => {
+      result.current.setInputValue('first input');
+    });
+    act(() => {
+      result.current.submitInput();
+    });
+
+    await waitFor(() => {
+      expect(result.current.isThinking).toBe(true);
+    });
+
+    act(() => {
+      result.current.stopActiveReply();
+    });
+
+    await waitFor(() => {
+      expect(result.current.isThinking).toBe(false);
+    });
+    expect(firstAbortSignal?.aborted).toBe(true);
+
+    act(() => {
+      result.current.setInputValue('second input');
+    });
+    act(() => {
+      result.current.submitInput();
+    });
+
+    await waitFor(() => {
+      expect(mockRunAgentPrompt).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(result.current.isThinking).toBe(false);
+    });
+
+    expect(result.current.turns).toHaveLength(2);
+    expect(result.current.turns[0]?.reply?.completionReason).toBe('cancelled');
+    expect(result.current.turns[1]?.prompt).toContain('second input');
+  });
+
   it('submits permission grants with the selected scope', async () => {
     let resolvedGrant:
       | {
