@@ -380,8 +380,9 @@ describe('ProviderRegistry', () => {
     it('should return models for minimax provider', () => {
       const models = ProviderRegistry.listModelsByProvider('minimax');
 
-      expect(models).toHaveLength(1);
-      expect(models[0].id).toBe('minimax-2.5');
+      expect(models).toHaveLength(2);
+      expect(models[0].id).toBe('minimax-2.7');
+      expect(models[1].id).toBe('minimax-2.5');
     });
 
     it('should return empty array for provider with no models', () => {

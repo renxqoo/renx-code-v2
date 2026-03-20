@@ -67,7 +67,7 @@ export const MODEL_DEFINITIONS: Record<BuiltinModelId, ModelDefinition> = {
     modalities: { image: true },
   },
   'minimax-2.7': {
-    id: 'MiniMax-M2.7-highspeed',
+    id: 'minimax-2.7',
     provider: 'minimax',
     name: 'MiniMax-2.7-highspeed',
     baseURL: 'https://api.minimaxi.com/v1',
