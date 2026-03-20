@@ -100,8 +100,12 @@ describe('runAgentPrompt error handling', () => {
         loadEnvFiles: vi.fn().mockResolvedValue([]),
         loadConfigToEnv: vi.fn().mockReturnValue([]),
         buildSystemPrompt: vi.fn(() => 'Test system prompt'),
+        resolveDefaultSkillRoots: vi.fn(() => ['/tmp/.agents/skills']),
         resolveRenxDatabasePath: vi.fn(() => '/tmp/renx/data.db'),
         resolveRenxTaskDir: vi.fn(() => '/tmp/renx/task'),
+        resolveRenxSkillsDir: vi.fn(() => '/tmp/renx/skills'),
+        listAvailableSkills: vi.fn(() => []),
+        formatAvailableSkillsForBootstrap: vi.fn(() => 'Available skills:'),
         createLoggerFromEnv,
         createAgentLoggerAdapter: vi.fn(() => ({
           info: vi.fn(),
