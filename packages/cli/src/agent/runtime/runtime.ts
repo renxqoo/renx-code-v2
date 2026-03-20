@@ -132,15 +132,47 @@ const isResponsesModelConfig = (modelConfig: {
   provider?: string;
 }): boolean => modelConfig.endpointPath === '/responses' || modelConfig.provider === 'openai';
 
+const OFFICIAL_OPENAI_HOSTS = new Set(['api.openai.com']);
+
+const resolveModelBaseUrl = (
+  modelConfig: { baseURL?: string; envBaseURL?: string },
+  env: NodeJS.ProcessEnv
+): string | undefined => {
+  const envBaseUrl = modelConfig.envBaseURL ? env[modelConfig.envBaseURL]?.trim() : undefined;
+  if (envBaseUrl) {
+    return envBaseUrl;
+  }
+  return modelConfig.baseURL?.trim() || undefined;
+};
+
+const isOfficialOpenAIResponsesTarget = (
+  modelConfig: { baseURL?: string; envBaseURL?: string },
+  env: NodeJS.ProcessEnv
+): boolean => {
+  const baseUrl = resolveModelBaseUrl(modelConfig, env);
+  if (!baseUrl) {
+    return true;
+  }
+
+  try {
+    const { hostname } = new URL(baseUrl);
+    return OFFICIAL_OPENAI_HOSTS.has(hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+};
+
 const isServerSideContinuationEnabled = (
-  modelConfig: { endpointPath?: string; provider?: string },
+  modelConfig: { endpointPath?: string; provider?: string; baseURL?: string; envBaseURL?: string },
   env: NodeJS.ProcessEnv = process.env
 ): boolean => {
   const explicit = parseBooleanEnv(env[AGENT_ENABLE_SERVER_SIDE_CONTINUATION_ENV]);
   if (explicit !== undefined) {
     return explicit;
   }
-  return isResponsesModelConfig(modelConfig);
+  return (
+    isResponsesModelConfig(modelConfig) && isOfficialOpenAIResponsesTarget(modelConfig, env)
+  );
 };
 
 const resolvePromptCacheConfig = (conversationId: string): Record<string, unknown> | undefined => {

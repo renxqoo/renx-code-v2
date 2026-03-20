@@ -15,38 +15,21 @@ const releaseRoot = path.join(packageRoot, 'release');
 const tagIndex = process.argv.indexOf('--tag');
 const tag = tagIndex >= 0 ? process.argv[tagIndex + 1] : undefined;
 
-const buildNpmEnv = () => {
-  const env = {
-    ...process.env,
-    NPM_CONFIG_CACHE: path.join(packageRoot, '.npm-cache'),
-  };
-
-  for (const key of Object.keys(env)) {
-    const normalized = key.toLowerCase();
-    if (
-      normalized === 'npm_config_recursive' ||
-      normalized === 'npm_config_verify_deps_before_run' ||
-      normalized === 'npm_config__jsr_registry' ||
-      normalized === 'npm_config_enable_pre_post_scripts' ||
-      normalized === 'npm_config_store_dir'
-    ) {
-      delete env[key];
-    }
-  }
-
-  return env;
-};
+const otpIndex = process.argv.indexOf('--otp');
+const otp = otpIndex >= 0 ? process.argv[otpIndex + 1] : undefined;
 
 const publish = (packageDir) => {
   const args = ['publish', packageDir, '--access', 'public'];
   if (tag) {
     args.push('--tag', tag);
   }
+  if (otp) {
+    args.push('--otp', otp);
+  }
 
   const result = spawnSync('npm', args, {
     cwd: releaseRoot,
     stdio: 'inherit',
-    env: buildNpmEnv(),
   });
 
   if (result.error) {

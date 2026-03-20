@@ -6,7 +6,6 @@ const run = (command, args) =>
   spawnSync(command, args, {
     cwd: process.cwd(),
     stdio: 'pipe',
-    env: process.env,
     encoding: 'utf8',
   });
 

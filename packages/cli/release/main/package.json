@@ -1,6 +1,6 @@
 {
   "name": "@renxqoo/renx-code",
-  "version": "0.0.21",
+  "version": "0.0.39",
   "description": "Renx Code terminal AI coding assistant",
   "type": "commonjs",
   "private": false,
@@ -12,11 +12,11 @@
     "README.md"
   ],
   "optionalDependencies": {
-    "@renxqoo/renx-code-darwin-arm64": "0.0.21",
-    "@renxqoo/renx-code-darwin-x64": "0.0.21",
-    "@renxqoo/renx-code-linux-arm64": "0.0.21",
-    "@renxqoo/renx-code-linux-x64": "0.0.21",
-    "@renxqoo/renx-code-win32-x64": "0.0.21"
+    "@renxqoo/renx-code-darwin-arm64": "0.0.39",
+    "@renxqoo/renx-code-darwin-x64": "0.0.39",
+    "@renxqoo/renx-code-linux-arm64": "0.0.39",
+    "@renxqoo/renx-code-linux-x64": "0.0.39",
+    "@renxqoo/renx-code-win32-x64": "0.0.39"
   },
   "engines": {
     "node": ">=20.0.0"

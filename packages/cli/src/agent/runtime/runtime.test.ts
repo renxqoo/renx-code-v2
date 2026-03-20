@@ -252,6 +252,7 @@ describe('runtime', () => {
   const originalAgentModel = process.env.AGENT_MODEL;
   const originalFullAccess = process.env.AGENT_FULL_ACCESS;
   const originalServerSideContinuation = process.env.AGENT_ENABLE_SERVER_SIDE_CONTINUATION;
+  const originalOpenAIBase = process.env.OPENAI_API_BASE;
   const originalPromptCacheKey = process.env.AGENT_PROMPT_CACHE_KEY;
   const originalPromptCacheRetention = process.env.AGENT_PROMPT_CACHE_RETENTION;
   const renxHome = path.join(process.cwd(), '.tmp-renx-home');
@@ -267,6 +268,7 @@ describe('runtime', () => {
     delete process.env.AGENT_TOOL_NETWORK_MODE;
     delete process.env.AGENT_FULL_ACCESS;
     delete process.env.AGENT_ENABLE_SERVER_SIDE_CONTINUATION;
+    delete process.env.OPENAI_API_BASE;
     delete process.env.AGENT_PROMPT_CACHE_KEY;
     delete process.env.AGENT_PROMPT_CACHE_RETENTION;
     mockResolveWorkspaceRoot.mockReturnValue('/test/workspace');
@@ -299,6 +301,11 @@ describe('runtime', () => {
       delete process.env.AGENT_ENABLE_SERVER_SIDE_CONTINUATION;
     } else {
       process.env.AGENT_ENABLE_SERVER_SIDE_CONTINUATION = originalServerSideContinuation;
+    }
+    if (originalOpenAIBase === undefined) {
+      delete process.env.OPENAI_API_BASE;
+    } else {
+      process.env.OPENAI_API_BASE = originalOpenAIBase;
     }
     if (originalPromptCacheKey === undefined) {
       delete process.env.AGENT_PROMPT_CACHE_KEY;
@@ -676,7 +683,7 @@ describe('runtime', () => {
     );
   });
 
-  it('enables server-side continuation by default for responses models', async () => {
+  it('enables server-side continuation by default for official responses models', async () => {
     const modules = buildMockModules({
       ProviderRegistry: {
         getModelIds: () => ['gpt-5.4', 'glm-5'],
@@ -707,6 +714,44 @@ describe('runtime', () => {
       expect.objectContaining({
         agentConfig: expect.objectContaining({
           enableServerSideContinuation: true,
+        }),
+      })
+    );
+  });
+
+  it('disables server-side continuation by default for custom OpenAI-compatible proxies', async () => {
+    process.env.OPENAI_API_BASE = 'https://gmncode.cn';
+    const modules = buildMockModules({
+      ProviderRegistry: {
+        getModelIds: () => ['gpt-5.4', 'glm-5'],
+        getModelConfig: (modelId: string) => ({
+          name: modelId === 'gpt-5.4' ? 'GPT-5.4' : 'GLM-5',
+          envApiKey: 'TEST_API_KEY',
+          provider: modelId === 'gpt-5.4' ? 'openai' : 'zhipu',
+          model: modelId,
+          endpointPath: modelId === 'gpt-5.4' ? '/responses' : '/chat/completions',
+          envBaseURL: modelId === 'gpt-5.4' ? 'OPENAI_API_BASE' : undefined,
+        }),
+        createFromEnv: () => ({}),
+      },
+      loadConfigToEnv: vi.fn(() => {
+        process.env.AGENT_MODEL = 'gpt-5.4';
+        return ['C:\\Users\\Administrator\\.renx\\config.json'];
+      }),
+    });
+    const createEnterpriseAgentAppService = modules.createEnterpriseAgentAppService as ReturnType<
+      typeof vi.fn
+    >;
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    await runAgentPrompt('Test prompt', {});
+
+    expect(createEnterpriseAgentAppService).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentConfig: expect.objectContaining({
+          enableServerSideContinuation: false,
         }),
       })
     );

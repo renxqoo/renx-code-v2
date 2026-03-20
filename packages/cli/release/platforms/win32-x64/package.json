@@ -1,17 +1,17 @@
 {
-  "name": "@renxqoo/renx-code-darwin-arm64",
-  "version": "0.0.21",
-  "description": "Renx Code terminal AI coding assistant (darwin-arm64)",
+  "name": "@renxqoo/renx-code-win32-x64",
+  "version": "0.0.39",
+  "description": "Renx Code terminal AI coding assistant (win32-x64)",
   "type": "commonjs",
   "private": false,
   "os": [
-    "darwin"
+    "win32"
   ],
   "cpu": [
-    "arm64"
+    "x64"
   ],
   "bin": {
-    "renx": "./bin/renx"
+    "renx": "./bin/renx.exe"
   },
   "files": [
     "bin",
