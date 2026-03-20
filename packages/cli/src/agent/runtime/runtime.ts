@@ -170,9 +170,7 @@ const isServerSideContinuationEnabled = (
   if (explicit !== undefined) {
     return explicit;
   }
-  return (
-    isResponsesModelConfig(modelConfig) && isOfficialOpenAIResponsesTarget(modelConfig, env)
-  );
+  return isResponsesModelConfig(modelConfig) && isOfficialOpenAIResponsesTarget(modelConfig, env);
 };
 
 const resolvePromptCacheConfig = (conversationId: string): Record<string, unknown> | undefined => {
