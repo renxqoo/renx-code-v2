@@ -146,6 +146,9 @@ export async function* callLLMAndProcessStream(
       continuationDeltaMessageCount: requestPlan.continuationDeltaMessageCount,
       requestInputMessageCount: requestPlan.requestInputMessageCount,
       requestMessageCount: requestPlan.requestMessages.length,
+      syntheticToolResultCount: requestPlan.toolProtocolRepairStats.syntheticToolResultCount,
+      droppedOrphanToolResultCount:
+        requestPlan.toolProtocolRepairStats.droppedOrphanToolResultCount,
       hasPreviousResponseId:
         typeof requestPlan.requestConfig?.previous_response_id === 'string' &&
         requestPlan.requestConfig.previous_response_id.trim().length > 0,

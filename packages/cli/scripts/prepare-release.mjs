@@ -1,6 +1,15 @@
 #!/usr/bin/env bun
 
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,13 +29,10 @@ const wrapperPath = path.join(packageRoot, 'bin', 'renx.cjs');
 const ripgrepManifestPath = path.join(packageRoot, 'bin', 'rg');
 const ripgrepInstallScriptPath = path.join(packageRoot, 'scripts', 'install-ripgrep.mjs');
 const entryPath = path.join(packageRoot, 'src', 'index.tsx');
-const parserWorkerPath = path.resolve(
-  packageRoot,
-  'node_modules',
-  '@opentui',
-  'core',
-  'parser.worker.js'
-);
+const stagedAssetsRoot = path.join(packageRoot, '.release-assets');
+const stagedNodeModulesRoot = path.join(stagedAssetsRoot, 'node_modules');
+const stagedWebTreeSitterRoot = path.join(stagedNodeModulesRoot, 'web-tree-sitter');
+const parserWorkerPath = path.join(stagedAssetsRoot, 'parser.worker.js');
 
 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
 const version = packageJson.version ?? '0.0.0';
@@ -55,6 +61,88 @@ const run = (command, args, cwd = workspaceRoot) => {
   }
 };
 
+const resolveParserWorkerSourcePath = () => {
+  const directCandidates = [
+    path.join(packageRoot, 'node_modules', '@opentui', 'core', 'parser.worker.js'),
+    path.join(workspaceRoot, 'node_modules', '@opentui', 'core', 'parser.worker.js'),
+  ];
+
+  for (const candidate of directCandidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  const pnpmStoreRoot = path.join(workspaceRoot, 'node_modules', '.pnpm');
+  if (existsSync(pnpmStoreRoot)) {
+    for (const entry of readdirSync(pnpmStoreRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !entry.name.startsWith('@opentui+core@')) {
+        continue;
+      }
+
+      const candidate = path.join(
+        pnpmStoreRoot,
+        entry.name,
+        'node_modules',
+        '@opentui',
+        'core',
+        'parser.worker.js'
+      );
+      if (existsSync(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  throw new Error(
+    `Cannot find OpenTUI parser worker in installed dependencies under ${packageRoot} or ${workspaceRoot}`
+  );
+};
+
+const resolveWebTreeSitterSourcePath = () => {
+  const directCandidates = [
+    path.join(packageRoot, 'node_modules', 'web-tree-sitter'),
+    path.join(workspaceRoot, 'node_modules', 'web-tree-sitter'),
+  ];
+
+  for (const candidate of directCandidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  const pnpmStoreRoot = path.join(workspaceRoot, 'node_modules', '.pnpm');
+  if (existsSync(pnpmStoreRoot)) {
+    for (const entry of readdirSync(pnpmStoreRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !entry.name.startsWith('web-tree-sitter@')) {
+        continue;
+      }
+
+      const candidate = path.join(pnpmStoreRoot, entry.name, 'node_modules', 'web-tree-sitter');
+      if (existsSync(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  throw new Error(
+    `Cannot find web-tree-sitter in installed dependencies under ${packageRoot} or ${workspaceRoot}`
+  );
+};
+
+const stageParserWorker = () => {
+  const sourcePath = resolveParserWorkerSourcePath();
+  mkdirSync(stagedAssetsRoot, { recursive: true });
+  cpSync(sourcePath, parserWorkerPath);
+};
+
+const stageWebTreeSitter = () => {
+  const sourcePath = resolveWebTreeSitterSourcePath();
+  mkdirSync(stagedNodeModulesRoot, { recursive: true });
+  rmSync(stagedWebTreeSitterRoot, { recursive: true, force: true });
+  cpSync(sourcePath, stagedWebTreeSitterRoot, { recursive: true });
+};
+
 const ensureReleaseInputs = () => {
   const requiredPaths = [readmePath, wrapperPath, ripgrepManifestPath, ripgrepInstallScriptPath, entryPath];
   for (const candidate of requiredPaths) {
@@ -62,8 +150,13 @@ const ensureReleaseInputs = () => {
       throw new Error(`Required release input is missing: ${candidate}`);
     }
   }
+  stageParserWorker();
+  stageWebTreeSitter();
   if (!existsSync(parserWorkerPath)) {
-    throw new Error(`Cannot find OpenTUI parser worker: ${parserWorkerPath}`);
+    throw new Error(`Cannot find staged OpenTUI parser worker: ${parserWorkerPath}`);
+  }
+  if (!existsSync(path.join(stagedWebTreeSitterRoot, 'package.json'))) {
+    throw new Error(`Cannot find staged web-tree-sitter package: ${stagedWebTreeSitterRoot}`);
   }
 };
 

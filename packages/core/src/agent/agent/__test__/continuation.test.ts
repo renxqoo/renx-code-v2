@@ -35,6 +35,10 @@ describe('continuation', () => {
     expect(plan.requestMessages).toHaveLength(1);
     expect(plan.previousResponseIdUsed).toBeUndefined();
     expect(plan.continuationDeltaMessageCount).toBe(1);
+    expect(plan.toolProtocolRepairStats).toEqual({
+      syntheticToolResultCount: 0,
+      droppedOrphanToolResultCount: 0,
+    });
   });
 
   it('builds an incremental request plan when the assistant metadata matches the previous request', () => {
@@ -267,6 +271,115 @@ describe('continuation', () => {
     ).toMatchObject({
       temperature: 0.2,
       prompt_cache_key: 'explicit-cache',
+    });
+  });
+
+  it('repairs missing tool results in full request plans before sending to the LLM', () => {
+    const toolCallAssistant = createMessage({
+      messageId: 'a_tool',
+      role: 'assistant',
+      type: 'tool-call',
+      content: '',
+      timestamp: 100,
+      tool_calls: [
+        {
+          id: 'call_1',
+          type: 'function',
+          index: 0,
+          function: { name: 'bash', arguments: '{}' },
+        },
+      ],
+    });
+    const latestUser = createMessage({
+      messageId: 'u2',
+      role: 'user',
+      type: 'user',
+      content: 'follow-up',
+      timestamp: 200,
+    });
+
+    const plan = buildLLMRequestPlan([toolCallAssistant, latestUser], { temperature: 0.2 }, false);
+
+    expect(plan.requestMessages).toHaveLength(3);
+    expect(plan.requestMessages[0]).toEqual(convertMessageToLLMMessage(toolCallAssistant));
+    expect(plan.requestMessages[1]).toMatchObject({
+      role: 'tool',
+      tool_call_id: 'call_1',
+      content: expect.stringContaining('tool result missing'),
+    });
+    expect(plan.requestMessages[2]).toEqual(convertMessageToLLMMessage(latestUser));
+    expect(plan.toolProtocolRepairStats).toEqual({
+      syntheticToolResultCount: 1,
+      droppedOrphanToolResultCount: 0,
+    });
+  });
+
+  it('repairs missing tool results in incremental continuation deltas', () => {
+    const config = { temperature: 0.2 };
+    const previousUser = createMessage({
+      messageId: 'u1',
+      role: 'user',
+      type: 'user',
+      content: 'first request',
+    });
+    const previousAssistant = createMessage({
+      messageId: 'a1',
+      role: 'assistant',
+      type: 'assistant-text',
+      content: 'first answer',
+    });
+    const toolCallAssistant = createMessage({
+      messageId: 'a_tool',
+      role: 'assistant',
+      type: 'tool-call',
+      content: '',
+      timestamp: 100,
+      tool_calls: [
+        {
+          id: 'call_1',
+          type: 'function',
+          index: 0,
+          function: { name: 'bash', arguments: '{}' },
+        },
+      ],
+    });
+    const latestUser = createMessage({
+      messageId: 'u2',
+      role: 'user',
+      type: 'user',
+      content: 'follow-up',
+      timestamp: 200,
+    });
+
+    const requestMessages = [convertMessageToLLMMessage(previousUser)];
+    previousAssistant.metadata = {
+      responseId: 'resp_1',
+      llmRequestConfigHash: hashValueForContinuation(normalizeContinuationConfig(config)),
+      llmRequestInputHash: hashValueForContinuation(requestMessages),
+      llmRequestInputMessageCount: requestMessages.length,
+      llmResponseMessageHash: hashValueForContinuation(
+        convertMessageToLLMMessage(previousAssistant)
+      ),
+    };
+
+    const plan = buildLLMRequestPlan(
+      [previousUser, previousAssistant, toolCallAssistant, latestUser],
+      config,
+      true
+    );
+
+    expect(plan.continuationMode).toBe('incremental');
+    expect(plan.requestMessages).toHaveLength(3);
+    expect(plan.requestMessages[0]).toEqual(convertMessageToLLMMessage(toolCallAssistant));
+    expect(plan.requestMessages[1]).toMatchObject({
+      role: 'tool',
+      tool_call_id: 'call_1',
+      content: expect.stringContaining('tool result missing'),
+    });
+    expect(plan.requestMessages[2]).toEqual(convertMessageToLLMMessage(latestUser));
+    expect(plan.toolProtocolRepairStats).toEqual({
+      syntheticToolResultCount: 1,
+      droppedOrphanToolResultCount: 0,
     });
   });
 });

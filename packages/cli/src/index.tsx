@@ -203,7 +203,6 @@ if (parsed.command === 'session:open') {
     modelId: parsed.modelId,
   });
   await startTui();
-  process.exit(0);
 }
 
 await initializeAgentSession({
@@ -211,4 +210,3 @@ await initializeAgentSession({
   modelId: parsed.modelId,
 });
 await startTui();
-process.exit(0);

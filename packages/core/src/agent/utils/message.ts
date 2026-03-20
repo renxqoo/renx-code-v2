@@ -4,8 +4,22 @@
 
 import type { InputContentPart, MessageContent } from '../../providers';
 import type { Message } from '../types';
+import { generateId } from '../agent/shared';
 
 type ToolCallLike = { id?: string };
+type PendingToolCall = {
+  toolCallId: string;
+  assistantMessageId: string;
+  timestamp: number;
+};
+
+export type ToolProtocolRepairStats = {
+  syntheticToolResultCount: number;
+  droppedOrphanToolResultCount: number;
+};
+
+const MISSING_TOOL_RESULT_CONTENT =
+  'Command failed: tool result missing because the previous run was interrupted before the result was recorded. Treat this tool call as failed or unknown; do not assume side effects completed.';
 
 export function contentToText(content: MessageContent | undefined): string {
   if (!content) return '';
@@ -119,4 +133,94 @@ export function processToolCallPairs(
   }
 
   return { pending: newPending, active: newActive };
+}
+
+export function repairToolProtocolMessages(
+  messages: Message[],
+  options: {
+    createMessageId?: () => string;
+  } = {}
+): { messages: Message[]; stats: ToolProtocolRepairStats } {
+  if (messages.length === 0) {
+    return {
+      messages,
+      stats: {
+        syntheticToolResultCount: 0,
+        droppedOrphanToolResultCount: 0,
+      },
+    };
+  }
+
+  const createMessageId = options.createMessageId ?? (() => generateId('msg_'));
+  const repaired: Message[] = [];
+  const pendingToolCalls = new Map<string, PendingToolCall>();
+  let syntheticToolResultCount = 0;
+  let droppedOrphanToolResultCount = 0;
+
+  const flushPendingToolCalls = (referenceTimestamp?: number) => {
+    for (const pending of pendingToolCalls.values()) {
+      repaired.push({
+        messageId: createMessageId(),
+        type: 'tool-result',
+        role: 'tool',
+        content: MISSING_TOOL_RESULT_CONTENT,
+        tool_call_id: pending.toolCallId,
+        timestamp: referenceTimestamp ?? pending.timestamp,
+        metadata: {
+          syntheticToolResult: true,
+          syntheticToolResultReason: 'missing_tool_result',
+          syntheticToolResultSourceAssistantMessageId: pending.assistantMessageId,
+        },
+      });
+      syntheticToolResultCount += 1;
+    }
+    pendingToolCalls.clear();
+  };
+
+  for (const message of messages) {
+    if (message.role !== 'tool' && pendingToolCalls.size > 0) {
+      flushPendingToolCalls(message.timestamp);
+    }
+
+    if (message.role === 'assistant') {
+      repaired.push(message);
+      for (const call of getAssistantToolCalls(message)) {
+        if (!call.id) {
+          continue;
+        }
+        pendingToolCalls.set(call.id, {
+          toolCallId: call.id,
+          assistantMessageId: message.messageId,
+          timestamp: message.timestamp,
+        });
+      }
+      continue;
+    }
+
+    if (message.role === 'tool') {
+      const toolCallId = getToolCallId(message);
+      if (!toolCallId || !pendingToolCalls.has(toolCallId)) {
+        droppedOrphanToolResultCount += 1;
+        continue;
+      }
+
+      repaired.push(message);
+      pendingToolCalls.delete(toolCallId);
+      continue;
+    }
+
+    repaired.push(message);
+  }
+
+  if (pendingToolCalls.size > 0) {
+    flushPendingToolCalls();
+  }
+
+  return {
+    messages: repaired,
+    stats: {
+      syntheticToolResultCount,
+      droppedOrphanToolResultCount,
+    },
+  };
 }

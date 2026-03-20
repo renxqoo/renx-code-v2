@@ -2,4 +2,4 @@
  * 工具函数导出
  */
 
-export { contentToText, processToolCallPairs } from './message';
+export { contentToText, processToolCallPairs, repairToolProtocolMessages } from './message';

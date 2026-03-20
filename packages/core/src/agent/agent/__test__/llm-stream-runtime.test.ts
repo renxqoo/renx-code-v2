@@ -248,6 +248,8 @@ describe('llm-stream-runtime', () => {
         continuationMode: 'full',
         requestInputMessageCount: 1,
         requestMessageCount: 1,
+        syntheticToolResultCount: 0,
+        droppedOrphanToolResultCount: 0,
         hasPreviousResponseId: false,
       })
     );
@@ -263,6 +265,68 @@ describe('llm-stream-runtime', () => {
         completionTokens: 10,
         totalTokens: 1210,
         promptCacheHitTokens: 768,
+      })
+    );
+  });
+
+  it('logs tool protocol repair stats when request messages are auto-repaired', async () => {
+    const provider = createProvider(
+      toStream([
+        {
+          id: 'resp_3',
+          index: 0,
+          choices: [{ index: 0, delta: { content: 'Recovered' } }],
+        },
+        {
+          index: 0,
+          choices: [{ index: 0, delta: { finish_reason: 'stop' } as unknown as ChunkDelta }],
+        },
+      ])
+    );
+    const deps = createDeps(provider);
+
+    await collectEvents(
+      callLLMAndProcessStream(deps, {
+        messages: [
+          {
+            messageId: 'a1',
+            role: 'assistant',
+            type: 'tool-call',
+            content: '',
+            timestamp: 100,
+            tool_calls: [
+              {
+                id: 'call_1',
+                type: 'function',
+                index: 0,
+                function: { name: 'bash', arguments: '{}' },
+              },
+            ],
+          } as Message,
+          {
+            messageId: 'u1',
+            role: 'user',
+            type: 'user',
+            content: 'continue',
+            timestamp: 200,
+          } as Message,
+        ],
+        config: undefined,
+        executionId: 'exec_repair',
+        stepIndex: 4,
+      })
+    );
+
+    expect(deps.logDebug).toHaveBeenCalledWith(
+      '[Agent] llm.request.plan',
+      expect.objectContaining({
+        executionId: 'exec_repair',
+        stepIndex: 4,
+        messageCount: 2,
+      }),
+      expect.objectContaining({
+        syntheticToolResultCount: 1,
+        droppedOrphanToolResultCount: 0,
       })
     );
   });

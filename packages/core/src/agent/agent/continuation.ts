@@ -1,6 +1,10 @@
 import type { AgentInput, Message } from '../types';
 import type { LLMRequestMessage } from '../../providers';
-import { processToolCallPairs } from '../utils/message';
+import {
+  processToolCallPairs,
+  repairToolProtocolMessages,
+  type ToolProtocolRepairStats,
+} from '../utils/message';
 
 import { convertMessageToLLMMessage, shouldSendMessageToLLM } from './message-utils';
 import { hashValueForContinuation, normalizeContinuationConfig } from './continuation-hash';
@@ -12,6 +16,7 @@ export type LLMRequestPlan = {
   requestConfigHash: string;
   requestInputHash: string;
   requestInputMessageCount: number;
+  toolProtocolRepairStats: ToolProtocolRepairStats;
   continuationMode: 'full' | 'incremental';
   previousResponseIdUsed?: string;
   continuationBaselineMessageCount?: number;
@@ -24,6 +29,7 @@ type ContinuationRequestState = {
   requestConfigHash: string;
   requestInputHash: string;
   requestInputMessageCount: number;
+  toolProtocolRepairStats: ToolProtocolRepairStats;
 };
 
 type ContinuationCandidate = {
@@ -35,7 +41,10 @@ function createContinuationRequestState(
   messages: Message[],
   config: AgentInput['config']
 ): ContinuationRequestState {
-  const llmSourceMessages = messages.filter((msg) => shouldSendMessageToLLM(msg));
+  const repairedMessages = repairToolProtocolMessages(
+    messages.filter((msg) => shouldSendMessageToLLM(msg))
+  );
+  const llmSourceMessages = repairedMessages.messages;
   const llmMessages = llmSourceMessages.map((msg) => convertMessageToLLMMessage(msg));
 
   return {
@@ -44,6 +53,7 @@ function createContinuationRequestState(
     requestConfigHash: hashValueForContinuation(normalizeContinuationConfig(config)),
     requestInputHash: hashValueForContinuation(llmMessages),
     requestInputMessageCount: llmMessages.length,
+    toolProtocolRepairStats: repairedMessages.stats,
   };
 }
 
@@ -57,6 +67,7 @@ function buildFullRequestPlan(
     requestConfigHash: state.requestConfigHash,
     requestInputHash: state.requestInputHash,
     requestInputMessageCount: state.requestInputMessageCount,
+    toolProtocolRepairStats: state.toolProtocolRepairStats,
     continuationMode: 'full',
     continuationDeltaMessageCount: state.llmMessages.length,
   };
@@ -149,6 +160,7 @@ export function buildLLMRequestPlan(
       requestConfigHash: state.requestConfigHash,
       requestInputHash: state.requestInputHash,
       requestInputMessageCount: state.requestInputMessageCount,
+      toolProtocolRepairStats: state.toolProtocolRepairStats,
       continuationMode: 'incremental',
       previousResponseIdUsed: reusableCandidate.metadata.responseId,
       continuationBaselineMessageCount: reusableCandidate.continuationWindow.pending.length,
