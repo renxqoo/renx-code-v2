@@ -1,8 +1,7 @@
 import type { KeyEvent, PasteEvent, TextareaRenderable } from '@opentui/core';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { FileMentionMenu } from './file-mention-menu';
-import { FooterHints } from './footer-hints';
 import { SlashCommandMenu } from './slash-command-menu';
 import type { SlashCommandDefinition } from '../commands/slash-commands';
 import {
@@ -19,8 +18,6 @@ type PromptProps = {
   isThinking: boolean;
   disabled?: boolean;
   modelLabel: string;
-  isFullAccessMode?: boolean;
-  contextUsagePercent: number | null;
   value: string;
   selectedFiles: PromptFileSelection[];
   onAddSelectedFiles: (files: PromptFileSelection[]) => void;
@@ -30,12 +27,10 @@ type PromptProps = {
   onSubmit: () => void;
 };
 
-export const Prompt = ({
+const PromptComponent = ({
   isThinking,
   disabled = false,
   modelLabel,
-  isFullAccessMode = false,
-  contextUsagePercent,
   value,
   selectedFiles,
   onAddSelectedFiles,
@@ -229,11 +224,8 @@ export const Prompt = ({
           </box>
         </box>
       </box>
-      <FooterHints
-        isThinking={isThinking}
-        contextUsagePercent={contextUsagePercent}
-        isFullAccessMode={isFullAccessMode}
-      />
     </box>
   );
 };
+
+export const Prompt = memo(PromptComponent);

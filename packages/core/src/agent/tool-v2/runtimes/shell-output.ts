@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
+import stripAnsi from 'strip-ansi';
 
 export interface ShellOutputArtifact {
   readonly runId: string;
@@ -56,6 +57,154 @@ interface ShellOutputCaptureMeta {
 const DEFAULT_PREVIEW_CHARS = 16000;
 const MIN_PREVIEW_CHARS = 256;
 
+type ShellStreamSanitizerMode = 'text' | 'escape' | 'csi' | 'osc' | 'dcs' | 'pm' | 'apc' | 'sos';
+
+type ShellStreamSanitizerState = {
+  mode: ShellStreamSanitizerMode;
+  awaitingStringTerminator: boolean;
+};
+
+const createShellStreamSanitizerState = (): ShellStreamSanitizerState => ({
+  mode: 'text',
+  awaitingStringTerminator: false,
+});
+
+const stripShellControlSequences = (input: string, state: ShellStreamSanitizerState): string => {
+  if (!input) {
+    return input;
+  }
+
+  let plainText = '';
+
+  for (let index = 0; index < input.length; index += 1) {
+    const char = input[index];
+    const code = input.charCodeAt(index);
+
+    if (!char || Number.isNaN(code)) {
+      continue;
+    }
+
+    if (state.mode === 'text') {
+      if (char === '\u001b') {
+        state.mode = 'escape';
+        state.awaitingStringTerminator = false;
+        continue;
+      }
+      if (code === 0x9b) {
+        state.mode = 'csi';
+        state.awaitingStringTerminator = false;
+        continue;
+      }
+      plainText += char;
+      continue;
+    }
+
+    if (state.mode === 'escape') {
+      if (char === '[') {
+        state.mode = 'csi';
+      } else if (char === ']') {
+        state.mode = 'osc';
+        state.awaitingStringTerminator = false;
+      } else if (char === 'P') {
+        state.mode = 'dcs';
+        state.awaitingStringTerminator = false;
+      } else if (char === '^') {
+        state.mode = 'pm';
+        state.awaitingStringTerminator = false;
+      } else if (char === '_') {
+        state.mode = 'apc';
+        state.awaitingStringTerminator = false;
+      } else if (char === 'X') {
+        state.mode = 'sos';
+        state.awaitingStringTerminator = false;
+      } else {
+        state.mode = 'text';
+        state.awaitingStringTerminator = false;
+      }
+      continue;
+    }
+
+    if (state.mode === 'csi') {
+      if (code >= 0x40 && code <= 0x7e) {
+        state.mode = 'text';
+        state.awaitingStringTerminator = false;
+      }
+      continue;
+    }
+
+    if (state.awaitingStringTerminator) {
+      if (char === '\\') {
+        state.mode = 'text';
+        state.awaitingStringTerminator = false;
+        continue;
+      }
+      state.awaitingStringTerminator = false;
+    }
+
+    if (code === 0x07 || code === 0x9c) {
+      state.mode = 'text';
+      continue;
+    }
+
+    if (char === '\u001b') {
+      state.awaitingStringTerminator = true;
+    }
+  }
+
+  return plainText;
+};
+
+const stripUnsupportedShellControlChars = (value: string): string => {
+  if (!value) {
+    return value;
+  }
+
+  let normalized = '';
+
+  for (const char of value) {
+    const code = char.charCodeAt(0);
+    const isAllowedWhitespace = code === 0x09 || code === 0x0a;
+    const isPrintableAscii = code >= 0x20 && code <= 0x7e;
+    const isNonAscii = code >= 0x80;
+
+    if (isAllowedWhitespace || isPrintableAscii || isNonAscii) {
+      normalized += char;
+    }
+  }
+
+  return normalized;
+};
+
+export const sanitizeShellStreamChunk = (
+  chunk: string,
+  state?: ShellStreamSanitizerState
+): string => {
+  if (!chunk) {
+    return chunk;
+  }
+
+  const sanitizerState = state ?? createShellStreamSanitizerState();
+
+  let sanitized = stripShellControlSequences(chunk, sanitizerState);
+  sanitized = stripAnsi(sanitized);
+  sanitized = sanitized.replace(/\uFFFD/g, '');
+  sanitized = sanitized.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  sanitized = stripUnsupportedShellControlChars(sanitized);
+
+  return sanitized;
+};
+
+const sanitizeShellPreviewOutput = (output: string): string => {
+  if (!output) {
+    return output;
+  }
+
+  const state = createShellStreamSanitizerState();
+  let sanitized = sanitizeShellStreamChunk(output, state);
+  sanitized = sanitized.replace(/\n{3,}/g, '\n\n');
+  return sanitized.trim();
+};
+
 export function truncateShellOutput(
   value: string,
   maxChars = DEFAULT_PREVIEW_CHARS
@@ -63,18 +212,23 @@ export function truncateShellOutput(
   const normalizedMaxChars = normalizePreviewChars(maxChars);
   if (value.length <= normalizedMaxChars) {
     return {
-      output: value.trim(),
+      output: sanitizeShellPreviewOutput(value),
       truncated: false,
       totalChars: value.length,
     };
   }
 
-  return buildTruncatedShellOutput({
+  const preview = buildTruncatedShellOutput({
     head: value.slice(0, Math.ceil(normalizedMaxChars / 2)),
     tail: value.slice(-(Math.floor(normalizedMaxChars / 2) || normalizedMaxChars)),
     totalChars: value.length,
     maxChars: normalizedMaxChars,
   });
+
+  return {
+    ...preview,
+    output: sanitizeShellPreviewOutput(preview.output),
+  };
 }
 
 export class ShellOutputCapture {
@@ -238,18 +392,23 @@ class RollingShellOutputPreview {
   finish(): ShellOutputPreview {
     if (!this.truncated) {
       return {
-        output: this.fullText.trim(),
+        output: sanitizeShellPreviewOutput(this.fullText),
         truncated: false,
         totalChars: this.totalChars,
       };
     }
 
-    return buildTruncatedShellOutput({
+    const preview = buildTruncatedShellOutput({
       head: this.head,
       tail: this.tail,
       totalChars: this.totalChars,
       maxChars: this.maxChars,
     });
+
+    return {
+      ...preview,
+      output: sanitizeShellPreviewOutput(preview.output),
+    };
   }
 }
 

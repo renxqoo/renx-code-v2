@@ -1,0 +1,27 @@
+{
+  "name": "@renxqoo/renx-code-darwin-arm64",
+  "version": "0.0.21",
+  "description": "Renx Code terminal AI coding assistant (darwin-arm64)",
+  "type": "commonjs",
+  "private": false,
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "bin": {
+    "renx": "./bin/renx"
+  },
+  "files": [
+    "bin",
+    "scripts",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "node ./scripts/install-ripgrep.mjs"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

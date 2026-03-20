@@ -14,7 +14,11 @@ import {
   createWindowsForegroundShellInvocation,
   resolvePreferredWindowsShell,
 } from './shell-runtime-windows';
-import { ShellOutputCapture, type ShellOutputArtifact } from './shell-output';
+import {
+  ShellOutputCapture,
+  type ShellOutputArtifact,
+  sanitizeShellStreamChunk,
+} from './shell-output';
 import { resolveBundledRipgrepPathEntries } from './bundled-ripgrep';
 import type { ToolSandboxMode } from '../contracts';
 import type { ShellExecutionMode } from '../shell-policy';
@@ -228,13 +232,19 @@ export class LocalProcessShellRuntime implements ShellRuntime {
       child.stdout?.on('data', (chunk: Buffer) => {
         const text = chunk.toString('utf8');
         capture.appendStdout(text);
-        void request.onStdout?.(text);
+        const sanitized = sanitizeShellStreamChunk(text);
+        if (sanitized) {
+          void request.onStdout?.(sanitized);
+        }
       });
 
       child.stderr?.on('data', (chunk: Buffer) => {
         const text = chunk.toString('utf8');
         capture.appendStderr(text);
-        void request.onStderr?.(text);
+        const sanitized = sanitizeShellStreamChunk(text);
+        if (sanitized) {
+          void request.onStderr?.(sanitized);
+        }
       });
 
       child.once('error', async (error) => {

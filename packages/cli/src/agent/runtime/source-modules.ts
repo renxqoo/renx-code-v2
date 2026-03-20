@@ -1,5 +1,4 @@
-import * as path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import * as core from '@renx-code/core';
 
 import type { MessageContent } from '../../types/message-content';
 import { resolveRepoRoot, resolveWorkspaceRoot } from './workspace-paths';
@@ -248,8 +247,6 @@ let modulesPromise: Promise<SourceModules> | null = null;
 
 const loadSourceModules = async (): Promise<SourceModules> => {
   const repoRoot = resolveRepoRoot();
-  const coreEntry = pathToFileURL(path.join(repoRoot, 'packages/core/src/index.ts')).href;
-  const core = await import(coreEntry);
 
   return {
     repoRoot,

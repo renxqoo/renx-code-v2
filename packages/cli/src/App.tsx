@@ -1,10 +1,11 @@
 import { TextAttributes, type Selection } from '@opentui/core';
 import { useKeyboard, useRenderer, useTerminalDimensions } from '@opentui/react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { resolveSlashCommand, type SlashCommandDefinition } from './commands/slash-commands';
 import { ConversationPanel } from './components/conversation-panel';
 import { FilePickerDialog } from './components/file-picker-dialog';
+import { FooterHints } from './components/footer-hints';
 import { ModelPickerDialog } from './components/model-picker-dialog';
 import { Prompt } from './components/prompt';
 import { ToolConfirmDialog } from './components/tool-confirm-dialog';
@@ -121,7 +122,7 @@ export const App = () => {
     };
   }, [renderer]);
 
-  const submitWithCommands = () => {
+  const submitWithCommands = useCallback(() => {
     const command = resolveSlashCommand(inputValue);
     if (command?.action === 'models') {
       setInputValue('');
@@ -135,21 +136,24 @@ export const App = () => {
     }
 
     submitInput();
-  };
+  }, [filePicker, inputValue, modelPicker, selectedFiles, setInputValue, submitInput]);
 
-  const handleSlashCommandSelect = (command: SlashCommandDefinition) => {
-    if (command.action === 'models') {
-      setInputValue('');
-      modelPicker.open();
-      return true;
-    }
-    if (command.action === 'files') {
-      setInputValue('');
-      filePicker.open(selectedFiles);
-      return true;
-    }
-    return false;
-  };
+  const handleSlashCommandSelect = useCallback(
+    (command: SlashCommandDefinition) => {
+      if (command.action === 'models') {
+        setInputValue('');
+        modelPicker.open();
+        return true;
+      }
+      if (command.action === 'files') {
+        setInputValue('');
+        filePicker.open(selectedFiles);
+        return true;
+      }
+      return false;
+    },
+    [filePicker, modelPicker, selectedFiles, setInputValue]
+  );
 
   useKeyboard((key) => {
     if (key.ctrl && key.name === 'c') {
@@ -238,8 +242,6 @@ export const App = () => {
         isThinking={isThinking}
         disabled={modelPicker.visible || filePicker.visible || Boolean(pendingToolConfirm)}
         modelLabel={modelLabel}
-        isFullAccessMode={fullAccessModeEnabled}
-        contextUsagePercent={contextUsagePercent}
         value={inputValue}
         selectedFiles={selectedFiles}
         onAddSelectedFiles={appendSelectedFiles}
@@ -247,6 +249,11 @@ export const App = () => {
         onSlashCommandSelect={handleSlashCommandSelect}
         onSlashMenuVisibilityChange={setSlashMenuVisible}
         onSubmit={submitWithCommands}
+      />
+      <FooterHints
+        isThinking={isThinking}
+        contextUsagePercent={contextUsagePercent}
+        isFullAccessMode={fullAccessModeEnabled}
       />
       <ToolConfirmDialog
         visible={Boolean(pendingToolConfirm)}

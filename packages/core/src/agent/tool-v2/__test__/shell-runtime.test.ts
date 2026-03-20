@@ -106,6 +106,18 @@ describe('shell runtime adapters', () => {
     expect(result.output).toContain('omega');
   });
 
+  it('strips ANSI mouse / control sequences from previews', () => {
+    const mouseSeq = '\u001b[<65;72;22M';
+    const value = `before\n${mouseSeq}${mouseSeq}\nafter`;
+    const result = truncateShellOutput(value, 200);
+
+    expect(result.truncated).toBe(false);
+    expect(result.totalChars).toBe(value.length);
+    expect(result.output).toContain('before');
+    expect(result.output).toContain('after');
+    expect(result.output).not.toContain('65;72;22M');
+  });
+
   it('routes sandboxed and escalated executions through the brokered runtime', async () => {
     const sandboxedRuntime = new RecordingRuntime({
       sandboxing: [
