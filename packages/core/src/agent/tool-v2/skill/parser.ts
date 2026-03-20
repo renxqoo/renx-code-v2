@@ -27,5 +27,11 @@ export function formatSkillForContext(skill: LoadedSkill): string {
 }
 
 export function formatAvailableSkillsForBootstrap(skills: SkillMetadata[]): string {
-  return `Available skills: ${skills.map((skill) => skill.name).join(', ')}.`;
+  return `Available skills:\n${skills
+    .map((skill) =>
+      skill.description.trim().length > 0
+        ? `- ${skill.name}: ${skill.description}`
+        : `- ${skill.name}`
+    )
+    .join('\n')}`;
 }

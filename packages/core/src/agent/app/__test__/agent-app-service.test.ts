@@ -210,7 +210,7 @@ describe('AgentAppService', () => {
       messageId: 'msg_bootstrap_1',
       type: 'user' as const,
       role: 'user' as const,
-      content: 'Available skills for this conversation:\n- skill-creator: Create skills.',
+      content: 'Available skills:\n- skill-creator: Create skills.',
       timestamp: 1,
       metadata: {
         bootstrap: true,

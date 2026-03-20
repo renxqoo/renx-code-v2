@@ -164,7 +164,7 @@ describe('selectCompactionWindow', () => {
           messageId: 'boot_1',
           type: 'user',
           role: 'user',
-          content: 'Available skills for this conversation',
+          content: 'Available skills:\n- skill-creator: Create skills.',
           metadata: {
             bootstrap: true,
             bootstrapKey: 'available-skills-v1',

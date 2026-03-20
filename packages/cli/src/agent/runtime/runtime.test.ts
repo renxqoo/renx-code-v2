@@ -184,7 +184,13 @@ const buildMockModules = (
     ]),
     formatAvailableSkillsForBootstrap: vi.fn(
       (skills: Array<{ name: string; description: string }>) =>
-        `Available skills: ${skills.map((skill) => skill.name).join(', ')}.`
+        `Available skills:\n${skills
+          .map((skill) =>
+            skill.description.trim().length > 0
+              ? `- ${skill.name}: ${skill.description}`
+              : `- ${skill.name}`
+          )
+          .join('\n')}`
     ),
     createLoggerFromEnv: vi.fn(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() })),
     createAgentLoggerAdapter: vi.fn((logger: Record<string, unknown>) => ({
@@ -470,7 +476,7 @@ describe('runtime', () => {
 
     expect(appServiceClass.lastRequest?.bootstrapMessages).toHaveLength(1);
     expect(appServiceClass.lastRequest?.bootstrapMessages?.[0]).toMatchObject({
-      content: 'Available skills: skill-creator.',
+      content: 'Available skills:\n- skill-creator: Create skills',
       metadata: expect.objectContaining({
         bootstrapKey: 'available-skills-bootstrap-v1',
         preserveInContext: true,
@@ -490,7 +496,7 @@ describe('runtime', () => {
               messageId: 'msg_bootstrap_1',
               role: 'user' as const,
               type: 'user' as const,
-              content: 'Available skills: skill-creator.',
+              content: 'Available skills:\n- skill-creator: Create skills',
               timestamp: Date.now(),
               metadata: {
                 bootstrapKey: 'available-skills-bootstrap-v1',
@@ -567,7 +573,7 @@ describe('runtime', () => {
                 messageId: 'msg_bootstrap_1',
                 role: 'user',
                 type: 'user',
-                content: 'Available skills: skill-creator.',
+                content: 'Available skills:\n- skill-creator: Create skills',
                 metadata: {
                   bootstrap: true,
                   bootstrapKey: 'available-skills-bootstrap-v1',
