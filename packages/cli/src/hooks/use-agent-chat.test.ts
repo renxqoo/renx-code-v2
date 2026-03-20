@@ -148,6 +148,29 @@ describe('useAgentChat', () => {
       });
     });
     act(() => {
+      (
+        capturedHandlers?.onUsage as
+          | ((event: {
+              promptTokens: number;
+              completionTokens: number;
+              totalTokens: number;
+              cumulativePromptTokens: number;
+              cumulativeCompletionTokens: number;
+              cumulativeTotalTokens: number;
+              contextUsagePercent: number;
+            }) => void)
+          | undefined
+      )?.({
+        promptTokens: 1,
+        completionTokens: 2,
+        totalTokens: 3,
+        cumulativePromptTokens: 10,
+        cumulativeCompletionTokens: 20,
+        cumulativeTotalTokens: 30,
+        contextUsagePercent: 40,
+      });
+    });
+    act(() => {
       (capturedHandlers?.onTextDelta as ((event: { text: string }) => void) | undefined)?.({
         text: 'stream after follow up',
       });
@@ -172,6 +195,11 @@ describe('useAgentChat', () => {
     });
     expect(result.current.turns).toHaveLength(2);
     expect(result.current.turns[1]?.prompt).toContain('follow up');
+    expect(result.current.turns[0]?.reply?.status).toBe('done');
+    expect(result.current.turns[1]?.reply?.status).toBe('done');
+    expect(result.current.turns[0]?.reply?.usagePromptTokens).toBeUndefined();
+    expect(result.current.turns[1]?.reply?.usagePromptTokens).toBe(10);
+    expect(result.current.turns[1]?.reply?.usageCompletionTokens).toBe(20);
     expect(
       result.current.turns[1]?.reply?.segments.some((segment) =>
         segment.content.includes('stream after follow up')

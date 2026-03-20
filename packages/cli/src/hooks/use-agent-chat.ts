@@ -615,8 +615,9 @@ export const useAgentChat = (): UseAgentChatResult => {
           if (!replyUsage) {
             return;
           }
+          const currentTurnId = getCurrentTurnId();
           setTurns((prev) =>
-            patchTurn(prev, turnId, (turn) => {
+            patchTurn(prev, currentTurnId, (turn) => {
               if (!turn.reply) {
                 return turn;
               }
@@ -646,7 +647,8 @@ export const useAgentChat = (): UseAgentChatResult => {
 
           const nextTurnId =
             pendingFollowUpTurnIdsRef.current.shift() ?? addTurn(event.text, false);
-          setTurns((prev) => setReplyStatus(prev, streamTurnId, 'done'));
+          const previousTurnId = streamTurnId;
+          setTurns((prev) => setReplyStatus(prev, previousTurnId, 'done'));
           streamTurnId = nextTurnId;
           activeTurnIdRef.current = nextTurnId;
           startStreamingReplyForTurn(nextTurnId);
