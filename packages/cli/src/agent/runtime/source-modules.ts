@@ -265,15 +265,15 @@ const loadSourceModules = async (): Promise<SourceModules> => {
       core.formatAvailableSkillsForBootstrap as SourceModules['formatAvailableSkillsForBootstrap'],
     createLoggerFromEnv: core.createLoggerFromEnv as SourceModules['createLoggerFromEnv'],
     createAgentLoggerAdapter:
-      core.createAgentLoggerAdapter as SourceModules['createAgentLoggerAdapter'],
-    StatelessAgent: core.StatelessAgent as StatelessAgentCtor,
-    AgentAppService: core.AgentAppService as AgentAppServiceCtor,
+      core.createAgentLoggerAdapter as unknown as SourceModules['createAgentLoggerAdapter'],
+    StatelessAgent: core.StatelessAgent as unknown as StatelessAgentCtor,
+    AgentAppService: core.AgentAppService as unknown as AgentAppServiceCtor,
     createSqliteAgentAppStore:
       core.createSqliteAgentAppStore as SourceModules['createSqliteAgentAppStore'],
     createEnterpriseAgentAppService:
-      core.createEnterpriseAgentAppService as SourceModules['createEnterpriseAgentAppService'],
+      core.createEnterpriseAgentAppService as unknown as SourceModules['createEnterpriseAgentAppService'],
     createEnterpriseToolSystemV2WithSubagents:
-      core.createEnterpriseToolSystemV2WithSubagents as SourceModules['createEnterpriseToolSystemV2WithSubagents'],
+      core.createEnterpriseToolSystemV2WithSubagents as unknown as SourceModules['createEnterpriseToolSystemV2WithSubagents'],
     SHELL_POLICY_PROFILES: core.SHELL_POLICY_PROFILES as SourceModules['SHELL_POLICY_PROFILES'],
     EnterpriseToolExecutor: core.EnterpriseToolExecutor as ToolExecutorCtor,
     getTaskStateStoreV2: core.getTaskStateStoreV2 as SourceModules['getTaskStateStoreV2'],
