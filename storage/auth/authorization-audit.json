@@ -9,18 +9,8 @@
     "reason": "Authorization approved",
     "policyVersion": "full-access",
     "resources": [],
-    "rulesMatched": [
-      "default-policy",
-      "permissions-satisfied",
-      "approval-not-required"
-    ],
-    "tags": [
-      "read-only",
-      "system",
-      "internal",
-      "permissions",
-      "approval"
-    ],
+    "rulesMatched": ["default-policy", "permissions-satisfied", "approval-not-required"],
+    "tags": ["read-only", "system", "internal", "permissions", "approval"],
     "createdAt": 1773933678516,
     "metadata": {
       "sessionId": "exec_cli_1773933670707_3s1bryk6g"

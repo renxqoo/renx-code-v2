@@ -139,6 +139,7 @@ src/agent/
 **位置**: `agent/index.ts`
 
 **职责**:
+
 - 无状态代理实现，支持水平扩展
 - 管理执行生命周期
 - 协调 LLM 和工具执行
@@ -148,12 +149,12 @@ src/agent/
 
 ```typescript
 interface AgentConfig {
-  maxRetryCount?: number;           // 最大重试次数 (默认 20)
-  enableCompaction?: boolean;       // 启用上下文压缩
-  compactionTriggerRatio?: number;  // 压缩触发阈值 (默认 0.8)
-  maxConcurrentToolCalls?: number;  // 最大并发工具调用 (默认 1)
-  timeoutBudgetMs?: number;         // 总超时预算
-  llmTimeoutRatio?: number;         // LLM 超时比例 (默认 0.7)
+  maxRetryCount?: number; // 最大重试次数 (默认 20)
+  enableCompaction?: boolean; // 启用上下文压缩
+  compactionTriggerRatio?: number; // 压缩触发阈值 (默认 0.8)
+  maxConcurrentToolCalls?: number; // 最大并发工具调用 (默认 1)
+  timeoutBudgetMs?: number; // 总超时预算
+  llmTimeoutRatio?: number; // LLM 超时比例 (默认 0.7)
 }
 ```
 
@@ -162,6 +163,7 @@ interface AgentConfig {
 **位置**: `agent/run-loop.ts`
 
 **职责**:
+
 - 编排 LLM 和工具执行阶段
 - 错误处理与重试逻辑
 - 进度跟踪与检查点
@@ -193,6 +195,7 @@ interface AgentConfig {
 **位置**: `tool-v2/orchestrator.ts`
 
 **职责**:
+
 - 工具调用路由
 - 权限与审批检查
 - 执行计划生成
@@ -243,6 +246,7 @@ ToolCallRequest
 **位置**: `auth/authorization-service.ts`
 
 **职责**:
+
 - 策略评估
 - 权限管理
 - 审批流程
@@ -1248,7 +1252,7 @@ class MyCustomPolicyEngine implements AuthorizationPolicyEngine {
     // 实现自定义策略逻辑
     const rules: string[] = [];
     const tags: string[] = [];
-    
+
     // 检查规则
     if (this.isDenied(request)) {
       return {
@@ -1258,7 +1262,7 @@ class MyCustomPolicyEngine implements AuthorizationPolicyEngine {
         tags,
       };
     }
-    
+
     return {
       denied: false,
       reason: 'Allowed by custom policy',
@@ -1284,15 +1288,15 @@ class MyCustomExecutionStore implements ExecutionStorePort {
   async create(record: RunRecord): Promise<void> {
     // 实现创建逻辑
   }
-  
+
   async get(executionId: string): Promise<RunRecord | null> {
     // 实现获取逻辑
   }
-  
+
   async patch(executionId: string, updates: Partial<RunRecord>): Promise<void> {
     // 实现更新逻辑
   }
-  
+
   // ... 其他方法
 }
 
@@ -1314,12 +1318,12 @@ const customHooks: AgentRuntimeLifecycleHooks = {
     console.log(`Run started: ${context.executionId}`);
     return createNoopObservation();
   },
-  
+
   onLLMStageStart: async (context) => {
     console.log(`LLM stage ${context.stepIndex} started`);
     return createNoopObservation();
   },
-  
+
   onToolExecutionStart: async (context) => {
     console.log(`Tool ${context.toolName} started`);
     return createNoopObservation();

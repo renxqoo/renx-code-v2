@@ -123,56 +123,56 @@ sequenceDiagram
     User->>UI: 提交输入
     UI->>Runtime: runAgentPrompt(prompt, handlers)
     Runtime->>Runtime: getRuntime() 获取运行时实例
-    
+
     rect rgb(240, 248, 255)
         Note over Runtime: 运行时初始化阶段
     end
-    
+
     Runtime->>Modules: getSourceModules()
     Modules->>Modules: 动态加载核心模块
     Modules-->>Runtime: 返回 SourceModules
-    
+
     Runtime->>Runtime: createRuntime()
     Runtime->>ToolSys: createEnterpriseToolSystemV2WithSubagents()
     Runtime->>Agent: new StatelessAgent(provider, toolExecutor, config)
     Runtime-->>Runtime: 返回 RuntimeCore
-    
+
     Runtime->>Agent: runForeground(request, callbacks)
-    
+
     rect rgb(255, 248, 240)
         Note over Agent,ToolSys: Agent 执行循环
     end
-    
+
     loop Agent Loop
         Agent->>Provider: 获取 AI 响应
         Provider-->>Agent: 返回 LLM 输出
-        
+
         alt 需要执行工具
             Agent->>ToolSys: 发起工具调用
             ToolSys->>Executor: 执行工具
-            
+
             rect rgb(248, 255, 248)
                 Note over ToolSys,Executor: 工具执行阶段
             end
-            
+
             Executor->>ToolSys: 返回执行结果
             ToolSys-->>Agent: 工具结果事件
-            
+
             rect rgb(255, 245, 238)
                 Note over Agent,ToolSys: 工具确认阶段
             end
-            
+
             alt 需要用户确认
                 Agent->>UI: onToolConfirm 事件
                 UI->>User: 显示确认对话框
                 User->>UI: 批准/拒绝
                 UI-->>Agent: 确认决策
             end
-            
+
             Agent->>Provider: 继续获取响应
         end
     end
-    
+
     Agent-->>Runtime: 返回执行结果
     Runtime-->>UI: 返回 AgentRunResult
     UI-->>User: 显示结果
@@ -183,31 +183,31 @@ sequenceDiagram
 ```mermaid
 flowchart TB
     Start([开始]) --> CheckRuntime{检查运行时<br/>是否已初始化?}
-    
+
     CheckRuntime -->|是| ReturnRuntime[返回现有运行时实例]
     CheckRuntime -->|否| CheckInit{正在初始化?}
-    
+
     CheckInit -->|是| WaitInit[等待初始化完成]
     WaitInit --> CheckRuntime
-    
+
     CheckInit -->|否| StartInit[开始初始化]
     StartInit --> LoadModules[加载源模块]
-    
+
     LoadModules --> ResolveWorkspace[解析工作区路径]
     ResolveWorkspace --> PrepareEnv[准备运行时环境]
     PrepareEnv --> ResolveModel[解析模型ID]
-    
+
     ResolveModel --> CreateLogger[创建日志器]
     CreateLogger --> CreateProvider[创建 LLM Provider]
     CreateProvider --> CreateToolSystem[创建工具系统]
-    
+
     CreateToolSystem --> CreateExecutor[创建工具执行器]
     CreateExecutor --> CreateAgent[创建 Agent 实例]
     CreateAgent --> CreateStore[创建存储]
     CreateStore --> FilterTools[过滤工具列表]
-    
+
     FilterTools --> ReturnRuntime
-    
+
     ReturnRuntime --> End([完成])
 ```
 
@@ -216,22 +216,22 @@ flowchart TB
 ```mermaid
 flowchart TB
     A[创建工具系统] --> B{检查全访问权限}
-    
+
     B -->|是| C[使用 fullAccess 配置]
     B -->|否| D[使用受限配置]
-    
+
     C --> E[shell: fullAccess profile]
     D --> F[shell: restricted profile]
-    
+
     E --> G[创建 Skill 内置]
     F --> G
-    
+
     G --> H[创建 Task 内置]
     H --> I[创建 Task Store]
     I --> J[调用 createEnterpriseToolSystemV2WithSubagents]
-    
+
     J --> K[返回 ToolSystem]
-    
+
     style A fill:#e1f5fe
     style K fill:#c8e6c9
 ```
@@ -352,30 +352,30 @@ flowchart LR
         Tool[工具执行]
         User[用户操作]
     end
-    
+
     subgraph Process["事件处理"]
         Parse[事件解析]
         Validate[验证处理]
         Route[路由分发]
     end
-    
+
     subgraph EventOut["事件输出"]
         Text[文本更新]
         ToolUI[工具UI更新]
         State[状态更新]
     end
-    
+
     LLM --> Parse
     Tool --> Parse
     User --> Parse
-    
+
     Parse --> Validate
     Validate --> Route
-    
+
     Route --> Text
     Route --> ToolUI
     Route --> State
-    
+
     style EventIn fill:#fff3e0
     style Process fill:#e8f5e9
     style EventOut fill:#e3f2fd
@@ -391,28 +391,28 @@ sequenceDiagram
     participant UI as React UI
 
     Agent->>Handlers: onEvent(envelope)
-    
+
     rect rgb(240, 248, 255)
         Note over Handlers: 事件类型分发
     end
-    
+
     alt eventType === 'chunk'
         Handlers->>Handlers: toTextDeltaEvent(payload)
         Handlers->>UI: onTextDelta(text)
     end
-    
+
     alt eventType === 'reasoning_chunk'
         Handlers->>Handlers: toTextDeltaEvent(payload, true)
         Handlers->>UI: onTextDelta(thinking)
     end
-    
+
     alt eventType === 'tool_stream'
         Handlers->>Handlers: toToolStreamEvent()
         Handlers->>Buffer: ensureEmitted(toolCallId)
         Buffer->>UI: onToolUse(toolCall)
         Handlers->>UI: onToolStream(event)
     end
-    
+
     alt eventType === 'tool_call'
         Handlers->>Handlers: 解析 toolCalls
         loop 每个 toolCall
@@ -420,29 +420,29 @@ sequenceDiagram
             Buffer->>UI: onToolUse(toolCall)
         end
     end
-    
+
     alt eventType === 'tool_result'
         Handlers->>Buffer: ensureEmitted(toolCallId)
         Buffer->>UI: onToolUse(toolCall)
         Handlers->>Handlers: toToolResultEvent()
         Handlers->>UI: onToolResult(event)
     end
-    
+
     alt eventType === 'progress'
         Handlers->>Handlers: toStepEvent()
-        
+
         alt currentAction === 'tool'
             Handlers->>Buffer: flush()
             Buffer->>UI: onToolUse(toolCalls)
         end
-        
+
         alt currentAction === 'llm'
             Handlers->>UI: onLoop(step)
         end
-        
+
         Handlers->>UI: onStep(event)
     end
-    
+
     alt eventType === 'done'
         Handlers->>UI: onTextComplete()
         Handlers->>UI: onStop(reason)
@@ -464,16 +464,16 @@ sequenceDiagram
 
     Agent->>Confirm: onToolConfirm(event)
     Confirm->>Confirm: 解析工具参数
-    
+
     rect rgb(255, 243, 224)
         Note over Confirm,User: 用户确认流程
     end
-    
+
     Confirm->>UI: 创建确认对话框内容
     UI->>User: 显示工具调用信息
-    
+
     Note over User: 用户决策
-    
+
     alt 用户批准
         User->>UI: 批准
         UI->>Confirm: approved: true
@@ -481,7 +481,7 @@ sequenceDiagram
         User->>UI: 拒绝
         UI->>Confirm: approved: false
     end
-    
+
     Confirm-->>Agent: 返回确认决策
 ```
 
@@ -490,25 +490,25 @@ sequenceDiagram
 ```mermaid
 flowchart TB
     A[工具调用请求] --> B{需要确认?}
-    
+
     B -->|否| C[直接执行]
     B -->|是| D{是否有确认处理器?}
-    
+
     D -->|否| E[默认拒绝]
     D -->|是| F[显示确认对话框]
-    
+
     F --> G[等待用户决策]
-    
+
     G --> H{用户批准?}
     H -->|是| I[执行工具]
     H -->|否| J[拒绝执行]
-    
+
     I --> K[返回结果]
     J --> L[返回拒绝]
     E --> L
-    
+
     C --> K
-    
+
     style A fill:#ffcdd2
     style K fill:#c8e6c9
 ```
@@ -519,8 +519,8 @@ flowchart TB
 
 ```typescript
 export type ToolDisplayConfig = {
-  displayName?: string;  // 显示名称
-  icon?: string;        // 图标
+  displayName?: string; // 显示名称
+  icon?: string; // 图标
   hiddenArgumentKeys?: string[]; // 隐藏的参数键
 };
 
@@ -576,18 +576,18 @@ const TOOL_DISPLAY_CONFIG: Record<string, ToolDisplayConfig> = {
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
-    
+
     Idle --> Thinking: 提交输入
     Thinking --> Thinking: 事件处理中
-    
+
     Thinking --> Done: 完成
     Thinking --> Error: 错误
     Thinking --> Cancelled: 取消
-    
+
     Done --> Idle: 重置
     Error --> Idle: 重置
     Cancelled --> Idle: 重置
-    
+
     note right of Thinking
       处理事件:
       - onTextDelta
@@ -605,46 +605,46 @@ stateDiagram-v2
 flowchart TB
     subgraph Input["输入处理"]
         Submit[提交输入] --> CheckThinking{正在思考?}
-        
+
         CheckThinking -->|是| Append[追加输入]
         CheckThinking -->|否| Create[创建新对话]
     end
-    
+
     subgraph Execution["执行流程"]
         Create --> Build[构建事件处理器]
         Build --> Run[运行 Agent]
-        
+
         Run --> Event{事件类型}
-        
+
         Event --> Text[文本事件]
         Event --> Tool[工具事件]
         Event --> Usage[使用事件]
         Event --> Stop[停止事件]
-        
+
         Text --> UpdateText[更新文本]
         Tool --> ToolProcess[处理工具]
-        
+
         ToolProcess --> Confirm{需要确认?}
         Confirm -->|是| ShowDialog[显示确认对话框]
         Confirm -->|否| Execute[执行工具]
-        
+
         ShowDialog --> Wait[等待用户]
         Wait --> Decision{用户决策}
-        
+
         Decision --> Approve[批准]
         Decision --> Deny[拒绝]
-        
+
         Approve --> Execute
         Deny --> Skip[跳过执行]
-        
+
         Execute --> ToolResult[处理结果]
         Skip --> ToolResult
-        
+
         ToolResult --> UpdateUI[更新UI]
         Usage --> UpdateUsage[更新使用统计]
         Stop --> Complete[完成]
     end
-    
+
     style Input fill:#e8f5e9
     style Execution fill:#fff3e0
 ```
@@ -659,25 +659,25 @@ sequenceDiagram
     participant User as 用户
 
     Note over Handler,User: 多个确认请求同时到达
-    
+
     Handler->>Queue: enqueuePendingToolConfirm(entry1)
     Handler->>Queue: enqueuePendingToolConfirm(entry2)
     Handler->>Queue: enqueuePendingToolConfirm(entry3)
-    
+
     Queue->>Dialog: 显示第一个确认
-    
+
     User->>Dialog: 批准第一个
     Dialog->>Handler: resolve(approved: true)
     Handler->>Queue: 处理下一个
-    
+
     Queue->>Dialog: 显示第二个确认
-    
+
     User->>Dialog: 拒绝第二个
     Dialog->>Handler: resolve(approved: false)
     Handler->>Queue: 处理下一个
-    
+
     Queue->>Dialog: 显示第三个确认
-    
+
     Note over Handler,User: 队列清空
 ```
 
@@ -725,17 +725,17 @@ const getRuntime = async (): Promise<RuntimeCore> => {
 
 ```typescript
 type RuntimeCore = {
-  modelId: string;           // 当前模型ID
-  modelLabel: string;        // 模型显示名称
-  maxSteps: number;          // 最大执行步数
-  conversationId: string;    // 对话ID
-  workspaceRoot: string;     // 工作区根目录
+  modelId: string; // 当前模型ID
+  modelLabel: string; // 模型显示名称
+  maxSteps: number; // 最大执行步数
+  conversationId: string; // 对话ID
+  workspaceRoot: string; // 工作区根目录
   parentTools: ToolSchemaLike[]; // 父级工具列表
   agent: StatelessAgentLike; // 无状态Agent实例
   appService: AgentAppServiceLike; // 应用服务
   appStore: AgentAppStoreLike; // 应用存储
   logger?: { close?: () => void | Promise<void> }; // 日志器
-  modules: SourceModules;     // 源模块
+  modules: SourceModules; // 源模块
 };
 ```
 
@@ -799,7 +799,7 @@ export class ToolCallBuffer {
   ) {
     const toolCallId = readToolCallId(toolCall);
     if (!toolCallId) {
-      emit(toolCall);  // 没有ID立即发射
+      emit(toolCall); // 没有ID立即发射
       return;
     }
 
@@ -948,26 +948,26 @@ flowchart TB
     subgraph AgentLoop["Agent 循环"]
         BuildPrompt --> LLMCall[调用 LLM]
         LLMCall --> ParseResponse[解析响应]
-        
+
         ParseResponse --> HasTool{有工具调用?}
-        
+
         HasTool -->|是| ToolConfirm{需要确认?}
         HasTool -->|否| OutputText[输出文本]
-        
+
         ToolConfirm -->|是| ShowConfirm[显示确认]
         ShowConfirm --> WaitUser[等待用户]
         WaitUser --> Approved{已批准?}
-        
+
         Approved -->|是| ExecuteTool[执行工具]
         Approved -->|否| SkipTool[跳过工具]
-        
+
         ToolConfirm -->|否| ExecuteTool
-        
+
         ExecuteTool --> ToolResult[工具结果]
         SkipTool --> ToolResult
-        
+
         ToolResult --> LLMCall
-        
+
         OutputText --> Done([完成])
     end
 
@@ -1136,8 +1136,8 @@ const toolExecutor = new modules.EnterpriseToolExecutor({
 
 ---
 
-*文档生成日期: 2026-03-18*
-*源代码版本: renx-code-v2/packages/cli*
+_文档生成日期: 2026-03-18_
+_源代码版本: renx-code-v2/packages/cli_
 
 ---
 
@@ -1149,30 +1149,30 @@ const toolExecutor = new modules.EnterpriseToolExecutor({
 // 运行时核心结构 - 定义了 Agent 运行时的所有关键组件
 type RuntimeCore = {
   // 模型相关配置
-  modelId: string;           // 当前使用的模型标识符，如 'qwen3.5-plus'
-  modelLabel: string;        // 模型的显示名称，用于 UI 展示
-  
+  modelId: string; // 当前使用的模型标识符，如 'qwen3.5-plus'
+  modelLabel: string; // 模型的显示名称，用于 UI 展示
+
   // 执行控制参数
-  maxSteps: number;          // Agent 执行的最大步数限制，防止无限循环
-  
+  maxSteps: number; // Agent 执行的最大步数限制，防止无限循环
+
   // 会话标识
-  conversationId: string;    // 当前对话的唯一标识符，用于状态追踪
-  
+  conversationId: string; // 当前对话的唯一标识符，用于状态追踪
+
   // 工作环境配置
-  workspaceRoot: string;     // 工作区的根目录路径
-  skillRoots: string[];      // 可用技能模块的根目录列表
-  
+  workspaceRoot: string; // 工作区的根目录路径
+  skillRoots: string[]; // 可用技能模块的根目录列表
+
   // 工具配置
   parentTools: ToolSchemaLike[]; // 父级工具的模式定义数组
-  
+
   // 核心组件实例
   agent: StatelessAgentLike; // 无状态代理实例，处理 LLM 交互
   appService: AgentAppServiceLike; // 应用服务接口，提供运行时操作
   appStore: AgentAppStoreLike; // 应用存储接口，管理持久化状态
-  
+
   // 辅助功能
   logger?: { close?: () => void | Promise<void> }; // 日志记录器
-  modules: SourceModules;    // 源模块集合，提供核心功能
+  modules: SourceModules; // 源模块集合，提供核心功能
 };
 ```
 
@@ -1181,11 +1181,12 @@ type RuntimeCore = {
 ```typescript
 // 工具模式定义 - 描述每个工具的结构
 export type ToolSchemaLike = {
-  type: string;               // 工具类型，通常为 'function'
+  type: string; // 工具类型，通常为 'function'
   function: {
-    name?: string;           // 工具函数名称
-    description?: string;   // 工具功能描述
-    parameters?: {          // JSON Schema 格式的参数定义
+    name?: string; // 工具函数名称
+    description?: string; // 工具功能描述
+    parameters?: {
+      // JSON Schema 格式的参数定义
       type: string;
       properties?: Record<string, unknown>;
       required?: string[];
@@ -1205,29 +1206,29 @@ export type ToolExecutorLike = {
 ```typescript
 // 工具流事件 - 实时工具执行输出
 export type AgentToolStreamEvent = {
-  toolCallId: string;       // 工具调用的唯一标识
-  toolName: string;         // 工具名称
-  type: string;             // 流类型: 'stdout', 'stderr', 'info' 等
-  sequence: number;         // 序列号，用于排序
-  timestamp: number;        // 事件时间戳（毫秒）
-  content?: string;          // 流内容
-  data?: unknown;            // 附加数据
+  toolCallId: string; // 工具调用的唯一标识
+  toolName: string; // 工具名称
+  type: string; // 流类型: 'stdout', 'stderr', 'info' 等
+  sequence: number; // 序列号，用于排序
+  timestamp: number; // 事件时间戳（毫秒）
+  content?: string; // 流内容
+  data?: unknown; // 附加数据
 };
 
 // 工具确认事件 - 需要用户批准的调用
 export type AgentToolConfirmEvent = {
-  kind: 'approval';          // 事件种类
-  toolCallId: string;       // 调用ID
-  toolName: string;         // 工具名称
+  kind: 'approval'; // 事件种类
+  toolCallId: string; // 调用ID
+  toolName: string; // 工具名称
   args: Record<string, unknown>; // 解析后的参数对象
   rawArgs: Record<string, unknown>; // 原始参数
-  reason?: string;          // 调用原因说明
+  reason?: string; // 调用原因说明
   metadata?: Record<string, unknown>; // 附加元数据
 };
 
 // 工具权限事件 - 需要额外权限的调用
 export type AgentToolPermissionEvent = {
-  kind: 'permission';        // 事件种类
+  kind: 'permission'; // 事件种类
   toolCallId: string;
   toolName: string;
   reason?: string;
@@ -1238,11 +1239,11 @@ export type AgentToolPermissionEvent = {
 // 工具权限配置
 export type AgentToolPermissionProfile = {
   fileSystem?: {
-    read?: string[];        // 允许读取的路径
-    write?: string[];       // 允许写入的路径
+    read?: string[]; // 允许读取的路径
+    write?: string[]; // 允许写入的路径
   };
   network?: {
-    enabled?: boolean;      // 是否启用网络访问
+    enabled?: boolean; // 是否启用网络访问
     allowedHosts?: string[]; // 允许访问的主机
     deniedHosts?: string[]; // 拒绝访问的主机
   };
@@ -1264,41 +1265,41 @@ sequenceDiagram
     participant FS as 文件系统
 
     CLI->>Loader: getSourceModules()
-    
+
     rect rgb(240, 248, 255)
         Note over Loader: 检查缓存
     end
-    
+
     Loader->>Cache: modulesPromise?
-    
+
     alt 已有缓存
         Cache-->>Loader: 返回缓存的 Promise
         Loader-->>CLI: 返回模块
     end
-    
+
     alt 无缓存，需要加载
-    
+
         rect rgb(255, 243, 224)
             Note over Loader: 动态加载核心模块
         end
-        
+
         Loader->>FS: 解析仓库根目录
         FS-->>Loader: repoRoot
-        
+
         Loader->>Loader: 构建核心模块路径
         Loader->>Core: dynamic import(coreEntry)
-        
+
         rect rgb(232, 245, 233)
             Note over Loader,Core: 映射模块接口
         end
-        
+
         Core-->>Loader: 返回核心模块
         Loader->>Loader: 创建 SourceModules 适配器
-        
+
         rect rgb(250, 250, 250)
             Note over Loader: 缓存结果
         end
-        
+
         Loader->>Cache: modulesPromise = promise
         Loader-->>CLI: 返回 SourceModules
     end
@@ -1311,12 +1312,10 @@ sequenceDiagram
 const loadSourceModules = async (): Promise<SourceModules> => {
   // 1. 解析仓库根目录
   const repoRoot = resolveRepoRoot();
-  
+
   // 2. 构建核心模块的入口路径
-  const coreEntry = pathToFileURL(
-    path.join(repoRoot, 'packages/core/src/index.ts')
-  ).href;
-  
+  const coreEntry = pathToFileURL(path.join(repoRoot, 'packages/core/src/index.ts')).href;
+
   // 3. 动态导入核心模块
   const core = await import(coreEntry);
 
@@ -1324,43 +1323,49 @@ const loadSourceModules = async (): Promise<SourceModules> => {
   return {
     // 路径解析
     repoRoot,
-    
+
     // 系统提示构建
     buildSystemPrompt: core.buildSystemPrompt as SourceModules['buildSystemPrompt'],
-    
+
     // 模型注册表
     ProviderRegistry: core.ProviderRegistry as ProviderRegistryLike,
-    
+
     // 环境配置
     loadEnvFiles: core.loadEnvFiles as SourceModules['loadEnvFiles'],
     loadConfigToEnv: core.loadConfigToEnv as SourceModules['loadConfigToEnv'],
-    
+
     // 路径解析
-    resolveRenxDatabasePath: core.resolveRenxDatabasePath as SourceModules['resolveRenxDatabasePath'],
+    resolveRenxDatabasePath:
+      core.resolveRenxDatabasePath as SourceModules['resolveRenxDatabasePath'],
     resolveRenxTaskDir: core.resolveRenxTaskDir as SourceModules['resolveRenxTaskDir'],
     resolveRenxSkillsDir: core.resolveRenxSkillsDir as SourceModules['resolveRenxSkillsDir'],
-    
+
     // 技能管理
     listAvailableSkills: core.listAvailableSkills as SourceModules['listAvailableSkills'],
-    formatAvailableSkillsForBootstrap: core.formatAvailableSkillsForBootstrap as SourceModules['formatAvailableSkillsForBootstrap'],
-    
+    formatAvailableSkillsForBootstrap:
+      core.formatAvailableSkillsForBootstrap as SourceModules['formatAvailableSkillsForBootstrap'],
+
     // 日志系统
     createLoggerFromEnv: core.createLoggerFromEnv as SourceModules['createLoggerFromEnv'],
-    createAgentLoggerAdapter: core.createAgentLoggerAdapter as SourceModules['createAgentLoggerAdapter'],
-    
+    createAgentLoggerAdapter:
+      core.createAgentLoggerAdapter as SourceModules['createAgentLoggerAdapter'],
+
     // 核心类
     StatelessAgent: core.StatelessAgent as StatelessAgentCtor,
     AgentAppService: core.AgentAppService as AgentAppServiceCtor,
-    createSqliteAgentAppStore: core.createSqliteAgentAppStore as SourceModules['createSqliteAgentAppStore'],
-    
+    createSqliteAgentAppStore:
+      core.createSqliteAgentAppStore as SourceModules['createSqliteAgentAppStore'],
+
     // 企业级工具系统
-    createEnterpriseAgentAppService: core.createEnterpriseAgentAppService as SourceModules['createEnterpriseAgentAppService'],
-    createEnterpriseToolSystemV2WithSubagents: core.createEnterpriseToolSystemV2WithSubagents as SourceModules['createEnterpriseToolSystemV2WithSubagents'],
-    
+    createEnterpriseAgentAppService:
+      core.createEnterpriseAgentAppService as SourceModules['createEnterpriseAgentAppService'],
+    createEnterpriseToolSystemV2WithSubagents:
+      core.createEnterpriseToolSystemV2WithSubagents as SourceModules['createEnterpriseToolSystemV2WithSubagents'],
+
     // 策略配置
     SHELL_POLICY_PROFILES: core.SHELL_POLICY_PROFILES as SourceModules['SHELL_POLICY_PROFILES'],
     EnterpriseToolExecutor: core.EnterpriseToolExecutor as ToolExecutorCtor,
-    
+
     // 状态管理
     getTaskStateStoreV2: core.getTaskStateStoreV2 as SourceModules['getTaskStateStoreV2'],
   };
@@ -1382,15 +1387,13 @@ export const buildToolConfirmDialogContent = (
   }
 ): ToolConfirmDialogContent => {
   const metadata =
-    event.kind === 'approval' 
-      ? asRecord(event.metadata) 
-      : ({} as Record<string, unknown>);
-  
+    event.kind === 'approval' ? asRecord(event.metadata) : ({} as Record<string, unknown>);
+
   const { summary, detail } = buildSummary(event, options?.selectedScope);
 
   return {
-    summary,                      // 操作摘要
-    detail,                        // 详细信息
+    summary, // 操作摘要
+    detail, // 详细信息
     reason: readString(event.reason), // 调用原因
     requestedPath: readString(metadata.requestedPath), // 请求路径
     allowedDirectories: readStringArray(metadata.allowedDirectories), // 允许目录
@@ -1462,7 +1465,7 @@ const buildSummary = (
 ```typescript
 // 确认请求队列管理
 type PendingToolConfirmQueueEntry = {
-  prompt: PendingToolConfirm;       // 待确认的请求
+  prompt: PendingToolConfirm; // 待确认的请求
   resolver: PendingToolConfirmResolver; // 解析器
 };
 
@@ -1484,7 +1487,7 @@ const resolvePendingToolConfirm = useCallback(
   (decision: AgentToolConfirmDecision | AgentToolPermissionGrant) => {
     const resolver = pendingToolConfirmResolverRef.current;
     pendingToolConfirmResolverRef.current = null;
-    
+
     if (resolver) {
       // 根据类型调用对应的解析函数
       if (resolver.kind === 'permission' && 'granted' in decision) {
@@ -1522,7 +1525,7 @@ const cancelAllPendingToolConfirms = useCallback(
 
     // 为每个请求返回取消结果
     const cancelled = buildCancelledToolPromptResult(currentPrompt, message);
-    
+
     if (currentResolver) {
       if (currentResolver.kind === 'permission' && 'granted' in cancelled) {
         currentResolver.resolve(cancelled);
@@ -1560,7 +1563,7 @@ const parseToolUseFromData = (value: unknown): ParsedToolUse | null => {
   if (!toolFunction) {
     return null;
   }
-  
+
   const name = typeof toolFunction.name === 'string' ? toolFunction.name : undefined;
   const callId = typeof toolCall?.id === 'string' ? toolCall.id : undefined;
   if (!name || !callId) {
@@ -1570,12 +1573,10 @@ const parseToolUseFromData = (value: unknown): ParsedToolUse | null => {
   const rawArguments =
     typeof toolFunction.arguments === 'string' ? toolFunction.arguments : undefined;
   const args = parseToolArgumentsObject(rawArguments);
-  
+
   // 特殊处理 shell 命令
   const command =
-    name === 'local_shell' && typeof args?.command === 'string' 
-      ? args.command 
-      : undefined;
+    name === 'local_shell' && typeof args?.command === 'string' ? args.command : undefined;
 
   return {
     name,
@@ -1593,18 +1594,18 @@ const parseToolUse = (content?: string, data?: unknown): ParsedToolUse | null =>
   if (structured) {
     return structured;
   }
-  
+
   // 回退到文本解析
   if (!content) {
     return null;
   }
-  
+
   const lines = content.split('\n');
   const header = lines[0]?.trim();
   if (!header) {
     return null;
   }
-  
+
   // 匹配 "# Tool: toolName (callId)" 格式
   const match = header.match(/^# Tool:\s+(.+?)\s+\(([^)]+)\)$/);
   if (!match || !match[1] || !match[2]) {
@@ -1613,11 +1614,11 @@ const parseToolUse = (content?: string, data?: unknown): ParsedToolUse | null =>
 
   const [_, name, callId] = match;
   const bodyLines = lines.slice(1);
-  
+
   // 提取命令
   const commandLine = bodyLines.find((line) => line.trim().startsWith('$ '));
   const command = commandLine ? commandLine.trim().slice(2).trim() : undefined;
-  
+
   // 其他参数
   const details = bodyLines
     .filter((line) => !line.trim().startsWith('$ '))
@@ -1644,7 +1645,7 @@ const parseToolResultFromData = (value: unknown): ParsedToolResult | null => {
   const toolFunction = asObjectLike(toolCall?.function);
   const result = asObjectLike(event?.result);
   const data = asObjectLike(result?.data);
-  
+
   const name = typeof toolFunction?.name === 'string' ? toolFunction.name : undefined;
   const callId = typeof toolCall?.id === 'string' ? toolCall.id : undefined;
   if (!name || !callId) {
@@ -1680,24 +1681,22 @@ const mergeOutputLines = (
     .map((segment) => segment.content)
     .join('')
     .trim();
-    
+
   // 回退文本
   const fallbackText = resolveToolResultFallbackText(parsedResult)?.trim();
-  
+
   // 结果输出
-  const resultText = parsedResult?.output?.trim() 
-    || parsedResult?.details?.trim() 
-    || fallbackText;
-    
+  const resultText = parsedResult?.output?.trim() || parsedResult?.details?.trim() || fallbackText;
+
   // 去重
   if (streamText && resultText && streamText === resultText) {
     return streamText;
   }
-  
+
   if (streamText && resultText) {
     return `${streamText}\n${resultText}`;
   }
-  
+
   return streamText || resultText || parsedResult?.summary?.trim() || '';
 };
 ```
@@ -1725,7 +1724,7 @@ const summarizeAgentRun = (
 
   const headline = description ?? agentId ?? 'agent run';
   const lines = [`${formatTaskStatusIcon(status)} ${truncate(headline)}`];
-  
+
   // 构建元信息
   const meta = formatSummaryMeta([
     agentId,
@@ -1739,11 +1738,11 @@ const summarizeAgentRun = (
       ? `${Math.round((readNumber(extras?.waitedMs) ?? 0) / 1000)}s waited`
       : null,
   ]);
-  
+
   if (meta) {
     lines.push(meta);
   }
-  
+
   if (error && !output) {
     lines.push(`error: ${truncate(error, 96)}`);
   }
@@ -1770,7 +1769,7 @@ const summarizeTaskRecord = (
   const blocks = readArray(task.blockedTasks).length || readArray(task.blocks).length;
 
   const lines = [`${formatTaskStatusIcon(status)} ${truncate(subject)}`];
-  
+
   const meta = formatSummaryMeta([
     id,
     formatStatusLabel(status),
@@ -1780,7 +1779,7 @@ const summarizeTaskRecord = (
     blockers > 0 ? `${blockers} blocker${blockers === 1 ? '' : 's'}` : null,
     blocks > 0 ? `blocks ${blocks}` : null,
   ]);
-  
+
   if (meta) {
     lines.push(meta);
   }
@@ -1869,7 +1868,7 @@ const buildSearchResultSections = (result: ParsedToolResult | null): ToolSection
       readBoolean(metadata.truncated) ? 'truncated' : null,
       readBoolean(metadata.timed_out) ? 'timed out' : null,
     ]);
-    
+
     if (summary && output && summary !== output && flags) {
       return [
         { label: 'result', content: summary, tone: 'body' },
@@ -1894,44 +1893,44 @@ const buildSearchResultSections = (result: ParsedToolResult | null): ToolSection
 
 ### F.1 环境变量配置
 
-| 变量名 | 类型 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `AGENT_MODEL` | string | 'qwen3.5-plus' | 使用的 AI 模型 |
-| `AGENT_MAX_STEPS` | number | 10000 | 最大执行步数 |
-| `AGENT_MAX_RETRY_COUNT` | number | 10 | 最大重试次数 |
-| `AGENT_CONVERSATION_ID` | string | auto-generated | 对话 ID |
-| `AGENT_SESSION_ID` | string | auto-generated | 会话 ID |
-| `AGENT_REPO_ROOT` | string | auto-detect | 仓库根目录 |
-| `AGENT_WORKDIR` | string | cwd | 工作目录 |
-| `AGENT_FULL_ACCESS` | boolean | false | 启用全访问模式 |
-| `AGENT_PROMPT_CACHE_KEY` | string | - | 提示缓存键 |
-| `AGENT_PROMPT_CACHE_RETENTION` | string | - | 缓存保留时间 |
-| `AGENT_SHOW_EVENTS` | boolean | false | 显示事件调试信息 |
+| 变量名                         | 类型    | 默认值         | 说明             |
+| ------------------------------ | ------- | -------------- | ---------------- |
+| `AGENT_MODEL`                  | string  | 'qwen3.5-plus' | 使用的 AI 模型   |
+| `AGENT_MAX_STEPS`              | number  | 10000          | 最大执行步数     |
+| `AGENT_MAX_RETRY_COUNT`        | number  | 10             | 最大重试次数     |
+| `AGENT_CONVERSATION_ID`        | string  | auto-generated | 对话 ID          |
+| `AGENT_SESSION_ID`             | string  | auto-generated | 会话 ID          |
+| `AGENT_REPO_ROOT`              | string  | auto-detect    | 仓库根目录       |
+| `AGENT_WORKDIR`                | string  | cwd            | 工作目录         |
+| `AGENT_FULL_ACCESS`            | boolean | false          | 启用全访问模式   |
+| `AGENT_PROMPT_CACHE_KEY`       | string  | -              | 提示缓存键       |
+| `AGENT_PROMPT_CACHE_RETENTION` | string  | -              | 缓存保留时间     |
+| `AGENT_SHOW_EVENTS`            | boolean | false          | 显示事件调试信息 |
 
 ### F.2 工具执行器选项
 
 ```typescript
 // 工具执行器配置选项
 type ToolExecutorOptions = {
-  workingDirectory: string;           // 工作目录
+  workingDirectory: string; // 工作目录
   fileSystemPolicy?: FileSystemPolicy; // 文件系统策略
-  networkPolicy?: NetworkPolicy;      // 网络策略
-  approvalPolicy?: ApprovalPolicy;    // 审批策略
-  trustLevel?: TrustLevel;            // 信任级别
+  networkPolicy?: NetworkPolicy; // 网络策略
+  approvalPolicy?: ApprovalPolicy; // 审批策略
+  trustLevel?: TrustLevel; // 信任级别
 };
 
 // 文件系统策略
 type FileSystemPolicy = {
   mode: 'unrestricted' | 'restricted' | 'readonly';
-  readRoots?: string[];               // 允许读取的根目录
-  writeRoots?: string[];              // 允许写入的根目录
+  readRoots?: string[]; // 允许读取的根目录
+  writeRoots?: string[]; // 允许写入的根目录
 };
 
 // 网络策略
 type NetworkPolicy = {
   mode: 'enabled' | 'disabled';
-  allowedHosts?: string[];            // 允许访问的主机
-  deniedHosts?: string[];            // 拒绝访问的主机
+  allowedHosts?: string[]; // 允许访问的主机
+  deniedHosts?: string[]; // 拒绝访问的主机
 };
 
 // 审批策略
@@ -1972,12 +1971,12 @@ safeInvoke(() => handlers.onToolResult?.(toolResultEvent));
 // 运行时实例错误处理
 const createRuntime = async (): Promise<RuntimeCore> => {
   // ... 创建逻辑
-  
+
   // 错误时清空缓存，允许重新尝试
   promise.catch(() => {
     runtimePromise = null;
   });
-  
+
   return runtimeComposition;
 };
 
@@ -1995,6 +1994,7 @@ const onError = (error: unknown) => {
 本分析文档全面深入地探讨了 Renx Code Agent 系统中 Agent 与 Tool 配置执行的完整机制，涵盖了从运行时初始化、工具注册、事件处理、权限控制到 UI 交互的各个方面。通过详细的代码分析和流程图，读者可以全面理解这一复杂系统的工作原理。
 
 文档包含的 Mermaid 流程图涵盖了：
+
 - 整体系统架构
 - 运行时初始化流程
 - 工具系统创建流程
@@ -2009,4 +2009,4 @@ const onError = (error: unknown) => {
 
 ---
 
-*文档完成 - 共约 20,000 字*
+_文档完成 - 共约 20,000 字_

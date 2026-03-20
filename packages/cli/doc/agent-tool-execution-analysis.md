@@ -40,30 +40,30 @@ graph TB
         UI[UI Components]
         CLI[CLI Interface]
     end
-    
+
     subgraph "运行时层 Runtime"
         RT[Runtime Core]
         EC[Event Handlers]
         TB[ToolCallBuffer]
     end
-    
+
     subgraph "Agent 核心层"
         SA[StatelessAgent]
         LL[LLM Provider]
         RL[Run Loop]
     end
-    
+
     subgraph "工具系统层"
         TS[Tool System]
         TH[Tool Handlers]
         CC[Concurrency Control]
     end
-    
+
     subgraph "存储层"
         DB[(SQLite Store)]
         TSd[Task Store]
     end
-    
+
     UI --> RT
     CLI --> RT
     RT --> EC
@@ -104,22 +104,23 @@ src/agent/runtime/
 
 ```typescript
 type RuntimeCore = {
-  modelId: string;              // 当前使用的模型ID
-  modelLabel: string;           // 模型显示名称
-  maxSteps: number;             // 最大执行步数限制
-  conversationId: string;       // 会话唯一标识
-  workspaceRoot: string;        // 工作空间根目录
-  skillRoots: string[];         // 技能根目录列表
+  modelId: string; // 当前使用的模型ID
+  modelLabel: string; // 模型显示名称
+  maxSteps: number; // 最大执行步数限制
+  conversationId: string; // 会话唯一标识
+  workspaceRoot: string; // 工作空间根目录
+  skillRoots: string[]; // 技能根目录列表
   parentTools: ToolSchemaLike[]; // 父级工具列表
-  agent: StatelessAgentLike;    // Agent 实例
+  agent: StatelessAgentLike; // Agent 实例
   appService: AgentAppServiceLike; // 应用服务
-  appStore: AgentAppStoreLike;  // 应用存储
-  logger?: Logger;              // 日志记录器
-  modules: SourceModules;      // 源码模块集合
+  appStore: AgentAppStoreLike; // 应用存储
+  logger?: Logger; // 日志记录器
+  modules: SourceModules; // 源码模块集合
 };
 ```
 
 **关键设计**：
+
 - 单例模式确保整个应用生命周期内只有一个 Runtime 实例
 - 延迟初始化模式避免启动时的循环依赖
 
@@ -131,27 +132,27 @@ type RuntimeCore = {
 type SourceModules = {
   // LLM 提供商相关
   ProviderRegistry: ProviderRegistryConstructor;
-  
+
   // Agent 核心
   StatelessAgent: StatelessAgentConstructor;
   AgentAppService: AgentAppServiceConstructor;
-  
+
   // 存储
   createSqliteAgentAppStore: CreateSqliteStore;
   getTaskStateStoreV2: GetTaskStateStoreV2;
-  
+
   // 工具系统
   createEnterpriseToolSystemV2WithSubagents: CreateToolSystem;
   createEnterpriseAgentAppService: CreateAgentService;
-  
+
   // 工具
   SHELL_POLICY_PROFILES: ShellPolicyProfiles;
   filterToolSchemas: FilterToolSchemas;
-  
+
   // 技能
   listAvailableSkills: ListSkills;
   formatAvailableSkillsForBootstrap: FormatSkills;
-  
+
   // 日志
   createLoggerFromEnv: CreateLogger;
   createAgentLoggerAdapter: CreateAgentLogger;
@@ -165,7 +166,7 @@ sequenceDiagram
     participant R as Runtime
     participant C as Core Package
     participant M as SourceModules
-    
+
     R->>C: import dynamic modules
     C-->>M: ProviderRegistry, Agent, ToolSystem...
     M-->>R: modules ready
@@ -178,6 +179,7 @@ sequenceDiagram
 `tool-call-buffer.ts` 实现了一个智能缓冲机制，用于优化用户体验：
 
 **设计目的**：
+
 - 隐藏 LLM 计划但尚未执行的工具调用
 - 减少用户看到的"思考中"工具数量
 - 保持工具调用顺序一致性
@@ -188,13 +190,13 @@ sequenceDiagram
 class ToolCallBuffer {
   // 保持工具调用注册顺序
   private readonly plannedOrder: string[] = [];
-  
+
   // 快速查找已计划的ID
   private readonly plannedIds = new Set<string>();
-  
+
   // 按ID索引的工具调用
   private readonly toolCallsById = new Map<string, AgentToolUseEvent>();
-  
+
   // 防止重复发出
   private readonly emittedIds = new Set<string>();
 }
@@ -202,11 +204,11 @@ class ToolCallBuffer {
 
 **核心方法**：
 
-| 方法 | 作用 |
-|------|------|
-| `register()` | 注册工具调用，executing=true时立即发出 |
-| `flush()` | 批量发出所有缓冲的工具调用 |
-| `ensureEmitted()` | 确保特定ID的工具调用被发出 |
+| 方法              | 作用                                   |
+| ----------------- | -------------------------------------- |
+| `register()`      | 注册工具调用，executing=true时立即发出 |
+| `flush()`         | 批量发出所有缓冲的工具调用             |
+| `ensureEmitted()` | 确保特定ID的工具调用被发出             |
 
 ---
 
@@ -221,15 +223,12 @@ class ToolCallBuffer {
 const toolSystem = modules.createEnterpriseToolSystemV2WithSubagents({
   appService: deferredSubagentAppService.service,
   resolveTools: (allowedTools?: string[]) =>
-    filterToolSchemas(
-      runtimeCompositionRef.current?.toolExecutor?.getToolSchemas?.() || [],
-      { allowedTools }
-    ),
+    filterToolSchemas(runtimeCompositionRef.current?.toolExecutor?.getToolSchemas?.() || [], {
+      allowedTools,
+    }),
   resolveModelId: () => modelConfig.model || modelId,
   builtIns: {
-    shell: fullAccessEnabled 
-      ? { profile: modules.SHELL_POLICY_PROFILES.fullAccess } 
-      : undefined,
+    shell: fullAccessEnabled ? { profile: modules.SHELL_POLICY_PROFILES.fullAccess } : undefined,
     skill: { loaderOptions: { skillRoots } },
     task: { store: taskStore, defaultNamespace: conversationId },
   },
@@ -244,13 +243,14 @@ const toolSystem = modules.createEnterpriseToolSystemV2WithSubagents({
 function filterToolSchemas(
   schemas: ToolSchemaLike[],
   options?: {
-    allowedTools?: string[];      // 白名单
+    allowedTools?: string[]; // 白名单
     hiddenToolNames?: Set<string>; // 黑名单
   }
-): ToolSchemaLike[]
+): ToolSchemaLike[];
 ```
 
 **过滤策略**：
+
 1. **第一阶段 - 隐藏过滤**：移除在黑名单中的工具
 2. **第二阶段 - 白名单过滤**：如果提供了白名单，只返回白名单中的工具
 
@@ -266,21 +266,21 @@ flowchart TD
     F -- 否 --> G[拒绝执行，返回错误]
     F -- 是 --> H{工具需要权限?}
     C -- 否 --> H
-    
+
     H -- 是 --> I[触发 tool_permission 事件]
     I --> J[等待权限授予]
     J --> K{权限足够?}
     K -- 否 --> L[限制执行范围]
     K -- 是 --> M[执行工具]
     H -- 否 --> M
-    
+
     M --> N{执行成功?}
     N -- 是 --> O[生成 tool_result 事件]
     N -- 否 --> P[生成错误结果]
     O --> Q[发送 progress 事件]
     P --> Q
     Q --> R[返回主循环]
-    
+
     G --> R
 ```
 
@@ -334,21 +334,21 @@ type AgentEventHandlers = {
   // 文本事件
   onTextDelta?: (event: AgentTextDeltaEvent) => void;
   onTextComplete?: (text: string) => void;
-  
+
   // 工具事件
   onToolStream?: (event: AgentToolStreamEvent) => void;
   onToolUse?: (event: AgentToolUseEvent) => void;
   onToolResult?: (event: AgentToolResultEvent) => void;
-  
+
   // 交互事件（需要决策）
   onToolConfirmRequest?: (event: AgentToolConfirmEvent) => AgentToolConfirmDecision | Promise<...>;
   onToolPermissionRequest?: (event: AgentToolPermissionEvent) => AgentPermissionGrant | Promise<...>;
-  
+
   // 生命周期事件
   onStep?: (event: AgentStepEvent) => void;
   onLoop?: (event: AgentLoopEvent) => void;
   onStop?: (event: AgentStopEvent) => void;
-  
+
   // 统计事件
   onUsage?: (event: AgentUsageEvent) => void;
   onContextUsage?: (event: AgentContextUsageEvent) => void;
@@ -371,7 +371,7 @@ flowchart LR
         K9[done]
         K10[error]
     end
-    
+
     subgraph "事件处理"
         H1[onTextDelta]
         H2[onToolUse]
@@ -381,7 +381,7 @@ flowchart LR
         H6[onLoop]
         H7[onStop]
     end
-    
+
     K1 --> H1
     K2 --> H1
     K3 --> H2
@@ -405,44 +405,44 @@ onEvent: async (envelope) => {
       // 处理文本块
       handlers.onTextDelta?.(toTextDeltaEvent(payload, false));
       break;
-      
+
     case 'reasoning_chunk':
       // 处理推理过程
       handlers.onTextDelta?.(toTextDeltaEvent(payload, true));
       break;
-      
+
     case 'tool_stream':
       // 处理工具流式输出
       toolCallBuffer.ensureEmitted(toolStreamEvent.toolCallId, emit);
       handlers.onToolStream?.(toolStreamEvent);
       break;
-      
+
     case 'tool_call':
       // 处理工具调用（注册到缓冲）
       for (const item of rawToolCalls) {
         toolCallBuffer.register(toolCall, emit, executing);
       }
       break;
-      
+
     case 'tool_result':
       // 处理工具结果
       toolCallBuffer.ensureEmitted(toolCallId, emit);
       handlers.onToolResult?.(toolResultEvent);
       break;
-      
+
     case 'progress':
       // 处理进度更新，触发flush
       if (nextAction === 'tool') {
         toolCallBuffer.flush(emit);
       }
       break;
-      
+
     case 'done':
       handlers.onTextComplete?.(text);
       handlers.onStop?.(stopEvent);
       break;
   }
-}
+};
 ```
 
 ---
@@ -459,7 +459,7 @@ sequenceDiagram
     participant Runtime
     participant Handler
     participant User
-    
+
     Agent->>Runtime: tool_confirm 事件
     Runtime->>Handler: onToolConfirm (通知)
     Runtime->>Handler: onToolConfirmRequest (请求决策)
@@ -467,7 +467,7 @@ sequenceDiagram
     User-->>Handler: 批准/拒绝
     Handler-->>Runtime: AgentToolConfirmDecision
     Runtime-->>Agent: decision.resolve()
-    
+
     Agent->>Runtime: 继续执行或终止
 ```
 
@@ -483,10 +483,10 @@ export const resolveToolConfirmDecision = async (
   if (!handlers.onToolConfirmRequest) {
     return { approved: false, message: 'Tool confirmation handler is not available.' };
   }
-  
+
   // 2. 调用处理程序获取决策
   const decision = await handlers.onToolConfirmRequest(event);
-  
+
   // 3. 空返回值视为拒绝
   return decision ?? { approved: false, message: 'Tool confirmation was not resolved.' };
 };
@@ -499,8 +499,8 @@ export const resolveToolConfirmDecision = async (
 ```typescript
 type AgentToolPermissionProfile = {
   fileSystem?: {
-    read?: string[];    // 允许读取的路径
-    write?: string[];   // 允许写入的路径
+    read?: string[]; // 允许读取的路径
+    write?: string[]; // 允许写入的路径
   };
   network?: {
     enabled?: boolean;
@@ -511,7 +511,7 @@ type AgentToolPermissionProfile = {
 
 type AgentToolPermissionGrant = {
   granted: AgentToolPermissionProfile;
-  scope: 'turn' | 'session';  // turn=单次, session=整个会话
+  scope: 'turn' | 'session'; // turn=单次, session=整个会话
 };
 ```
 
@@ -545,39 +545,39 @@ flowchart TD
     B --> C[创建 ToolCallBuffer]
     C --> D[注册事件监听器]
     D --> E{执行 runForeground}
-    
+
     E --> F[Agent 开始执行]
     F --> G{获取事件}
-    
+
     G --> H[chunk/reasoning_chunk]
     H --> I[onTextDelta]
     I --> J[累加文本]
-    
+
     G --> K[tool_call]
     K --> L[注册到缓冲区]
     L --> M{正在执行?}
     M -- 是 --> N[立即emit]
     M -- 否 --> O[等待flush]
-    
+
     G --> P[tool_stream]
     P --> Q[ensureEmitted]
     Q --> R[onToolStream]
-    
+
     G --> S[tool_result]
     S --> T[ensureEmitted]
     T --> U[onToolResult]
-    
+
     G --> V[progress]
     V --> W{nextAction='tool'?}
     W -- 是 --> X[flush缓冲区]
     W -- 否 --> Y[onStep]
     X --> Y
-    
+
     G --> Z[done]
     Z --> AA[onTextComplete]
     AA --> BB[onStop]
     BB --> CC[结束]
-    
+
     O --> G
     N --> G
     J --> G
@@ -601,7 +601,7 @@ flowchart TD
     H --> I
     I -- 是 --> E
     I -- 否 --> J[缓冲等待]
-    
+
     E --> K[触发 onToolUse]
     J --> L{progress 事件}
     L --> M{action='tool'?}
@@ -610,7 +610,7 @@ flowchart TD
     O --> K
     M -- 否 --> P[继续等待]
     P --> L
-    
+
     K --> Q[LLM 处理结果]
     Q --> R[done 事件]
 ```
@@ -622,17 +622,17 @@ flowchart TD
     A[工具调用请求] --> B{需要确认?}
     B -- 是 --> C[触发 tool_confirm]
     B -- 否 --> D{需要权限?}
-    
+
     C --> E[显示确认对话框]
     E --> F{用户选择}
     F -- 批准 --> G[approved=true]
     F -- 拒绝 --> H[approved=false]
     G --> I[继续执行]
     H --> J[返回错误]
-    
+
     D -- 是 --> K[触发 tool_permission]
     D -- 否 --> L[直接执行]
-    
+
     K --> M[显示权限对话框]
     M --> N{用户授权}
     N -- 完全授权 --> O[scope=session]
@@ -641,7 +641,7 @@ flowchart TD
     O --> I
     P --> I
     Q --> R[限制执行]
-    
+
     I --> S[execute tool]
     R --> S
     J --> T[结束]
@@ -657,23 +657,23 @@ flowchart LR
         A[LLM 调用] --> B[usage 事件]
         B --> C[onUsage]
         C --> D[累计 Token 统计]
-        
+
         A --> E[context usage 事件]
         E --> F[onContextUsage]
         F --> G[上下文窗口监控]
     end
-    
+
     subgraph "监控指标"
         D --> H[promptTokens]
         D --> I[completionTokens]
         D --> J[totalTokens]
         D --> K[cumulativeTokens]
-        
+
         G --> L[contextTokens]
         G --> M[contextLimit]
         G --> N[contextUsagePercent]
     end
-    
+
     subgraph "阈值检查"
         L --> O{>80%?}
         O -- 是 --> P[警告]
@@ -694,7 +694,7 @@ flowchart TD
     D --> E[AgentAppService.runForeground]
     E --> F[事件轮询]
     F --> G{事件类型}
-    
+
     G --> H[增量事件]
     H --> I[转发给父代理]
     G --> J[终态事件]
@@ -702,7 +702,7 @@ flowchart TD
     K --> L[映射结果]
     L --> M[生成 tool_result]
     M --> N[返回父代理]
-    
+
     I --> F
     N --> O[主循环继续]
 ```
@@ -720,17 +720,17 @@ classDiagram
     AgentEvent <|-- AgentToolEvent
     AgentEvent <|-- AgentControlEvent
     AgentEvent <|-- AgentUsageEvent
-    
+
     class AgentToolEvent {<<interface>>}
     AgentToolEvent <|-- AgentToolStreamEvent
     AgentToolEvent <|-- AgentToolUseEvent
     AgentToolEvent <|-- AgentToolResultEvent
     AgentToolEvent <|-- AgentToolPromptEvent
-    
+
     class AgentToolPromptEvent {<<union>>}
     AgentToolPromptEvent <|-- AgentToolConfirmEvent
     AgentToolPromptEvent <|-- AgentToolPermissionEvent
-    
+
     class AgentControlEvent {<<interface>>}
     AgentControlEvent <|-- AgentStepEvent
     AgentControlEvent <|-- AgentLoopEvent
@@ -740,6 +740,7 @@ classDiagram
 ### 8.2 核心类型定义
 
 **工具调用**：
+
 ```typescript
 type ToolCallLike = {
   id?: string;
@@ -751,6 +752,7 @@ type ToolCallLike = {
 ```
 
 **工具确认事件**：
+
 ```typescript
 type AgentToolConfirmEvent = {
   kind: 'approval';
@@ -764,6 +766,7 @@ type AgentToolConfirmEvent = {
 ```
 
 **确认决策**：
+
 ```typescript
 type AgentToolConfirmDecision = {
   approved: boolean;
@@ -772,6 +775,7 @@ type AgentToolConfirmDecision = {
 ```
 
 **运行结果**：
+
 ```typescript
 type AgentRunResult = {
   text: string;
@@ -832,17 +836,17 @@ flowchart TD
         TRC[ToolResultComponent]
         TD[ToolDisplay]
     end
-    
+
     subgraph "状态管理"
         TU[Turn Updater]
         SH[State Hooks]
     end
-    
+
     subgraph "运行时"
         RT[Runtime]
         EH[Event Handlers]
     end
-    
+
     TU --> RT
     SH --> TU
     RT --> EH
@@ -857,10 +861,7 @@ flowchart TD
 
 ```typescript
 // 核心功能
-- 显示工具名称和参数
-- 显示执行原因
-- 提供批准/拒绝按钮
-- 支持自定义处理程序
+-显示工具名称和参数 - 显示执行原因 - 提供批准 / 拒绝按钮 - 支持自定义处理程序;
 ```
 
 ### 10.3 工具结果展示
@@ -887,17 +888,17 @@ flowchart TB
     A --> C[执行前确认]
     A --> D[权限控制]
     A --> E[环境隔离]
-    
+
     B --> B1[隐藏工具列表]
     B --> B2[白名单过滤]
-    
+
     C --> C1[tool_confirm 事件]
     C --> C2[用户交互]
-    
+
     D --> D1[文件系统权限]
     D --> D2[网络权限]
     D --> D3[作用域控制]
-    
+
     E --> E1[工作空间隔离]
     E --> E2[FullAccess 模式]
 ```
@@ -926,13 +927,13 @@ const isFullAccessEnabled = (env: NodeJS.ProcessEnv): boolean => {
 
 ### 11.3 默认安全策略
 
-| 机制 | 默认行为 | 可配置 |
-|------|----------|--------|
-| 工具确认 | 默认拒绝 | 通过 `onToolConfirmRequest` |
-| 权限授予 | 空权限 | 通过 `onToolPermissionRequest` |
-| 文件访问 | 受限 | 通过权限配置 |
-| 网络访问 | 禁用 | 通过网络策略 |
-| 重试次数 | 10次 | 通过 `AGENT_MAX_RETRY_COUNT` |
+| 机制     | 默认行为 | 可配置                         |
+| -------- | -------- | ------------------------------ |
+| 工具确认 | 默认拒绝 | 通过 `onToolConfirmRequest`    |
+| 权限授予 | 空权限   | 通过 `onToolPermissionRequest` |
+| 文件访问 | 受限     | 通过权限配置                   |
+| 网络访问 | 禁用     | 通过网络策略                   |
+| 重试次数 | 10次     | 通过 `AGENT_MAX_RETRY_COUNT`   |
 
 ---
 
@@ -957,13 +958,13 @@ const isFullAccessEnabled = (env: NodeJS.ProcessEnv): boolean => {
 
 ### 12.3 关键设计决策
 
-| 决策 | 选择 | 理由 |
-|------|------|------|
-| 工具缓冲 | 延迟显示 | 提升用户体验 |
-| 确认机制 | 默认拒绝 | 安全优先 |
+| 决策       | 选择         | 理由               |
+| ---------- | ------------ | ------------------ |
+| 工具缓冲   | 延迟显示     | 提升用户体验       |
+| 确认机制   | 默认拒绝     | 安全优先           |
 | 权限作用域 | turn/session | 平衡便利性和安全性 |
-| 状态存储 | SQLite | 支持会话恢复 |
-| 模型选择 | 可切换 | 适应不同场景 |
+| 状态存储   | SQLite       | 支持会话恢复       |
+| 模型选择   | 可切换       | 适应不同场景       |
 
 ---
 
@@ -971,22 +972,22 @@ const isFullAccessEnabled = (env: NodeJS.ProcessEnv): boolean => {
 
 ### A. 关键文件位置
 
-| 文件 | 路径 | 行数 | 作用 |
-|------|------|------|------|
-| runtime.ts | src/agent/runtime/ | ~1000 | 运行时核心 |
-| types.ts | src/agent/runtime/ | ~130 | 类型定义 |
-| event-format.ts | src/agent/runtime/ | ~200 | 事件格式化 |
-| tool-catalog.ts | src/agent/runtime/ | ~40 | 工具过滤 |
-| tool-confirmation.ts | src/agent/runtime/ | ~30 | 确认机制 |
-| tool-call-buffer.ts | src/agent/runtime/ | ~60 | 调用缓冲 |
+| 文件                 | 路径               | 行数  | 作用       |
+| -------------------- | ------------------ | ----- | ---------- |
+| runtime.ts           | src/agent/runtime/ | ~1000 | 运行时核心 |
+| types.ts             | src/agent/runtime/ | ~130  | 类型定义   |
+| event-format.ts      | src/agent/runtime/ | ~200  | 事件格式化 |
+| tool-catalog.ts      | src/agent/runtime/ | ~40   | 工具过滤   |
+| tool-confirmation.ts | src/agent/runtime/ | ~30   | 确认机制   |
+| tool-call-buffer.ts  | src/agent/runtime/ | ~60   | 调用缓冲   |
 
 ### B. 环境变量
 
-| 变量 | 默认值 | 作用 |
-|------|--------|------|
-| `AGENT_MAX_STEPS` | 10000 | 最大执行步数 |
-| `AGENT_MAX_RETRY_COUNT` | 10 | 最大重试次数 |
-| `AGENT_FULL_ACCESS` | - | 启用完全访问模式 |
+| 变量                    | 默认值 | 作用             |
+| ----------------------- | ------ | ---------------- |
+| `AGENT_MAX_STEPS`       | 10000  | 最大执行步数     |
+| `AGENT_MAX_RETRY_COUNT` | 10     | 最大重试次数     |
+| `AGENT_FULL_ACCESS`     | -      | 启用完全访问模式 |
 
 ### C. 核心导出
 
@@ -1010,4 +1011,4 @@ export const resolveToolPermissionGrant: (...) => Promise<...>;
 
 ---
 
-*本文档基于对源代码的详细分析生成，涵盖了 Agent 与 Tool 配置执行的完整机制。*
+_本文档基于对源代码的详细分析生成，涵盖了 Agent 与 Tool 配置执行的完整机制。_

@@ -121,19 +121,16 @@ const parseBooleanEnv = (raw: string | undefined): boolean | undefined => {
   if (normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on') {
     return true;
   }
-  if (
-    normalized === '0' ||
-    normalized === 'false' ||
-    normalized === 'no' ||
-    normalized === 'off'
-  ) {
+  if (normalized === '0' || normalized === 'false' || normalized === 'no' || normalized === 'off') {
     return false;
   }
   return undefined;
 };
 
-const isResponsesModelConfig = (modelConfig: { endpointPath?: string; provider?: string }): boolean =>
-  modelConfig.endpointPath === '/responses' || modelConfig.provider === 'openai';
+const isResponsesModelConfig = (modelConfig: {
+  endpointPath?: string;
+  provider?: string;
+}): boolean => modelConfig.endpointPath === '/responses' || modelConfig.provider === 'openai';
 
 const isServerSideContinuationEnabled = (
   modelConfig: { endpointPath?: string; provider?: string },
@@ -306,7 +303,9 @@ const resolveSkillRoots = (modules: SourceModules, workspaceRoot: string): strin
 const hasAvailableSkillsBootstrapMessage = (messages: AgentV4MessageLike[]): boolean => {
   return messages.some((message) => {
     const metadata =
-      message && typeof message === 'object' ? (message as { metadata?: Record<string, unknown> }).metadata : undefined;
+      message && typeof message === 'object'
+        ? (message as { metadata?: Record<string, unknown> }).metadata
+        : undefined;
     return metadata?.bootstrapKey === AVAILABLE_SKILLS_BOOTSTRAP_KEY;
   });
 };

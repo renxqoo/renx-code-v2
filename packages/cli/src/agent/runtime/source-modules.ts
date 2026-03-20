@@ -226,7 +226,9 @@ export type SourceModules = {
     description: string;
     path: string;
   }>;
-  formatAvailableSkillsForBootstrap: (skills: Array<{ name: string; description: string }>) => string;
+  formatAvailableSkillsForBootstrap: (
+    skills: Array<{ name: string; description: string }>
+  ) => string;
   createLoggerFromEnv: (env?: NodeJS.ProcessEnv, cwd?: string) => unknown;
   createAgentLoggerAdapter: (
     logger: Record<string, unknown>,

@@ -132,21 +132,25 @@ export async function* callLLMAndProcessStream(
   // Continuation planning is decided before opening the provider stream so the
   // rest of this function only deals with one normalized request shape.
   const requestPlan = buildLLMRequestPlan(messages, config, deps.enableServerSideContinuation);
-  deps.logDebug('[Agent] llm.request.plan', {
-    executionId,
-    stepIndex,
-    messageCount: messages.length,
-  }, {
-    continuationMode: requestPlan.continuationMode,
-    previousResponseIdUsed: requestPlan.previousResponseIdUsed,
-    continuationBaselineMessageCount: requestPlan.continuationBaselineMessageCount,
-    continuationDeltaMessageCount: requestPlan.continuationDeltaMessageCount,
-    requestInputMessageCount: requestPlan.requestInputMessageCount,
-    requestMessageCount: requestPlan.requestMessages.length,
-    hasPreviousResponseId:
-      typeof requestPlan.requestConfig?.previous_response_id === 'string' &&
-      requestPlan.requestConfig.previous_response_id.trim().length > 0,
-  });
+  deps.logDebug(
+    '[Agent] llm.request.plan',
+    {
+      executionId,
+      stepIndex,
+      messageCount: messages.length,
+    },
+    {
+      continuationMode: requestPlan.continuationMode,
+      previousResponseIdUsed: requestPlan.previousResponseIdUsed,
+      continuationBaselineMessageCount: requestPlan.continuationBaselineMessageCount,
+      continuationDeltaMessageCount: requestPlan.continuationDeltaMessageCount,
+      requestInputMessageCount: requestPlan.requestInputMessageCount,
+      requestMessageCount: requestPlan.requestMessages.length,
+      hasPreviousResponseId:
+        typeof requestPlan.requestConfig?.previous_response_id === 'string' &&
+        requestPlan.requestConfig.previous_response_id.trim().length > 0,
+    }
+  );
   const stream = deps.llmProvider.generateStream(
     requestPlan.requestMessages,
     requestPlan.requestConfig

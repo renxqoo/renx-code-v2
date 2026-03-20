@@ -92,9 +92,7 @@ describe('appendToSegment', () => {
     expect(streamSegment?.content.startsWith('a'.repeat(SHELL_STREAM_HEAD_CHARS))).toBe(true);
     expect(streamSegment?.content.endsWith('b'.repeat(4000) + 'c'.repeat(4000))).toBe(true);
     expect(streamSegment?.content.length).toBe(
-      SHELL_STREAM_HEAD_CHARS +
-        SHELL_STREAM_TRUNCATION_MARKER.length +
-        SHELL_STREAM_TAIL_CHARS
+      SHELL_STREAM_HEAD_CHARS + SHELL_STREAM_TRUNCATION_MARKER.length + SHELL_STREAM_TAIL_CHARS
     );
   });
 

@@ -20,6 +20,7 @@
 **核心思想**：按需加载领域知识，而不是把所有规则硬编码到system prompt中。
 
 **工作原理**：
+
 1. `SKILL.md` 监听特定库的关键词
 2. 动态加载 `instructions/` 目录中的文档
 3. 将规则作为"绝对真理"应用
@@ -30,12 +31,15 @@
 
 ```markdown
 # skills/api-expert/SKILL.md
+
 ---
+
 name: api-expert
 description: FastAPI开发最佳实践。用于构建、审查或调试FastAPI应用时激活。
 metadata:
-  pattern: tool-wrapper
-  domain: fastapi
+pattern: tool-wrapper
+domain: fastapi
+
 ---
 
 你是FastAPI开发专家。将以下约定应用到用户的代码中。
@@ -45,11 +49,13 @@ metadata:
 加载 'references/conventions.md' 获取完整的FastAPI最佳实践列表。
 
 ## 审查代码时
+
 1. 加载约定参考文档
 2. 检查用户代码是否符合每条约定
 3. 对每处违规，指出具体规则并建议修复
 
 ## 编写代码时
+
 1. 加载约定参考文档
 2. 严格遵循每条约定
 3. 为所有函数签名添加类型注解
@@ -65,6 +71,7 @@ metadata:
 **核心思想**：填空式文档生成，确保每次输出结构一致。
 
 **工作原理**：
+
 1. 从 `assets/` 加载输出模板
 2. 从 `references/` 加载风格指南
 3. 向用户询问缺失的变量
@@ -76,12 +83,15 @@ metadata:
 
 ```markdown
 # skills/report-generator/SKILL.md
+
 ---
+
 name: report-generator
 description: 生成结构化的Markdown技术报告。
 metadata:
-  pattern: generator
-  output-format: markdown
+pattern: generator
+output-format: markdown
+
 ---
 
 你是技术报告生成器。严格按以下步骤执行：
@@ -91,6 +101,7 @@ metadata:
 步骤2：加载 'assets/report-template.md' 获取必需的输出结构。
 
 步骤3：向用户询问填充模板所需的缺失信息：
+
 - 主题
 - 关键发现或数据点
 - 目标读者（技术/高管/通用）
@@ -109,6 +120,7 @@ metadata:
 **核心思想**：把"检查什么"和"怎么检查"分开——评分标准与逻辑解耦。
 
 **工作原理**：
+
 1. 在 `references/review-checklist.md` 存储评分标准
 2. agent加载检查清单
 3. 按严重性分组输出问题
@@ -119,12 +131,15 @@ metadata:
 
 ```markdown
 # skills/code-reviewer/SKILL.md
+
 ---
+
 name: code-reviewer
 description: 审查Python代码的质量、风格和常见bug。
 metadata:
-  pattern: reviewer
-  severity-levels: error,warning,info
+pattern: reviewer
+severity-levels: error,warning,info
+
 ---
 
 你是Python代码评审专家。严格按以下协议执行：
@@ -134,12 +149,14 @@ metadata:
 步骤2：仔细阅读用户代码。先理解代码目的，再提出批评。
 
 步骤3：将检查清单中的每条规则应用到代码。对每处违规：
+
 - 记录行号（或大致位置）
 - 划分严重级别：error（必须修复）、warning（应该修复）、info（建议考虑）
 - 解释**为什么**这是问题，而不只是**什么**错了
 - 提供具体修复建议和正确代码
 
 步骤4：生成结构化评审报告，包含：
+
 - **概述**：代码功能、整体质量评估
 - **发现**：按严重性分组（error优先，其次warning，最后info）
 - **评分**：1-10分并简要说明理由
@@ -155,6 +172,7 @@ metadata:
 **核心思想**：agent先采访用户，再行动——打破agent"猜测-生成"的本能冲动。
 
 **工作原理**：
+
 1. 使用明确的"禁止"指令（如"DO NOT开始构建..."）
 2. 按阶段顺序提问，每次只问一个
 3. 等待用户回答后再进入下一阶段
@@ -166,12 +184,15 @@ metadata:
 
 ```markdown
 # skills/project-planner/SKILL.md
+
 ---
+
 name: project-planner
 description: 通过结构化提问收集需求，然后制定计划。
 metadata:
-  pattern: inversion
-  interaction: multi-turn
+pattern: inversion
+interaction: multi-turn
+
 ---
 
 你正在主持一场结构化需求访谈。
@@ -209,6 +230,7 @@ metadata:
 **核心思想**：强制多步骤顺序执行，每步之间设检查点。
 
 **工作原理**：
+
 1. 每步必须按顺序执行
 2. 步骤间设置门控条件
 3. 需要用户批准才能进入下一阶段
@@ -220,12 +242,15 @@ metadata:
 
 ```markdown
 # skills/doc-pipeline/SKILL.md
+
 ---
+
 name: doc-pipeline
 description: 通过多步骤管道从Python源代码生成API文档。
 metadata:
-  pattern: pipeline
-  steps: "4"
+pattern: pipeline
+steps: "4"
+
 ---
 
 你正在执行文档生成管道。按顺序执行每一步。不要跳过任何步骤。
@@ -240,6 +265,7 @@ metadata:
 ## 第二步——生成文档字符串
 
 对每个缺少文档字符串的函数：
+
 - 加载 'references/docstring-style.md' 获取要求的格式
 - 严格按风格指南生成文档字符串
 - 展示每个生成的文档字符串供用户审批
@@ -254,6 +280,7 @@ metadata:
 ## 第四步——质量检查
 
 对照 'references/quality-checklist.md' 检查：
+
 - 每个公开符号都已文档化
 - 每个参数都有类型和描述
 - 每个函数至少有使用示例
@@ -331,13 +358,13 @@ metadata:
 
 ## 总结对比
 
-| 模式 | 核心机制 | 交互方式 | 适用复杂度 |
-|------|----------|----------|------------|
-| 工具包装器 | 按需加载知识 | 单轮 | 低 |
-| 生成器 | 模板填充 | 多轮（收集变量） | 中 |
-| 评审器 | 规则匹配 | 单轮 | 低-中 |
-| 反转 | 顺序提问 | 多轮（严格顺序） | 中-高 |
-| 管道 | 阶段门控 | 多轮（带审批） | 高 |
+| 模式       | 核心机制     | 交互方式         | 适用复杂度 |
+| ---------- | ------------ | ---------------- | ---------- |
+| 工具包装器 | 按需加载知识 | 单轮             | 低         |
+| 生成器     | 模板填充     | 多轮（收集变量） | 中         |
+| 评审器     | 规则匹配     | 单轮             | 低-中      |
+| 反转       | 顺序提问     | 多轮（严格顺序） | 中-高      |
+| 管道       | 阶段门控     | 多轮（带审批）   | 高         |
 
 ---
 
@@ -381,13 +408,13 @@ skills/
 
 ## 完整文件列表
 
-| 文件路径 | 说明 |
-|----------|------|
-| `skills/spawn-agent-helper/SKILL.md` | 主 Skill 文件，包含6步执行流程 |
-| `skills/spawn-agent-helper/references/role-guide.md` | 7种 role 的详细指南 |
-| `skills/spawn-agent-helper/references/prompt-patterns.md` | 5类 Prompt 模板 |
-| `skills/spawn-agent-helper/references/task-decomposition.md` | 任务分解方法论 |
-| `skills/spawn-agent-helper/assets/execution-template.md` | 执行计划模板 |
+| 文件路径                                                     | 说明                           |
+| ------------------------------------------------------------ | ------------------------------ |
+| `skills/spawn-agent-helper/SKILL.md`                         | 主 Skill 文件，包含6步执行流程 |
+| `skills/spawn-agent-helper/references/role-guide.md`         | 7种 role 的详细指南            |
+| `skills/spawn-agent-helper/references/prompt-patterns.md`    | 5类 Prompt 模板                |
+| `skills/spawn-agent-helper/references/task-decomposition.md` | 任务分解方法论                 |
+| `skills/spawn-agent-helper/assets/execution-template.md`     | 执行计划模板                   |
 
 ---
 
@@ -428,15 +455,15 @@ skills/
 
 ### Role 概览
 
-| Role | 职责 | 工具 | 适用 |
-|------|------|------|------|
-| `Bash` | Shell执行 | local_shell | 纯命令操作 |
-| `general-purpose` | 通用开发 | 全部核心工具 | 代码实现 |
-| `Explore` | 代码探索 | 搜索+读取 | 信息收集 |
-| `Restore` | 历史恢复 | 历史工具 | 回滚操作 |
-| `Plan`/`planner` | 规划分析 | 搜索+读取 | 方案设计 |
-| `research`/`research-agent` | 研究调研 | +web_fetch | 技术研究 |
-| `find-skills` | 技能发现 | 技能工具 | 找skill |
+| Role                        | 职责      | 工具         | 适用       |
+| --------------------------- | --------- | ------------ | ---------- |
+| `Bash`                      | Shell执行 | local_shell  | 纯命令操作 |
+| `general-purpose`           | 通用开发  | 全部核心工具 | 代码实现   |
+| `Explore`                   | 代码探索  | 搜索+读取    | 信息收集   |
+| `Restore`                   | 历史恢复  | 历史工具     | 回滚操作   |
+| `Plan`/`planner`            | 规划分析  | 搜索+读取    | 方案设计   |
+| `research`/`research-agent` | 研究调研  | +web_fetch   | 技术研究   |
+| `find-skills`               | 技能发现  | 技能工具     | 找skill    |
 
 ### 选择决策树
 
@@ -471,13 +498,13 @@ general-purpose (默认选择)
 
 ### 5类 Prompt 模板
 
-| 模板 | 适用场景 | 关键特点 |
-|------|----------|----------|
-| 分析型 | 代码分析、风险评估 | SCQA框架、证据支持 |
-| 实现型 | 功能实现、重构 | 分步骤、代码规范 |
-| 探索型 | 代码库分析、依赖查找 | 方法论、关系图 |
-| 审查型 | 代码审查、安全审计 | 严重程度分组 |
-| 规划型 | 项目规划、方案设计 | 多维度分析 |
+| 模板   | 适用场景             | 关键特点           |
+| ------ | -------------------- | ------------------ |
+| 分析型 | 代码分析、风险评估   | SCQA框架、证据支持 |
+| 实现型 | 功能实现、重构       | 分步骤、代码规范   |
+| 探索型 | 代码库分析、依赖查找 | 方法论、关系图     |
+| 审查型 | 代码审查、安全审计   | 严重程度分组       |
+| 规划型 | 项目规划、方案设计   | 多维度分析         |
 
 ### Prompt 构造原则
 
@@ -505,20 +532,20 @@ SCQA 框架：
 
 ### 4种分解模式
 
-| 模式 | 适用场景 | 示例 |
-|------|----------|------|
-| 功能分解 | 新功能开发 | 按模块拆分 |
-| 阶段分解 | 流水线任务 | 准备→构建→部署 |
-| 维度分解 | 审查分析 | 安全+性能+可维护性 |
-| 探索-验证分解 | 问题诊断 | 广泛探索→深入验证 |
+| 模式          | 适用场景   | 示例               |
+| ------------- | ---------- | ------------------ |
+| 功能分解      | 新功能开发 | 按模块拆分         |
+| 阶段分解      | 流水线任务 | 准备→构建→部署     |
+| 维度分解      | 审查分析   | 安全+性能+可维护性 |
+| 探索-验证分解 | 问题诊断   | 广泛探索→深入验证  |
 
 ### 4种执行策略
 
-| 策略 | 适用场景 | 示例 |
-|------|----------|------|
-| 完全并行 | 独立任务 | 同时分析3个模块 |
-| 顺序执行 | 强依赖 | 分析→实现 |
-| 流水线 | 阶段式处理 | 解析→实现→测试 |
+| 策略      | 适用场景   | 示例               |
+| --------- | ---------- | ------------------ |
+| 完全并行  | 独立任务   | 同时分析3个模块    |
+| 顺序执行  | 强依赖     | 分析→实现          |
+| 流水线    | 阶段式处理 | 解析→实现→测试     |
 | 分支-汇聚 | 多维度综合 | 分析前端+后端→汇总 |
 
 ---
@@ -529,55 +556,55 @@ SCQA 框架：
 
 ```yaml
 1. 概述
-   - 背景
-   - 目标
-   - 范围
-   - 成功标准
+- 背景
+- 目标
+- 范围
+- 成功标准
 
 2. 现状分析
-   - 现有架构
-   - 资源清单
-   - 约束条件
+- 现有架构
+- 资源清单
+- 约束条件
 
 3. 详细设计
-   - 架构设计
-   - 模块设计
-   - 数据模型
-   - 错误处理
+- 架构设计
+- 模块设计
+- 数据模型
+- 错误处理
 
 4. 实施计划
-   - 阶段划分
-   - 任务列表
-   - 验收标准
+- 阶段划分
+- 任务列表
+- 验收标准
 
 5. 风险分析
-   - 技术风险
-   - 项目风险
-   - 风险矩阵
+- 技术风险
+- 项目风险
+- 风险矩阵
 
 6. 资源需求
-   - 人力
-   - 技术
-   - 时间线
+- 人力
+- 技术
+- 时间线
 
 7. 测试计划
-   - 策略
-   - 用例
-   - 验收标准
+- 策略
+- 用例
+- 验收标准
 
 8. 部署计划
-   - 环境
-   - 步骤
-   - 回滚方案
+- 环境
+- 步骤
+- 回滚方案
 
 9. 监控运维
-   - 指标
-   - 日志
+- 指标
+- 日志
 
 10. 附录
-    - 术语表
-    - 参考文档
-    - 变更历史
+- 术语表
+- 参考文档
+- 变更历史
 ```
 
 ---
@@ -590,31 +617,31 @@ SCQA 框架：
 // 1. 分析阶段 - 并行探索
 const [security, performance, quality] = await Promise.all([
   spawn_agent({
-    role: "Explore",
+    role: 'Explore',
     prompt: `审查 ${targetFile} 的安全问题...
     参考 skills/spawn-agent-helper/references/prompt-patterns.md 中的审查模板`,
-    description: "安全审查"
+    description: '安全审查',
   }),
   spawn_agent({
-    role: "Explore",
+    role: 'Explore',
     prompt: `分析 ${targetFile} 的性能问题...`,
-    description: "性能分析"
+    description: '性能分析',
   }),
   spawn_agent({
-    role: "Explore",
+    role: 'Explore',
     prompt: `检查 ${targetFile} 的代码质量...`,
-    description: "质量检查"
-  })
+    description: '质量检查',
+  }),
 ]);
 
 // 2. 汇总阶段
 const report = await spawn_agent({
-  role: "general-purpose",
+  role: 'general-purpose',
   prompt: `汇总以下审查结果，生成统一报告：
   安全：${security.output}
   性能：${performance.output}
   质量：${quality.output}`,
-  description: "汇总报告"
+  description: '汇总报告',
 });
 ```
 
@@ -623,28 +650,28 @@ const report = await spawn_agent({
 ```typescript
 // 1. 研究阶段
 const research = await spawn_agent({
-  role: "research-agent",
+  role: 'research-agent',
   prompt: `评估在项目中使用WebAssembly的可行性...
     参考 skills/spawn-agent-helper/references/prompt-patterns.md 中的分析模板`,
-  description: "WASM可行性研究"
+  description: 'WASM可行性研究',
 });
 
 // 2. 规划阶段
 const plan = await spawn_agent({
-  role: "planner",
+  role: 'planner',
   prompt: `基于以下研究结果制定实施计划：
     ${research.output}
     
     参考 skills/spawn-agent-helper/assets/execution-template.md`,
-  description: "实施规划"
+  description: '实施规划',
 });
 
 // 3. 实施阶段
 const implementation = await spawn_agent({
-  role: "general-purpose",
+  role: 'general-purpose',
   prompt: `按照以下计划实施：
     ${plan.output}`,
-  description: "功能实现"
+  description: '功能实现',
 });
 ```
 
@@ -652,15 +679,15 @@ const implementation = await spawn_agent({
 
 ## 与项目 Role 的对应关系
 
-| Skill 中的 Role | 对应项目中的 Role |
-|-----------------|-------------------|
-| Bash | `Bash` |
-| general-purpose | `general-purpose` |
-| Explore | `Explore` |
-| Restore | `Restore` |
-| Plan / planner | `Plan` / `planner` |
+| Skill 中的 Role           | 对应项目中的 Role             |
+| ------------------------- | ----------------------------- |
+| Bash                      | `Bash`                        |
+| general-purpose           | `general-purpose`             |
+| Explore                   | `Explore`                     |
+| Restore                   | `Restore`                     |
+| Plan / planner            | `Plan` / `planner`            |
 | research / research-agent | `research` / `research-agent` |
-| find-skills | `find-skills` |
+| find-skills               | `find-skills`                 |
 
 ---
 
@@ -674,6 +701,7 @@ const implementation = await spawn_agent({
 4. **最佳实践总结**：常见错误、决策表、组合示例
 
 通过使用这个 Skill，主agent可以：
+
 - 准确判断何时需要子agent
 - 选择合适的 role 和配置
 - 构造高质量的 prompt

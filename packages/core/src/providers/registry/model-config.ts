@@ -79,7 +79,7 @@ export const MODEL_DEFINITIONS: Record<BuiltinModelId, ModelDefinition> = {
     LLMMAX_TOKENS: 200 * 1000,
     features: ['streaming', 'function-calling'],
   },
-    'minimax-2.5': {
+  'minimax-2.5': {
     id: 'minimax-2.5',
     provider: 'minimax',
     name: 'MiniMax-2.5',

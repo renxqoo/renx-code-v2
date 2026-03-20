@@ -39,7 +39,6 @@ const schema = z
   })
   .strict();
 
-
 export class SpawnAgentToolV2 extends StructuredToolHandler<typeof schema> {
   constructor(
     private readonly platform: SubagentPlatform,

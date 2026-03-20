@@ -184,7 +184,11 @@ describe('useAgentChat', () => {
 
     mockRunAgentPrompt
       .mockImplementationOnce(
-        async (_prompt: unknown, _handlers: Record<string, unknown>, options?: { abortSignal?: AbortSignal }) => {
+        async (
+          _prompt: unknown,
+          _handlers: Record<string, unknown>,
+          options?: { abortSignal?: AbortSignal }
+        ) => {
           firstAbortSignal = options?.abortSignal;
           return new Promise(() => {
             // Simulate a stuck runtime promise that never settles after abort.

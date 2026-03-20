@@ -860,6 +860,7 @@ export interface ToolHandler<TArgs = unknown> {
 ### 10.2 自定义授权服务
 
 实现 `ToolAuthorizationService` 接口：
+
 ```typescript
 export interface ToolAuthorizationService {
   authorizeExecution(request: AuthorizationExecutionRequest): Promise<AuthorizationExecutionResult>;
@@ -927,6 +928,7 @@ export interface ToolAuthorizationService {
 4. **任务系统**: 支持任务编排和子代理管理
 
 关键设计原则：
+
 - 无状态设计，支持水平扩展
 - 依赖注入，便于测试和替换
 - 事件驱动，支持异步流处理
@@ -1680,25 +1682,25 @@ interface TaskRecord {
 ```typescript
 // 流事件类型
 type StreamEventType =
-  | 'progress'      // 进度更新
-  | 'checkpoint'    // 检查点
-  | 'done'          // 完成
-  | 'error'         // 错误
-  | 'user_message'  // 用户消息
-  | 'compaction';   // 压缩
+  | 'progress' // 进度更新
+  | 'checkpoint' // 检查点
+  | 'done' // 完成
+  | 'error' // 错误
+  | 'user_message' // 用户消息
+  | 'compaction'; // 压缩
 
 // 工具执行事件阶段
 type ToolExecutionEventStage =
-  | 'received'            // 接收到调用
-  | 'parsed'              // 参数解析完成
-  | 'planned'             // 执行计划生成
+  | 'received' // 接收到调用
+  | 'parsed' // 参数解析完成
+  | 'planned' // 执行计划生成
   | 'permission_requested' // 请求权限
-  | 'permission_resolved'  // 权限已解决
-  | 'approval_requested'   // 请求审批
-  | 'approval_resolved'    // 审批已解决
-  | 'executing'           // 执行中
-  | 'succeeded'           // 成功
-  | 'failed';             // 失败
+  | 'permission_resolved' // 权限已解决
+  | 'approval_requested' // 请求审批
+  | 'approval_resolved' // 审批已解决
+  | 'executing' // 执行中
+  | 'succeeded' // 成功
+  | 'failed'; // 失败
 ```
 
 ---

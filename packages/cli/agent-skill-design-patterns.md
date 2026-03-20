@@ -1,6 +1,6 @@
 # Agent Skill 设计模式完全指南
 
-> **作者**: @Saboo_Shubham_ 和 @lavinigam  
+> **作者**: @Saboo*Shubham* 和 @lavinigam  
 > **来源**: [Google Cloud Tech](https://x.com/GoogleCloudTech/status/2033953579824758855)  
 > **日期**: 2026年3月18日  
 > **翻译整理**: AI Assistant
@@ -46,7 +46,6 @@ metadata:
   pattern: pattern-type
   # 其他元数据
 ---
-
 # 核心指令
 ```
 
@@ -117,16 +116,19 @@ skills/
 
 ```markdown
 # skills/api-expert/SKILL.md
+
 ---
+
 name: api-expert
 description: >
-  FastAPI 开发最佳实践与约定。
-  在构建、评审或调试 FastAPI 应用、
-  REST API 或 Pydantic 模型时使用。
+FastAPI 开发最佳实践与约定。
+在构建、评审或调试 FastAPI 应用、
+REST API 或 Pydantic 模型时使用。
 metadata:
-  pattern: tool-wrapper
-  domain: fastapi
-  version: 1.0.0
+pattern: tool-wrapper
+domain: fastapi
+version: 1.0.0
+
 ---
 
 你是一位 FastAPI 开发专家。在工作的各个方面应用这些约定。
@@ -171,23 +173,25 @@ metadata:
 
 ```markdown
 # skills/api-expert/references/conventions.md
+
 # FastAPI 最佳实践与约定
 
 ## 1. 项目结构
-
 ```
+
 project/
 ├── app/
-│   ├── __init__.py
-│   ├── main.py           # FastAPI 应用实例
-│   ├── config.py         # 使用 pydantic 的配置
-│   ├── models/          # Pydantic 模型
-│   ├── routers/         # APIRouter 模块
-│   ├── services/        # 业务逻辑
-│   └── dependencies.py  # 共享依赖
+│ ├── **init**.py
+│ ├── main.py # FastAPI 应用实例
+│ ├── config.py # 使用 pydantic 的配置
+│ ├── models/ # Pydantic 模型
+│ ├── routers/ # APIRouter 模块
+│ ├── services/ # 业务逻辑
+│ └── dependencies.py # 共享依赖
 ├── tests/
 └── requirements.txt
-```
+
+````
 
 ## 2. 路由约定
 
@@ -202,7 +206,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 @router.get("/{user_id}")
 async def get_user(user_id: int):
     return {"user_id": user_id}
-```
+````
 
 ### 2.2 路由前缀约定
 
@@ -212,13 +216,13 @@ async def get_user(user_id: int):
 
 ### 2.3 HTTP 方法选择
 
-| 操作 | 方法 | 示例 |
-|--------|--------|---------|
-| 创建 | POST | `POST /users` |
-| 读取 | GET | `GET /users/{id}` |
-| 更新（完整） | PUT | `PUT /users/{id}` |
-| 更新（部分） | PATCH | `PATCH /users/{id}` |
-| 删除 | DELETE | `DELETE /users/{id}` |
+| 操作         | 方法   | 示例                 |
+| ------------ | ------ | -------------------- |
+| 创建         | POST   | `POST /users`        |
+| 读取         | GET    | `GET /users/{id}`    |
+| 更新（完整） | PUT    | `PUT /users/{id}`    |
+| 更新（部分） | PATCH  | `PATCH /users/{id}`  |
+| 删除         | DELETE | `DELETE /users/{id}` |
 
 ## 3. Pydantic 模型
 
@@ -243,7 +247,7 @@ class UserResponse(BaseModel):
     name: str
     email: str
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 ```
@@ -326,16 +330,16 @@ Always include actionable error messages:
 
 ### 5.3 Status Code Selection
 
-| Scenario | Status Code |
-|----------|------------|
-| Successful creation | 201 Created |
-| Successful deletion | 204 No Content |
-| Successful read | 200 OK |
-| Validation error | 422 Unprocessable Entity |
-| Not found | 404 Not Found |
-| Unauthorized | 401 Unauthorized |
-| Forbidden | 403 Forbidden |
-| Server error | 500 Internal Server Error |
+| Scenario            | Status Code               |
+| ------------------- | ------------------------- |
+| Successful creation | 201 Created               |
+| Successful deletion | 204 No Content            |
+| Successful read     | 200 OK                    |
+| Validation error    | 422 Unprocessable Entity  |
+| Not found           | 404 Not Found             |
+| Unauthorized        | 401 Unauthorized          |
+| Forbidden           | 403 Forbidden             |
+| Server error        | 500 Internal Server Error |
 
 ## 6. Async Conventions
 
@@ -383,21 +387,21 @@ async def create_user(
 ) -> UserResponse:
     """
     Create a new user.
-    
+
     Args:
         user: The user data for creation.
         db: Database session.
-    
+
     Returns:
         The created user with generated ID and timestamps.
-    
+
     Raises:
         HTTPException: If email already exists (409 Conflict).
     """
     existing = db.query(User).filter(User.email == user.email).first()
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")
-    
+
     db_user = User(**user.model_dump())
     db.add(db_user)
     db.commit()
@@ -486,13 +490,13 @@ async def list_users(
 
 ### 优势与价值
 
-| 优势 | 说明 |
-|------|------|
+| 优势         | 说明                                           |
+| ------------ | ---------------------------------------------- |
 | **按需加载** | agent只在实际使用该技术时加载上下文，节省token |
-| **易于维护** | 更新约定文档即可更新所有agent行为 |
-| **可叠加** | 可同时激活多个tool-wrapper skill |
-| **版本控制** | 可为不同版本维护不同约定文档 |
-| **职责分离** | 约定与逻辑分离，便于团队协作 |
+| **易于维护** | 更新约定文档即可更新所有agent行为              |
+| **可叠加**   | 可同时激活多个tool-wrapper skill               |
+| **版本控制** | 可为不同版本维护不同约定文档                   |
+| **职责分离** | 约定与逻辑分离，便于团队协作                   |
 
 ---
 
@@ -563,15 +567,18 @@ skills/
 
 ```markdown
 # skills/report-generator/SKILL.md
+
 ---
+
 name: report-generator
 description: >
-  以 Markdown 格式生成结构化技术报告。
-  当用户要求写、创建、起草或生成报告、摘要、分析文档或技术简报时使用。
+以 Markdown 格式生成结构化技术报告。
+当用户要求写、创建、起草或生成报告、摘要、分析文档或技术简报时使用。
 metadata:
-  pattern: generator
-  output-format: markdown
-  complexity: medium
+pattern: generator
+output-format: markdown
+complexity: medium
+
 ---
 
 你是一位技术报告生成器。你的目标是生成一致的、遵循可预测格式的结构化报告。
@@ -590,6 +597,7 @@ metadata:
 ## 步骤 1：加载模板
 
 首先，根据用户的请求确定使用哪个模板：
+
 - 技术报告 → 加载 'assets/report-template.md'
 - 演示大纲 → 加载 'assets/presentation-template.md'
 
@@ -598,6 +606,7 @@ metadata:
 加载 'references/style-guide.md' 并应用所有格式化规则。
 
 关键规则：
+
 - 使用主动语态
 - 保持句子在 25 个词以内
 - 使用编号列表表示序列
@@ -607,6 +616,7 @@ metadata:
 ## 步骤 3：识别缺失变量
 
 查看模板并识别哪些变量：
+
 - ✅ 由用户请求提供
 - ❓ 缺失且必需
 - 🔄 可以增强但非必需
@@ -616,6 +626,7 @@ metadata:
 询问缺失的必需信息。一次只问一个主题。
 
 所有报告都需要：
+
 - 主要主题或议题
 - 目标读者（技术/管理/一般）
 - 关键发现或数据点
@@ -625,6 +636,7 @@ metadata:
 ## 步骤 5：生成内容
 
 按部分填写模板：
+
 1. 写部分标题
 2. 填写该部分的内容
 3. 应用风格指南规则
@@ -638,6 +650,7 @@ metadata:
 ## 质量检查清单
 
 展示前：
+
 - [ ] 所有必需部分都存在
 - [ ] 没有占位符文本残留
 - [ ] 遵循风格指南规则
@@ -736,8 +749,8 @@ metadata:
 
 ### 5.1 优先级矩阵
 
-| 优先级 | 建议 | 影响 | 难度 | 时间范围 |
-|--------|------|------|------|----------|
+| 优先级       | 建议               | 影响       | 难度           | 时间范围      |
+| ------------ | ------------------ | ---------- | -------------- | ------------- |
 | {{priority}} | {{recommendation}} | {{impact}} | {{difficulty}} | {{timeframe}} |
 
 ### 5.2 资源需求
@@ -768,46 +781,53 @@ metadata:
 
 ---
 
-*报告生成时间: {{generation_time}}*
+_报告生成时间: {{generation_time}}_
 ```
 
 ##### style-guide.md
 
 ```markdown
 # skills/report-generator/references/style-guide.md
+
 # Technical Report Style Guide
 
 ## 1. Writing Style
 
 ### 1.1 语气和语调
+
 - 优先使用**主动语态**而非被动语态
 - 直接且具体
 - 除非先定义，否则避免使用术语
 - 为目标读者而写
 
 ### 1.2 句子结构
+
 - 保持句子在 25 个词以内
 - 使用短段落（最多 3-5 句）
 - 每个段落一个观点
 
 ### 1.3 格式化规则
-
 ```
+
 标题：
+
 - H1：报告标题（居中，无其他 H1）
 - H2：主要章节（编号：1.、2.、3.）
 - H3：子章节（1.1、1.2、1.3）
 - H4：次要标题（粗体，无编号）
 
 项目符号：
+
 - 使用项目符号表示并行项
 - 使用数字表示序列/步骤
 - 子项目符号缩进 2 个空格
 
 代码：
+
 - 使用带语言的三个反引号
 - 为复杂部分包含注释
-```
+
+````
 
 ## 2. 章节指南
 
@@ -864,17 +884,17 @@ def calculate_metric(data: list[float]) -> float:
     std = statistics.stdev(data)
     filtered = [x for x in data if abs(x - mean) <= 2 * std]
     return sum(filtered) / len(filtered) if filtered else mean
-```
+````
 
 ## 4. 常见陷阱
 
-| ❌ 避免 | ✅ 改为 |
-|----------|------------|
-| "数据显示..." | "用户点击 X 的次数增加了 40%" |
-| "据认为..." | "研究表明..." |
-| "为了..." | "...是为了..." |
-| "由于...的事实..." | "因为..." |
-| 被动语态 | 主动语态 |
+| ❌ 避免            | ✅ 改为                       |
+| ------------------ | ----------------------------- |
+| "数据显示..."      | "用户点击 X 的次数增加了 40%" |
+| "据认为..."        | "研究表明..."                 |
+| "为了..."          | "...是为了..."                |
+| "由于...的事实..." | "因为..."                     |
+| 被动语态           | 主动语态                      |
 
 ## 5. 定稿前检查清单
 
@@ -886,6 +906,7 @@ def calculate_metric(data: list[float]) -> float:
 - [ ] Links are valid (if included)
 - [ ] Tone matches target audience
 - [ ] Active voice throughout
+
 ```
 
 ---
@@ -911,26 +932,28 @@ def calculate_metric(data: list[float]) -> float:
 ### 核心思想
 
 ```
+
 用户提交代码
-      │
-      ▼
+│
+▼
 ┌─────────────────────────────────────┐
-│  加载检查清单                         │
-│  (references/review-checklist.md)    │
-│                                      │
-│  应用每条规则                         │
-│  按严重性分组发现                      │
-│                                      │
-│  生成结构化评审报告                    │
+│ 加载检查清单 │
+│ (references/review-checklist.md) │
+│ │
+│ 应用每条规则 │
+│ 按严重性分组发现 │
+│ │
+│ 生成结构化评审报告 │
 └─────────────────────────────────────┘
-      │
-      ▼
+│
+▼
 ┌─────────────────────────────────────┐
-│  概述 (Summary)                      │
-│  发现 (Findings) - 按严重性分组        │
-│  评分 (Score) - 1-10分               │
-│  Top 3 建议 (Recommendations)        │
+│ 概述 (Summary) │
+│ 发现 (Findings) - 按严重性分组 │
+│ 评分 (Score) - 1-10分 │
+│ Top 3 建议 (Recommendations) │
 └─────────────────────────────────────┘
+
 ```
 
 ### 何时使用
@@ -962,13 +985,15 @@ def calculate_metric(data: list[float]) -> float:
 ##### 目录结构
 
 ```
+
 skills/
 └── code-reviewer/
-    ├── SKILL.md
-    └── references/
-        ├── review-checklist.md
-        └── severity-guide.md
-```
+├── SKILL.md
+└── references/
+├── review-checklist.md
+└── severity-guide.md
+
+````
 
 ##### SKILL.md
 
@@ -995,8 +1020,10 @@ metadata:
 ### 步骤 1：准备
 
 加载评审检查清单：
-```
+````
+
 Load 'references/review-checklist.md' for the complete review criteria.
+
 ```
 
 仔细阅读用户的代码。在评审之前，理解：
@@ -1085,8 +1112,9 @@ Load 'references/review-checklist.md' for the complete review criteria.
 
 ##### review-checklist.md
 
-```markdown
+````markdown
 # skills/code-reviewer/references/review-checklist.md
+
 # Python 代码评审检查清单
 
 ## 🔴 Error (Must Fix)
@@ -1094,39 +1122,45 @@ Load 'references/review-checklist.md' for the complete review criteria.
 这些问题必须在合并前解决：
 
 ### 安全
+
 - [ ] **SQL 注入**：使用字符串插值的原始 SQL
+
   ```python
   # 错误
   query = f"SELECT * FROM users WHERE id = {user_id}"
-  
+
   # 正确
   query = "SELECT * FROM users WHERE id = %s"
   cursor.execute(query, (user_id,))
   ```
+````
 
 - [ ] **命令注入**：使用 os.system() 或 shell=True 的 subprocess
+
   ```python
   # 错误
   os.system(f"rm -rf {user_input}")
-  
+
   # 正确
   subprocess.run(["rm", "-rf", user_input], shell=False)
   ```
 
 - [ ] **硬编码密钥**：代码中的 API 密钥、密码、令牌
+
   ```python
   # 错误
   API_KEY = "sk-abc123..."
-  
+
   # 正确
   API_KEY = os.environ.get("API_KEY")
   ```
 
 - [ ] **路径遍历**：未验证的文件路径
+
   ```python
   # BAD
   with open(user_filename) as f:
-  
+
   # 正确
   base_dir = "/safe/path"
   safe_path = os.path.realpath(os.path.join(base_dir, user_filename))
@@ -1135,14 +1169,16 @@ Load 'references/review-checklist.md' for the complete review criteria.
   ```
 
 ### 正确性
+
 - [ ] **未处理的异常**：裸 except、捕获 Exception、捕获 Throwable
+
   ```python
   # 错误
   try:
       do_something()
   except:
       pass
-  
+
   # 正确
   try:
       do_something()
@@ -1157,12 +1193,14 @@ Load 'references/review-checklist.md' for the complete review criteria.
 - [ ] **除零**：未验证的数值操作
 
 ### 数据完整性
+
 - [ ] **缺少输入验证**：外部数据未验证
+
   ```python
   # 错误
   def create_user(name, age):
       return User(name=name, age=age)
-  
+
   # 正确
   def create_user(name: str, age: int) -> User:
       if not name or len(name) > 100:
@@ -1182,11 +1220,13 @@ Load 'references/review-checklist.md' for the complete review criteria.
 这些问题应该为代码质量而解决：
 
 ### 样式与可读性
+
 - [ ] **缺少类型注解**：函数签名没有类型
+
   ```python
   # 错误
   def process_data(data, options):
-  
+
   # 正确
   def process_data(data: dict[str, Any], options: Options) -> Result:
   ```
@@ -1194,19 +1234,20 @@ Load 'references/review-checklist.md' for the complete review criteria.
 - [ ] **过长函数**：超过 50 行的函数
 - [ ] **过长行**：超过 120 个字符的行
 - [ ] **缺少文档字符串**：公共函数没有文档
+
   ```python
   # 错误
   def calculate(x, y):
       return x + y
-  
+
   # 正确
   def calculate(x: int, y: int) -> int:
       """将两个数字相加并返回结果。
-      
+
       参数:
           x: 第一个数字
           y: 第二个数字
-      
+
       返回:
           x 和 y 的和
       """
@@ -1214,12 +1255,13 @@ Load 'references/review-checklist.md' for the complete review criteria.
   ```
 
 - [ ] **命名不当**：单字母、模糊名称
+
   ```python
   # 错误
   d = datetime.now()
   def p(a, b):
       return a + b
-  
+
   # 正确
   current_time = datetime.now()
   def calculate_total(price: float, quantity: int) -> float:
@@ -1227,11 +1269,13 @@ Load 'references/review-checklist.md' for the complete review criteria.
   ```
 
 ### 最佳实践
+
 - [ ] **魔法数字**：未命名的数字常量
+
   ```python
   # 错误
   if user.age > 18:
-  
+
   # 正确
   LEGAL_DRINKING_AGE = 18
   if user.age > LEGAL_DRINKING_AGE:
@@ -1242,13 +1286,15 @@ Load 'references/review-checklist.md' for the complete review criteria.
 - [ ] **全局状态**：可变的全局变量
 
 ### 性能
+
 - [ ] **低效循环**：可以使用列表推导式的场景
+
   ```python
   # 错误
   result = []
   for item in items:
       result.append(item.name)
-  
+
   # 正确
   result = [item.name for item in items]
   ```
@@ -1263,11 +1309,13 @@ Load 'references/review-checklist.md' for the complete review criteria.
 需要考虑的改进建议：
 
 ### Python 风格代码
+
 - [ ] **使用 dataclasses** 处理简单数据结构
+
   ```python
   # 建议
   from dataclasses import dataclass
-  
+
   @dataclass
   class Point:
       x: float
@@ -1279,11 +1327,13 @@ Load 'references/review-checklist.md' for the complete review criteria.
 - [ ] **使用上下文管理器** 管理资源
 
 ### 现代 Python
+
 - [ ] **考虑使用** `match`/`case` 处理复杂条件（3.10+）
 - [ ] **考虑使用** `typing.Protocol` 实现 duck typing
 - [ ] **考虑使用** `dataclasses.field` 和 defaults_factory
 
 ### 文档
+
 - [ ] **添加使用示例** 到文档字符串
 - [ ] **包含性能说明** 对于昂贵操作
 - [ ] **清楚记录副作用**
@@ -1293,6 +1343,7 @@ Load 'references/review-checklist.md' for the complete review criteria.
 ## 评审评分指南
 
 ### 评分 9-10：优秀
+
 - 无错误
 - 很少或没有警告
 - 遵循所有最佳实践
@@ -1300,6 +1351,7 @@ Load 'references/review-checklist.md' for the complete review criteria.
 - 可以合并
 
 ### 评分 7-8：良好
+
 - 无错误
 - 只有轻微警告
 - 遵循大多数最佳实践
@@ -1307,6 +1359,7 @@ Load 'references/review-checklist.md' for the complete review criteria.
 - 建议小幅修改
 
 ### 评分 5-6：可接受
+
 - 无关键错误
 - 存在一些警告
 - 缺少一些最佳实践
@@ -1314,6 +1367,7 @@ Load 'references/review-checklist.md' for the complete review criteria.
 - 建议合并前修改
 
 ### 评分 3-4：需要改进
+
 - 存在一些错误
 - 多处警告
 - 缺少类型注解
@@ -1321,11 +1375,13 @@ Load 'references/review-checklist.md' for the complete review criteria.
 - 需要重大修改
 
 ### 评分 1-2：较差
+
 - 存在关键错误
 - 存在安全问题
 - 不适合生产环境
 - 需要重大重构
 - 不要合并
+
 ```
 
 ---
@@ -1351,13 +1407,15 @@ Load 'references/review-checklist.md' for the complete review criteria.
 ### 核心思想
 
 ```
+
 传统模式:
 用户请求 ──────▶ Agent直接生成
 (需求可能不完整)
 
 反转模式:
 用户请求 ──────▶ Agent提问 ──────▶ 用户回答 ──────▶ Agent生成
-              (收集完整信息)      (多轮交互)      (基于完整上下文)
+(收集完整信息) (多轮交互) (基于完整上下文)
+
 ```
 
 ### 何时使用
@@ -1389,12 +1447,14 @@ Load 'references/review-checklist.md' for the complete review criteria.
 ##### 目录结构
 
 ```
+
 skills/
 └── project-planner/
-    ├── SKILL.md
-    └── assets/
-        └── plan-template.md
-```
+├── SKILL.md
+└── assets/
+└── plan-template.md
+
+````
 
 ##### SKILL.md
 
@@ -1472,12 +1532,13 @@ metadata:
 - 里程碑
 - 风险评估
 - 资源需求
-```
+````
 
 ##### plan-template.md
 
 ```markdown
 # skills/project-planner/assets/plan-template.md
+
 # 项目计划模板
 
 ## 1. 执行摘要
@@ -1487,12 +1548,15 @@ metadata:
 **规划团队**：{{team}}
 
 ### 问题陈述
+
 {{problem_statement}}
 
 ### 建议解决方案
+
 {{proposed_solution}}
 
 ### 预期成果
+
 {{expected_outcomes}}
 
 ---
@@ -1500,9 +1564,10 @@ metadata:
 ## 2. 架构概述
 
 ### 2.1 高层架构
-
 ```
+
 {{high_level_architecture_diagram}}
+
 ```
 
 ### 2.2 组件分解
@@ -1514,7 +1579,9 @@ metadata:
 ### 2.3 数据流
 
 ```
+
 {{data_flow_diagram}}
+
 ```
 
 ---
@@ -1630,13 +1697,13 @@ metadata:
 
 ### 优势与价值
 
-| 优势 | 说明 |
-|------|------|
-| **避免假设** | 通过提问收集完整信息，避免基于错误的假设做决策 |
-| **用户参与** | 多轮交互让用户深入参与规划过程 |
-| **高质量输出** | 基于完整信息的计划更可行、更准确 |
-| **减少返工** | 减少因需求不清导致的计划变更 |
-| **建立信任** | 展示专业性和对用户需求的尊重 |
+| 优势           | 说明                                           |
+| -------------- | ---------------------------------------------- |
+| **避免假设**   | 通过提问收集完整信息，避免基于错误的假设做决策 |
+| **用户参与**   | 多轮交互让用户深入参与规划过程                 |
+| **高质量输出** | 基于完整信息的计划更可行、更准确               |
+| **减少返工**   | 减少因需求不清导致的计划变更                   |
+| **建立信任**   | 展示专业性和对用户需求的尊重                   |
 
 ---
 
@@ -1701,16 +1768,19 @@ skills/
 
 ```markdown
 # skills/tech-doc-pipeline/SKILL.md
+
 ---
+
 name: tech-doc-pipeline
 description: >
-  Generates comprehensive technical documentation through a 4-stage pipeline.
-  Use when the user asks to "document", "write docs", "create guide",
-  or "generate technical specification" for software projects.
+Generates comprehensive technical documentation through a 4-stage pipeline.
+Use when the user asks to "document", "write docs", "create guide",
+or "generate technical specification" for software projects.
 metadata:
-  pattern: pipeline
-  stages: 4
-  stage_names: analyze,draft,review,finalize
+pattern: pipeline
+stages: 4
+stage_names: analyze,draft,review,finalize
+
 ---
 
 你是一位技术文档专家。你通过四阶段管道生成文档。
@@ -1724,12 +1794,14 @@ metadata:
 **文件**：加载 'stages/1-analyze.md'
 
 分析源材料：
+
 1. 识别目标受众
 2. 确定必需的章节
 3. 评估复杂度级别
 4. 创建文档大纲
 
 **输出**：分析文档，包含：
+
 - 受众画像
 - 必需章节列表
 - 复杂度评估
@@ -1740,6 +1812,7 @@ metadata:
 **文件**：加载 'stages/2-draft.md'
 
 编写文档：
+
 1. 遵循阶段 1 的大纲
 2. 编写清晰、简洁的内容
 3. 在适当的地方包含代码示例
@@ -1752,6 +1825,7 @@ metadata:
 **文件**：加载 'stages/3-review.md'
 
 评审和改进：
+
 1. 检查技术准确性
 2. 验证完整性
 3. 评估可读性
@@ -1764,6 +1838,7 @@ metadata:
 **文件**：加载 'stages/4-finalize.md'
 
 最终润色：
+
 1. 应用格式标准
 2. 添加目录
 3. 如需要创建索引
@@ -1774,6 +1849,7 @@ metadata:
 ## 阶段转换
 
 每个阶段之间：
+
 1. 总结阶段输出
 2. 确认准备就绪
 3. 加载下一阶段文件
@@ -1782,6 +1858,7 @@ metadata:
 ## 错误处理
 
 如果任何阶段失败：
+
 1. 识别具体问题
 2. 尝试解决
 3. 如未解决，报告已完成和剩余部分
@@ -1790,12 +1867,13 @@ metadata:
 
 ##### 1-analyze.md
 
-```markdown
+````markdown
 # 阶段 1：分析
 
 ## 你的任务
 
 分析源材料以理解：
+
 1. 项目/模块的功能
 2. 谁将阅读此文档
 3. 他们需要什么信息
@@ -1809,6 +1887,7 @@ metadata:
 ### 步骤 1：理解范围
 
 阅读/理解源材料：
+
 - 代码的主要目的
 - 关键组件及其关系
 - 入口点和接口
@@ -1817,6 +1896,7 @@ metadata:
 ### 步骤 2：识别受众
 
 确定谁将阅读：
+
 - **开发者**：需要 API 详情、代码示例
 - **最终用户**：需要使用说明
 - **运维**：需要部署信息
@@ -1838,12 +1918,15 @@ metadata:
 ## 分析摘要
 
 ### 范围
+
 [此文档涵盖的内容]
 
 ### 受众
+
 [主要和次要受众]
 
 ### 复杂度
+
 [低/中/高]
 
 ### 推荐章节
@@ -1863,9 +1946,12 @@ metadata:
 7. 附录
 
 ### 预计长度
+
 [章节数量和深度]
 ```
-```
+````
+
+````
 
 ##### 2-draft.md
 
@@ -1901,17 +1987,17 @@ metadata:
 # 良好示例
 def calculate_total(items: list[Item]) -> Decimal:
     """计算含税总价。
-    
+
     参数:
         items: 要计价的商品列表
-        
+
     返回:
         含税总价
     """
     小计 = sum(item.price for item in items)
     税额 = 小计 * TAX_RATE
     return 小计 + 税额
-```
+````
 
 ### 图表
 
@@ -1939,12 +2025,14 @@ def calculate_total(items: list[Item]) -> Decimal:
 
 编写完整的文档，所有章节都已填写。
 仅对真正未知的信息使用占位符。
+
 ```
+
 ```
 
 ##### 3-review.md
 
-```markdown
+````markdown
 # 阶段 3：评审
 
 ## 你的任务
@@ -1958,24 +2046,28 @@ def calculate_total(items: list[Item]) -> Decimal:
 ## 评审检查清单
 
 ### 技术准确性
+
 - [ ] 代码示例正确工作
 - [ ] API 签名准确
 - [ ] 配置选项正确
 - [ ] 版本号是最新的
 
 ### 完整性
+
 - [ ] 所有章节都有内容
 - [ ] 列出了前置条件
 - [ ] 安装步骤完整
 - [ ] 涵盖了错误处理
 
 ### 清晰性
+
 - [ ] 说明明确无歧义
 - [ ] 技术术语已定义
 - [ ] 代码注释有帮助
 - [ ] 图表清晰
 
 ### 可用性
+
 - [ ] 步骤顺序合理
 - [ ] 重要信息没有被埋没
 - [ ] 交叉引用正确
@@ -1989,25 +2081,33 @@ def calculate_total(items: list[Item]) -> Decimal:
 ### 发现的问题
 
 #### 严重（必须修复）
+
 - [问题位置和修复方案]
 
 #### 重要（应该修复）
+
 - [问题位置和修复方案]
 
 #### 次要（考虑修复）
+
 - [问题位置和修复方案]
 
 ### 正面发现
+
 - [做得好的是]
 
 ### 建议
+
 1. [具体改进建议]
 2. [具体改进建议]
 
 ### 修订后的草稿
+
 [应用修复后的完整草稿]
 ```
-```
+````
+
+````
 
 ##### 4-finalize.md
 
@@ -2040,7 +2140,7 @@ def calculate_total(items: list[Item]) -> Decimal:
 - [入门](#入门)
 - [高级主题](#高级主题)
 - [参考](#参考)
-```
+````
 
 ### 3. 应用格式标准
 
@@ -2074,6 +2174,7 @@ tags: [标签1, 标签2]
 ## 输出
 
 最终的、可发布的文档，作为完整的 Markdown 文件。
+
 ```
 
 ---
@@ -2097,50 +2198,52 @@ tags: [标签1, 标签2]
 ### 决策树
 
 ```
+
 你的 skill 需要做什么？
-         │
-         ▼
-    ┌─────────────────────────────┐
-    │ 是否需要生成结构化输出？      │
-    └─────────────┬───────────────┘
-                 │
-        ┌────────┴────────┐
-        ▼                 ▼
-       是                 否
-        │                 │
-        ▼                 ▼
-   ┌────────────┐   ┌─────────────────────────────┐
-   │ 输出格式   │   │ 是否需要与用户多轮交互？      │
-   │ 是否固定？ │   └─────────────┬───────────────┘
-   └─────┬──────┘               │
-         │              ┌────────┴────────┐
-    ┌────┴────┐         ▼                 ▼
-    ▼         ▼        是                 否
-   是         否        │                 │
-    │         │        ▼                 ▼
-    ▼         ▼   ┌────────────┐   ┌────────────────┐
-生成器      需要      │ 是否需要   │   │ 是否需要       │
-(Generator)│ 多阶段   │ 收集信息？ │   │ 检查/评审？   │
-    │      处理？    └─────┬──────┘   └───────┬────────┘
-    │          │          │                   │
-    │          ▼          ▼                   ▼
-    │    ┌─────────┐    反转              评审器
-    │    │ 管道    │  (Inversion)        (Reviewer)
-    │    │(Pipeline)│
-    │    └─────────┘
-    │
-    ▼
+│
+▼
+┌─────────────────────────────┐
+│ 是否需要生成结构化输出？ │
+└─────────────┬───────────────┘
+│
+┌────────┴────────┐
+▼ ▼
+是 否
+│ │
+▼ ▼
+┌────────────┐ ┌─────────────────────────────┐
+│ 输出格式 │ │ 是否需要与用户多轮交互？ │
+│ 是否固定？ │ └─────────────┬───────────────┘
+└─────┬──────┘ │
+│ ┌────────┴────────┐
+┌────┴────┐ ▼ ▼
+▼ ▼ 是 否
+是 否 │ │
+│ │ ▼ ▼
+▼ ▼ ┌────────────┐ ┌────────────────┐
+生成器 需要 │ 是否需要 │ │ 是否需要 │
+(Generator)│ 多阶段 │ 收集信息？ │ │ 检查/评审？ │
+│ 处理？ └─────┬──────┘ └───────┬────────┘
+│ │ │ │
+│ ▼ ▼ ▼
+│ ┌─────────┐ 反转 评审器
+│ │ 管道 │ (Inversion) (Reviewer)
+│ │(Pipeline)│
+│ └─────────┘
+│
+▼
 你的 skill 是否封装特定技术/框架的约定？
-         │
-         ▼
-    ┌─────────────────────────────┐
-    │                             │
-    ▼                             ▼
-   是                             否
-    │                             │
-    ▼                             ▼
-工具包装器                    回到上面的决策
-(Tool Wrapper)               重新选择
+│
+▼
+┌─────────────────────────────┐
+│ │
+▼ ▼
+是 否
+│ │
+▼ ▼
+工具包装器 回到上面的决策
+(Tool Wrapper) 重新选择
+
 ```
 
 ### 快速选择指南
@@ -2182,22 +2285,24 @@ tags: [标签1, 标签2]
 ### 组合模式架构
 
 ```
+
 ┌─────────────────────────────────────────────────────────────┐
-│                      组合 Skill                             │
+│ 组合 Skill │
 ├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  ┌───────────────┐                                          │
-│  │   评审器     │ ◄── Stage 1: 代码评审                     │
-│  │  (Reviewer)  │                                          │
-│  └───────┬───────┘                                          │
-│          │                                                  │
-│          ▼                                                  │
-│  ┌───────────────┐                                          │
-│  │   生成器     │ ◄── Stage 2: 生成报告                     │
-│  │ (Generator)  │                                          │
-│  └───────────────┘                                          │
-│                                                             │
+│ │
+│ ┌───────────────┐ │
+│ │ 评审器 │ ◄── Stage 1: 代码评审 │
+│ │ (Reviewer) │ │
+│ └───────┬───────┘ │
+│ │ │
+│ ▼ │
+│ ┌───────────────┐ │
+│ │ 生成器 │ ◄── Stage 2: 生成报告 │
+│ │ (Generator) │ │
+│ └───────────────┘ │
+│ │
 └─────────────────────────────────────────────────────────────┘
+
 ```
 
 ### 组合示例：代码评审报告生成器
@@ -2205,16 +2310,18 @@ tags: [标签1, 标签2]
 #### 目录结构
 
 ```
+
 skills/
 └── code-review-report/
-    ├── SKILL.md
-    ├── reviewer/
-    │   ├── instructions.md
-    │   └── checklist.md
-    └── generator/
-        ├── template.md
-        └── style-guide.md
-```
+├── SKILL.md
+├── reviewer/
+│ ├── instructions.md
+│ └── checklist.md
+└── generator/
+├── template.md
+└── style-guide.md
+
+````
 
 #### SKILL.md
 
@@ -2246,16 +2353,17 @@ Load and follow 'generator/template.md' to generate the report.
 ## Report Format
 
 The final report follows the structure from the generator template.
-```
+````
 
 #### reviewer/instructions.md
 
-```markdown
+````markdown
 # Stage 1: Code Review Instructions
 
 ## Review Scope
 
 Review the provided code for:
+
 1. Code quality
 2. Security vulnerabilities
 3. Performance issues
@@ -2276,20 +2384,26 @@ Produce a structured findings summary:
 ## Review Findings
 
 ### Critical Issues
+
 - [Issue 1]
 - [Issue 2]
 
 ### Warnings
+
 - [Issue 1]
 - [Issue 2]
 
 ### Suggestions
+
 - [Suggestion 1]
 
 ### Overall Score
+
 [X/10]
 ```
-```
+````
+
+````
 
 #### generator/template.md
 
@@ -2329,8 +2443,9 @@ Produce a structured findings summary:
 ## Appendix
 
 {{additional_details}}
-```
-```
+````
+
+````
 
 ### 常见组合模式
 
@@ -2358,9 +2473,10 @@ sub-patterns: [reviewer, generator, pipeline, inversion]
 
 <!-- ✅ 足够就好 -->
 pattern: generator
-```
+````
 
 **原则**：
+
 - 先用单模式解决问题
 - 确认需要时才添加复杂度
 - 避免 YAGNI（You Ain't Gonna Need It）
@@ -2369,12 +2485,15 @@ pattern: generator
 
 ```markdown
 <!-- ❌ 冗长指令 -->
+
 你是一位拥有20年经验的Python开发专家。
 你曾在谷歌、Meta和亚马逊工作过。你评审过
 数千个代码库，了解所有Python最佳实践...
 
 <!-- ✅ 简洁清晰 -->
+
 你是一位Python代码评审专家。每次评审都遵循此协议：
+
 1. 加载检查清单
 2. 应用每条规则
 3. 按严重性报告发现
@@ -2384,14 +2503,17 @@ pattern: generator
 
 ```markdown
 <!-- ❌ 规则内联 -->
+
 ## 评审规则
+
 1. 检查SQL注入
 2. 检查命令注入
 3. 检查硬编码密钥
 4. 检查路径遍历
-[... 还有100条规则 ...]
+   [... 还有100条规则 ...]
 
 <!-- ✅ 规则外部化 -->
+
 ## 评审规则
 
 加载 'references/review-rules.md' 获取完整检查清单。
@@ -2401,9 +2523,11 @@ pattern: generator
 
 ```markdown
 <!-- ❌ 模糊退出 -->
+
 持续评审直到代码足够好。
 
 <!-- ✅ 清晰退出 -->
+
 持续评审直到检查完检查清单中的所有项目。
 如果发现3个或更多严重问题，立即停止并报告。
 ```
@@ -2414,28 +2538,32 @@ pattern: generator
 ## Error Handling
 
 ### If code is empty:
+
 Report "No code provided for review."
 
 ### If code is too large:
+
 Split into modules and review each separately.
 
 ### If language is unsupported:
+
 Report "Cannot review code in [language]."
 
 ### If review finds no issues:
+
 Report "No issues found. Code follows best practices."
 ```
 
 ### 模式选择小结
 
-| 模式 | 核心价值 | 最佳场景 |
-|------|----------|----------|
-| **工具包装器** | 封装约定，即时专家 | 让 agent 掌握特定技术 |
-| **生成器** | 结构一致，模板驱动 | 生成格式统一的文档 |
-| **评审器** | 规则外部，结构评审 | 代码质量检查、安全扫描 |
-| **反转** | 多轮交互，避免假设 | 需求收集、项目规划 |
-| **管道** | 阶段分解，结果组合 | 多步骤复杂任务 |
-| **组合** | 模式叠加，灵活组合 | 复杂综合任务 |
+| 模式           | 核心价值           | 最佳场景               |
+| -------------- | ------------------ | ---------------------- |
+| **工具包装器** | 封装约定，即时专家 | 让 agent 掌握特定技术  |
+| **生成器**     | 结构一致，模板驱动 | 生成格式统一的文档     |
+| **评审器**     | 规则外部，结构评审 | 代码质量检查、安全扫描 |
+| **反转**       | 多轮交互，避免假设 | 需求收集、项目规划     |
+| **管道**       | 阶段分解，结果组合 | 多步骤复杂任务         |
+| **组合**       | 模式叠加，灵活组合 | 复杂综合任务           |
 
 ### Google ADK 官方建议
 
@@ -2472,4 +2600,4 @@ Agent Skills 规范的统一为 agent 生态系统带来了互操作性。然而
 
 ---
 
-*本文档由 AI 辅助翻译整理，保留原文核心内容，添加中文注释和补充说明。*
+_本文档由 AI 辅助翻译整理，保留原文核心内容，添加中文注释和补充说明。_

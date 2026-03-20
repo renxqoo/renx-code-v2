@@ -77,10 +77,7 @@ function findReusableContinuationCandidate(
       continue;
     }
 
-    if (
-      explicitPreviousResponseId &&
-      metadata.responseId !== explicitPreviousResponseId
-    ) {
+    if (explicitPreviousResponseId && metadata.responseId !== explicitPreviousResponseId) {
       continue;
     }
 

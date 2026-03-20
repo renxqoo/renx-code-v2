@@ -412,7 +412,6 @@ describe('tool-v2 enterprise system', () => {
       vi.stubGlobal('fetch', originalFetch);
     }
   });
-
 });
 
 function createContext(

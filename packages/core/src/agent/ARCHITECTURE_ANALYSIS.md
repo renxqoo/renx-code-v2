@@ -137,6 +137,7 @@ agent/
 **位置**: `agent/index.ts`
 
 **职责**:
+
 - 作为 Agent 执行的统一入口
 - 组装运行时依赖（LLM、工具执行器、配置）
 - 管理生命周期钩子和可观测性
@@ -147,17 +148,18 @@ agent/
 ```typescript
 class StatelessAgent {
   // 主执行入口 - 流式生成
-  async *runStream(input: AgentInput, callbacks?: AgentCallbacks): AsyncGenerator<StreamEvent>
-  
+  async *runStream(input: AgentInput, callbacks?: AgentCallbacks): AsyncGenerator<StreamEvent>;
+
   // 估算上下文使用量
-  estimateContextUsage(messages, tools, contextLimitTokens)
-  
+  estimateContextUsage(messages, tools, contextLimitTokens);
+
   // 获取上下文限制
-  getContextLimitTokens(contextLimitTokens?)
+  getContextLimitTokens(contextLimitTokens?);
 }
 ```
 
 **设计原则**:
+
 - 无状态: 不持有跨运行的持久状态
 - 依赖注入: LLM Provider、ToolExecutor 通过构造函数注入
 - 可观测性: 通过钩子系统实现，不侵入核心逻辑
@@ -167,6 +169,7 @@ class StatelessAgent {
 **位置**: `agent/run-loop.ts`
 
 **职责**:
+
 - 控制步骤循环（step loop）
 - 决定重试、终止、超时行为
 - 协调 LLM 阶段和 Tool 阶段
@@ -399,6 +402,7 @@ async function* runAgentLoop(runtime: RunLoopRuntime, state: RunLoopState) {
 ### Tool V2 架构概览
 
 **设计原则**:
+
 1. 工具规格与执行处理器分离
 2. 审批、权限、执行编排在共享基础设施中
 3. 会话级和轮次级权限授予是一等公民
@@ -537,13 +541,13 @@ async function* runAgentLoop(runtime: RunLoopRuntime, state: RunLoopState) {
 ```typescript
 interface ToolHandler<TArgs = unknown> {
   readonly spec: ToolSpec;
-  
+
   // 解析参数 (JSON + Zod 验证)
   parseArguments(rawArguments: string): TArgs;
-  
+
   // 生成执行计划 (声明资源访问)
   plan(args: TArgs, context: ToolExecutionContext): ToolExecutionPlan;
-  
+
   // 执行工具逻辑
   execute(args: TArgs, context: ToolExecutionContext): Promise<ToolHandlerResult>;
 }
@@ -551,30 +555,30 @@ interface ToolHandler<TArgs = unknown> {
 
 ### 内置工具列表
 
-| 工具名称 | 功能描述 | 变更性 | 并发安全 |
-|---------|---------|--------|---------|
-| `read_file` | 读取文件内容 | 否 | 是 |
-| `write_file` | 写入文件 | 是 | 否 |
-| `file_edit` | 精确编辑文件 | 是 | 否 |
-| `file_history_list` | 列出文件历史 | 否 | 是 |
-| `file_history_restore` | 恢复文件版本 | 是 | 否 |
-| `lsp` | LSP 语言服务 | 否 | 是 |
-| `local_shell` | 执行 Shell 命令 | 是 | 取决于命令 |
-| `web_fetch` | 获取网页内容 | 否 | 是 |
-| `web_search` | 网页搜索 | 否 | 是 |
-| `request_permissions` | 请求权限提升 | 否 | 是 |
-| `skill` | 加载技能 | 否 | 是 |
-| `spawn_agent` | 启动子代理 | 是 | 是 |
-| `agent_status` | 查询子代理状态 | 否 | 是 |
-| `wait_agents` | 等待子代理完成 | 否 | 是 |
-| `cancel_agent` | 取消子代理 | 是 | 是 |
-| `task_create` | 创建任务 | 是 | 是 |
-| `task_get` | 获取任务 | 否 | 是 |
-| `task_list` | 列出任务 | 否 | 是 |
-| `task_update` | 更新任务 | 是 | 是 |
-| `task_graph` | 任务依赖图 | 否 | 是 |
-| `task_output` | 获取任务输出 | 否 | 是 |
-| `task_stop` | 停止任务 | 是 | 是 |
+| 工具名称               | 功能描述        | 变更性 | 并发安全   |
+| ---------------------- | --------------- | ------ | ---------- |
+| `read_file`            | 读取文件内容    | 否     | 是         |
+| `write_file`           | 写入文件        | 是     | 否         |
+| `file_edit`            | 精确编辑文件    | 是     | 否         |
+| `file_history_list`    | 列出文件历史    | 否     | 是         |
+| `file_history_restore` | 恢复文件版本    | 是     | 否         |
+| `lsp`                  | LSP 语言服务    | 否     | 是         |
+| `local_shell`          | 执行 Shell 命令 | 是     | 取决于命令 |
+| `web_fetch`            | 获取网页内容    | 否     | 是         |
+| `web_search`           | 网页搜索        | 否     | 是         |
+| `request_permissions`  | 请求权限提升    | 否     | 是         |
+| `skill`                | 加载技能        | 否     | 是         |
+| `spawn_agent`          | 启动子代理      | 是     | 是         |
+| `agent_status`         | 查询子代理状态  | 否     | 是         |
+| `wait_agents`          | 等待子代理完成  | 否     | 是         |
+| `cancel_agent`         | 取消子代理      | 是     | 是         |
+| `task_create`          | 创建任务        | 是     | 是         |
+| `task_get`             | 获取任务        | 否     | 是         |
+| `task_list`            | 列出任务        | 否     | 是         |
+| `task_update`          | 更新任务        | 是     | 是         |
+| `task_graph`           | 任务依赖图      | 否     | 是         |
+| `task_output`          | 获取任务输出    | 否     | 是         |
+| `task_stop`            | 停止任务        | 是     | 是         |
 
 ---
 
@@ -865,11 +869,13 @@ interface ToolHandler<TArgs = unknown> {
 **原则**: Agent 核心不持有跨运行的持久状态
 
 **好处**:
+
 - 支持水平扩展
 - 无需会话亲和性
 - 故障恢复简单
 
 **实现**:
+
 - `StatelessAgent` 只持有配置和注入的依赖
 - 幂等性账本 (`ToolExecutionLedger`) 通过接口注入
 - 存储层通过端口 (Ports) 抽象
@@ -901,11 +907,13 @@ const runtime = buildRunLoopRuntime({
 **设计**: 观察者模式，仅用于可观测性
 
 **规则**:
+
 - 钩子不能修改控制流
 - 钩子不能覆盖重试/跳过决策
 - 钩子失败不影响主流程
 
 **可用钩子**:
+
 - `onRunStart` / `onRunError`
 - `onLLMStageStart`
 - `onToolStageStart` / `onToolExecutionStart`
@@ -998,15 +1006,15 @@ const runtime = buildRunLoopRuntime({
 
 ### 关键文件索引
 
-| 模块 | 核心文件 | 职责 |
-|------|---------|------|
-| Agent 核心 | `agent/index.ts` | StatelessAgent 入口 |
-| 运行循环 | `agent/run-loop.ts` | 步骤循环控制 |
-| LLM 阶段 | `agent/llm-stream-runtime.ts` | LLM 流式调用 |
-| 工具阶段 | `agent/tool-runtime.ts` | 工具执行运行时 |
-| 工具编排 | `tool-v2/orchestrator.ts` | 工具执行编排 |
-| 工具注册 | `tool-v2/registry.ts` | 工具注册表 |
-| 权限管理 | `tool-v2/permissions.ts` | 权限检查 |
-| 应用服务 | `app/agent-app-service.ts` | 应用层服务 |
-| 类型定义 | `types.ts` | 核心类型 |
-| 授权契约 | `auth/contracts.ts` | 授权接口 |
+| 模块       | 核心文件                      | 职责                |
+| ---------- | ----------------------------- | ------------------- |
+| Agent 核心 | `agent/index.ts`              | StatelessAgent 入口 |
+| 运行循环   | `agent/run-loop.ts`           | 步骤循环控制        |
+| LLM 阶段   | `agent/llm-stream-runtime.ts` | LLM 流式调用        |
+| 工具阶段   | `agent/tool-runtime.ts`       | 工具执行运行时      |
+| 工具编排   | `tool-v2/orchestrator.ts`     | 工具执行编排        |
+| 工具注册   | `tool-v2/registry.ts`         | 工具注册表          |
+| 权限管理   | `tool-v2/permissions.ts`      | 权限检查            |
+| 应用服务   | `app/agent-app-service.ts`    | 应用层服务          |
+| 类型定义   | `types.ts`                    | 核心类型            |
+| 授权契约   | `auth/contracts.ts`           | 授权接口            |

@@ -865,12 +865,11 @@ export const AssistantToolGroup = ({ group }: AssistantToolGroupProps) => {
   const hasOutput = outputText.length > 0;
   const specialPresentation = buildSpecialToolPresentation(toolName, parsedUse, parsedResult);
   const useCommandAsTitle = toolName === 'local_shell' && Boolean(commandText);
-  const titleDetail =
-    useCommandAsTitle
-      ? undefined
-      : specialPresentation?.headerDetail ??
-        compactDetail(commandText, 64) ??
-        compactDetail(invocationDetails, 64);
+  const titleDetail = useCommandAsTitle
+    ? undefined
+    : (specialPresentation?.headerDetail ??
+      compactDetail(commandText, 64) ??
+      compactDetail(invocationDetails, 64));
   const titleText = useCommandAsTitle
     ? `$ ${commandText}`
     : (specialPresentation?.toolLabel ?? formatToolName(toolName));

@@ -20,7 +20,7 @@ from typing import List, Dict
 
 class StockDataProvider(ABC):
     """Required interface for stock price and technical data."""
-    
+
     @abstractmethod
     def get_ohlcv(
         self,
@@ -30,12 +30,12 @@ class StockDataProvider(ABC):
     ) -> pd.DataFrame:
         """
         Retrieve OHLCV (Open, High, Low, Close, Volume) data.
-        
+
         Args:
             ticker: Stock ticker symbol (e.g., "AAPL", "GOOGL")
             start_date: Start date in "YYYY-MM-DD" format
             end_date: End date in "YYYY-MM-DD" format
-            
+
         Returns:
             DataFrame with columns:
             - date: datetime
@@ -44,7 +44,7 @@ class StockDataProvider(ABC):
             - low: float
             - close: float
             - volume: int
-            
+
         Example:
             >>> provider.get_ohlcv("AAPL", "2024-01-01", "2024-12-31")
                        date   open   high    low  close    volume
@@ -52,7 +52,7 @@ class StockDataProvider(ABC):
             1    2024-01-03  185.5  187.0  185.0  186.2  45000000
         """
         pass
-    
+
     @abstractmethod
     def get_indicators(
         self,
@@ -63,13 +63,13 @@ class StockDataProvider(ABC):
     ) -> Dict[str, float]:
         """
         Calculate technical indicators for a ticker.
-        
+
         Args:
             ticker: Stock ticker symbol
             indicator_names: List of indicator names to calculate
             current_date: Current trading date "YYYY-MM-DD"
             lookback_days: Number of days for calculation (default 30)
-            
+
         Supported Indicators:
             - "sma_10": 10-day Simple Moving Average
             - "sma_50": 50-day Simple Moving Average
@@ -84,7 +84,7 @@ class StockDataProvider(ABC):
             - "boll_middle": Bollinger Middle Band (20 SMA)
             - "boll_lower": Bollinger Lower Band
             - "atr": Average True Range
-            
+
         Returns:
             Dictionary mapping indicator names to values:
             {"rsi": 65.5, "macd": 2.3, "sma_50": 150.0, ...}
@@ -97,7 +97,7 @@ class StockDataProvider(ABC):
 ```python
 class SentimentDataProvider(ABC):
     """Required interface for social media sentiment data."""
-    
+
     @abstractmethod
     def get_social_sentiment(
         self,
@@ -108,13 +108,13 @@ class SentimentDataProvider(ABC):
     ) -> List[Dict]:
         """
         Retrieve social media sentiment data.
-        
+
         Args:
             ticker: Stock ticker symbol
             start_date: Start date "YYYY-MM-DD"
             end_date: End date "YYYY-MM-DD"
             platforms: List of platforms to include (optional)
-            
+
         Returns:
             List of dictionaries:
             [
@@ -131,7 +131,7 @@ class SentimentDataProvider(ABC):
             ]
         """
         pass
-    
+
     @abstractmethod
     def get_sentiment_aggregate(
         self,
@@ -141,7 +141,7 @@ class SentimentDataProvider(ABC):
     ) -> Dict:
         """
         Get aggregated sentiment metrics.
-        
+
         Returns:
             {
                 "overall_sentiment": 0.65,  # -1 to 1
@@ -160,7 +160,7 @@ class SentimentDataProvider(ABC):
 ```python
 class NewsDataProvider(ABC):
     """Required interface for news data."""
-    
+
     @abstractmethod
     def get_news(
         self,
@@ -171,13 +171,13 @@ class NewsDataProvider(ABC):
     ) -> List[Dict]:
         """
         Retrieve news articles related to ticker.
-        
+
         Args:
             ticker: Stock ticker symbol
             start_date: Start date "YYYY-MM-DD"
             end_date: End date "YYYY-MM-DD"
             limit: Maximum number of articles
-            
+
         Returns:
             List of dictionaries:
             [
@@ -194,7 +194,7 @@ class NewsDataProvider(ABC):
             ]
         """
         pass
-    
+
     @abstractmethod
     def get_global_news(
         self,
@@ -204,13 +204,13 @@ class NewsDataProvider(ABC):
     ) -> List[Dict]:
         """
         Retrieve global macroeconomic news.
-        
+
         Returns:
             List of dictionaries with same schema as get_news(),
             but without ticker filter (global events).
         """
         pass
-    
+
     @abstractmethod
     def get_insider_transactions(
         self,
@@ -220,7 +220,7 @@ class NewsDataProvider(ABC):
     ) -> List[Dict]:
         """
         Retrieve insider trading transactions.
-        
+
         Returns:
             [
                 {
@@ -243,12 +243,12 @@ class NewsDataProvider(ABC):
 ```python
 class FundamentalsDataProvider(ABC):
     """Required interface for fundamental financial data."""
-    
+
     @abstractmethod
     def get_company_profile(self, ticker: str) -> Dict:
         """
         Get company basic information.
-        
+
         Returns:
             {
                 "company_name": "Apple Inc.",
@@ -264,7 +264,7 @@ class FundamentalsDataProvider(ABC):
             }
         """
         pass
-    
+
     @abstractmethod
     def get_income_statement(
         self,
@@ -273,7 +273,7 @@ class FundamentalsDataProvider(ABC):
     ) -> List[Dict]:
         """
         Get income statement data.
-        
+
         Returns:
             [
                 {
@@ -291,7 +291,7 @@ class FundamentalsDataProvider(ABC):
             ]
         """
         pass
-    
+
     @abstractmethod
     def get_balance_sheet(
         self,
@@ -300,7 +300,7 @@ class FundamentalsDataProvider(ABC):
     ) -> List[Dict]:
         """
         Get balance sheet data.
-        
+
         Returns:
             [
                 {
@@ -318,7 +318,7 @@ class FundamentalsDataProvider(ABC):
             ]
         """
         pass
-    
+
     @abstractmethod
     def get_cashflow(
         self,
@@ -327,7 +327,7 @@ class FundamentalsDataProvider(ABC):
     ) -> List[Dict]:
         """
         Get cash flow statement data.
-        
+
         Returns:
             [
                 {
@@ -358,15 +358,15 @@ from typing import List, Dict
 
 class YahooFinanceStockProvider(StockDataProvider):
     """Yahoo Finance implementation of StockDataProvider."""
-    
+
     def get_ohlcv(self, ticker: str, start_date: str, end_date: str) -> pd.DataFrame:
         stock = yf.Ticker(ticker)
         df = stock.history(start=start_date, end=end_date)
         df = df.reset_index()
         df.columns = [c.lower() if c != 'Date' else 'date' for c in df.columns]
         return df
-    
-    def get_indicators(self, ticker: str, indicator_names: List[str], 
+
+    def get_indicators(self, ticker: str, indicator_names: List[str],
                        current_date: str, lookback_days: int = 30) -> Dict[str, float]:
         # Implementation using yfinance or technical analysis library
         # ...
@@ -375,14 +375,14 @@ class YahooFinanceStockProvider(StockDataProvider):
 
 class TwitterAPISentimentProvider(SentimentDataProvider):
     """Twitter API implementation."""
-    
-    def get_social_sentiment(self, ticker: str, start_date: str, 
+
+    def get_social_sentiment(self, ticker: str, start_date: str,
                             end_date: str, platforms: List[str] = None) -> List[Dict]:
         # Implementation using Twitter API
         # ...
         return []
-    
-    def get_sentiment_aggregate(self, ticker: str, start_date: str, 
+
+    def get_sentiment_aggregate(self, ticker: str, start_date: str,
                                 end_date: str) -> Dict:
         # Implementation
         return {}
@@ -398,16 +398,16 @@ DATA_PROVIDERS = {
 
 ## Data Schema Summary
 
-| Provider | Method | Return Type |
-|----------|--------|-------------|
-| Stock | get_ohlcv() | DataFrame |
-| Stock | get_indicators() | Dict |
-| Sentiment | get_social_sentiment() | List[Dict] |
-| Sentiment | get_sentiment_aggregate() | Dict |
-| News | get_news() | List[Dict] |
-| News | get_global_news() | List[Dict] |
-| News | get_insider_transactions() | List[Dict] |
-| Fundamentals | get_company_profile() | Dict |
-| Fundamentals | get_income_statement() | List[Dict] |
-| Fundamentals | get_balance_sheet() | List[Dict] |
-| Fundamentals | get_cashflow() | List[Dict] |
+| Provider     | Method                     | Return Type |
+| ------------ | -------------------------- | ----------- |
+| Stock        | get_ohlcv()                | DataFrame   |
+| Stock        | get_indicators()           | Dict        |
+| Sentiment    | get_social_sentiment()     | List[Dict]  |
+| Sentiment    | get_sentiment_aggregate()  | Dict        |
+| News         | get_news()                 | List[Dict]  |
+| News         | get_global_news()          | List[Dict]  |
+| News         | get_insider_transactions() | List[Dict]  |
+| Fundamentals | get_company_profile()      | Dict        |
+| Fundamentals | get_income_statement()     | List[Dict]  |
+| Fundamentals | get_balance_sheet()        | List[Dict]  |
+| Fundamentals | get_cashflow()             | List[Dict]  |

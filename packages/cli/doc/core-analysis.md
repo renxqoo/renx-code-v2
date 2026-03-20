@@ -239,7 +239,7 @@ const getRuntime = async (): Promise<RuntimeCore> => {
   if (runtimePromise) {
     return runtimePromise;
   }
-  
+
   if (initializing) {
     // 等待初始化完成（自旋锁）
     while (initializing) {
@@ -249,18 +249,18 @@ const getRuntime = async (): Promise<RuntimeCore> => {
       return runtimePromise;
     }
   }
-  
+
   // 开始初始化
   initializing = true;
   try {
     const promise = createRuntime();
     runtimePromise = promise;
-    
+
     // 失败时允许重试
     promise.catch(() => {
       runtimePromise = null;
     });
-    
+
     return promise;
   } finally {
     initializing = false;
@@ -279,7 +279,7 @@ const loadSourceModules = async (): Promise<SourceModules> => {
   // 通过 file:// URL 动态导入 packages/core/src/index.ts
   const coreEntry = pathToFileURL(path.join(repoRoot, 'packages/core/src/index.ts')).href;
   const core = await import(coreEntry);
-  
+
   return {
     // 解构并导出核心模块
     repoRoot,
@@ -305,10 +305,10 @@ export const getSourceModules = async () => {
 const onToolConfirm = (event: ToolConfirmEventLike): void => {
   // 1. 转换事件格式
   const toolConfirmEvent: AgentToolConfirmEvent = { ... };
-  
+
   // 2. 触发用户回调
   safeInvoke(() => handlers.onToolConfirm?.(toolConfirmEvent));
-  
+
   // 3. 异步等待用户决策
   void resolveToolConfirmDecision(toolConfirmEvent, handlers)
     .then((decision) => event.resolve(decision));
@@ -324,16 +324,16 @@ runtime.agent.on('tool_permission', onToolPermission);
 ```typescript
 // tool-call-buffer.ts L8-60
 export class ToolCallBuffer {
-  private readonly plannedOrder: string[] = [];      // 保持调用顺序
-  private readonly plannedIds = new Set<string>();   // 去重
-  private readonly toolCallsById = new Map();        // ID -> 工具调用
-  private readonly emittedIds = new Set<string>();   // 已发射的
+  private readonly plannedOrder: string[] = []; // 保持调用顺序
+  private readonly plannedIds = new Set<string>(); // 去重
+  private readonly toolCallsById = new Map(); // ID -> 工具调用
+  private readonly emittedIds = new Set<string>(); // 已发射的
 
   // 注册工具调用，可选择是否立即发射
   register(toolCall, emit, executing = false) {
     // ...
     if (executing) {
-      this.emit(toolCallId, emit);  // 立即发射
+      this.emit(toolCallId, emit); // 立即发射
     }
   }
 
@@ -436,7 +436,7 @@ export const resolveToolConfirmDecision = async (
     // 无处理器 → 默认拒绝
     return { approved: false, message: 'Tool confirmation handler is not available.' };
   }
-  
+
   const decision = await handlers.onToolConfirmRequest(event);
   return decision ?? { approved: false, message: 'Tool confirmation was not resolved.' };
 };
@@ -444,8 +444,8 @@ export const resolveToolConfirmDecision = async (
 // 权限配置文件
 export type AgentToolPermissionProfile = {
   fileSystem?: {
-    read?: string[];    // 允许读取的路径
-    write?: string[];   // 允许写入的路径
+    read?: string[]; // 允许读取的路径
+    write?: string[]; // 允许写入的路径
   };
   network?: {
     enabled?: boolean;
@@ -457,29 +457,26 @@ export type AgentToolPermissionProfile = {
 
 ## 7. 核心类型总结 (types.ts)
 
-| 类型 | 用途 |
-|------|------|
-| `AgentTextDeltaEvent` | 文本流输出事件 |
-| `AgentToolStreamEvent` | 工具执行输出流 |
-| `AgentToolConfirmEvent` | 工具调用确认请求 |
-| `AgentToolResultEvent` | 工具执行结果 |
-| `AgentStepEvent` | 步骤进度事件 |
-| `AgentLoopEvent` | 循环/轮次事件 |
-| `AgentUsageEvent` | Token 使用统计 |
-| `AgentContextUsageEvent` | 上下文使用情况 |
-| `AgentEventHandlers` | 所有回调处理器集合 |
-| `AgentRunResult` | 最终运行结果 |
+| 类型                     | 用途               |
+| ------------------------ | ------------------ |
+| `AgentTextDeltaEvent`    | 文本流输出事件     |
+| `AgentToolStreamEvent`   | 工具执行输出流     |
+| `AgentToolConfirmEvent`  | 工具调用确认请求   |
+| `AgentToolResultEvent`   | 工具执行结果       |
+| `AgentStepEvent`         | 步骤进度事件       |
+| `AgentLoopEvent`         | 循环/轮次事件      |
+| `AgentUsageEvent`        | Token 使用统计     |
+| `AgentContextUsageEvent` | 上下文使用情况     |
+| `AgentEventHandlers`     | 所有回调处理器集合 |
+| `AgentRunResult`         | 最终运行结果       |
 
 ## 8. 关键配置常量
 
 ```typescript
-const DEFAULT_MODEL = 'minimax-2.7';           // 默认模型
-const DEFAULT_MAX_STEPS = 10000;              // 最大推理步数
-const DEFAULT_MAX_RETRY_COUNT = 10;           // 最大重试次数
-const PARENT_HIDDEN_TOOL_NAMES = new Set([
-  'file_history_list', 
-  'file_history_restore'
-]);
+const DEFAULT_MODEL = 'minimax-2.7'; // 默认模型
+const DEFAULT_MAX_STEPS = 10000; // 最大推理步数
+const DEFAULT_MAX_RETRY_COUNT = 10; // 最大重试次数
+const PARENT_HIDDEN_TOOL_NAMES = new Set(['file_history_list', 'file_history_restore']);
 ```
 
 ## 二、UI 组件层逻辑
@@ -523,12 +520,12 @@ buildReplyRenderItems(segments: ReplySegment[])
 
 **segment ID 解析规则：**
 
-| ID 模式 | 类型 | 说明 |
-|---------|------|------|
-| `*:tool-use:(callId)` | use | 工具调用开始 |
+| ID 模式                  | 类型   | 说明         |
+| ------------------------ | ------ | ------------ |
+| `*:tool-use:(callId)`    | use    | 工具调用开始 |
 | `*:tool-result:(callId)` | result | 工具执行结果 |
-| `*:tool:(callId):stdout` | stream | 标准输出流 |
-| `*:tool:(callId):stderr` | stream | 标准错误流 |
+| `*:tool:(callId):stdout` | stream | 标准输出流   |
+| `*:tool:(callId):stderr` | stream | 标准错误流   |
 
 **分组策略：**
 
@@ -540,14 +537,15 @@ buildReplyRenderItems(segments: ReplySegment[])
 #### 2️⃣ 渲染阶段 (assistant-reply.tsx)
 
 ```typescript
-items.map(item => 
-  item.type === 'tool' 
+items.map(item =>
+  item.type === 'tool'
     ? <AssistantToolGroup group={item.group} />
     : <AssistantSegment segment={item.segment} streaming={isStreaming} />
 )
 ```
 
 **关键状态管理：**
+
 - `nowMs`: 流式输出时的实时计时器 (每 100ms 更新)
 - `status`: 根据 `reply.status` 渲染 `streaming`/`error` 标签
 
@@ -563,6 +561,7 @@ switch (segment.type) {
 ```
 
 **Markdown 处理特性：**
+
 - 使用 `@opentui/core` 的 `<markdown>` 组件
 - 代码块主题：深色背景 + 自定义前景色
 - 支持表格渲染 (可选择、可换行)
@@ -600,12 +599,12 @@ switch (segment.type) {
 
 #### 特殊工具展示
 
-| 工具类型 | 标题构建 | 结果解析 |
-|---------|---------|---------|
-| `spawn_agent` | prompt前56字符 + role | `summarizeAgentRun()` |
-| `task_*` | 操作类型 + taskId | `summarizeTaskRecord()` |
-| `grep/glob` | JSON.stringify(pattern) | 匹配计数 + 文件数 |
-| 其他 | 工具名 + 命令详情 | 默认 sections |
+| 工具类型      | 标题构建                | 结果解析                |
+| ------------- | ----------------------- | ----------------------- |
+| `spawn_agent` | prompt前56字符 + role   | `summarizeAgentRun()`   |
+| `task_*`      | 操作类型 + taskId       | `summarizeTaskRecord()` |
+| `grep/glob`   | JSON.stringify(pattern) | 匹配计数 + 文件数       |
+| 其他          | 工具名 + 命令详情       | 默认 sections           |
 
 #### 输出合并逻辑
 
@@ -613,7 +612,7 @@ switch (segment.type) {
 mergeOutputLines(group, parsedResult)
 ├─ 优先: streamText (流式输出)
 ├─ 其次: parsedResult.output
-├─ 再次: parsedResult.details  
+├─ 再次: parsedResult.details
 └─ 最后: parsedResult.summary
 ```
 
@@ -624,7 +623,7 @@ const COLLAPSIBLE_OUTPUT_LINES = 16;
 const COLLAPSIBLE_OUTPUT_LABELS = new Set(['output', 'error', 'result', 'details']);
 
 // 大于16行时自动折叠，点击可展开
-<CodeBlock 
+<CodeBlock
   collapsible={true}
   collapsedLines={16}
   expanded={expanded}
@@ -650,12 +649,12 @@ AssistantReply
 
 #### 关键设计决策
 
-| 决策 | 原因 |
-|------|------|
-| `buildReplyRenderItems` 作为纯函数 | 便于测试，无副作用 |
-| 折叠状态存储在 ToolGroup | 避免全局状态膨胀 |
-| 流式计时器在 Reply 层 | 统一管理，多 segment 共享 |
-| ToolResult 解析双模式支持 | 兼容结构化和纯文本两种 API |
+| 决策                               | 原因                       |
+| ---------------------------------- | -------------------------- |
+| `buildReplyRenderItems` 作为纯函数 | 便于测试，无副作用         |
+| 折叠状态存储在 ToolGroup           | 避免全局状态膨胀           |
+| 流式计时器在 Reply 层              | 统一管理，多 segment 共享  |
+| ToolResult 解析双模式支持          | 兼容结构化和纯文本两种 API |
 
 #### 数据流图
 
@@ -682,13 +681,13 @@ ChatTurn.type (from types/chat)
 // 消息分组
 type ToolSegmentGroup = {
   toolCallId: string;
-  use?: ReplySegment;      // 工具调用
+  use?: ReplySegment; // 工具调用
   streams: ReplySegment[]; // 流式输出
-  result?: ReplySegment;   // 最终结果
+  result?: ReplySegment; // 最终结果
 };
 
 // 渲染项
-type ReplyRenderItem = 
+type ReplyRenderItem =
   | { type: 'segment'; segment: ReplySegment }
   | { type: 'tool'; group: ToolSegmentGroup };
 
@@ -713,37 +712,37 @@ type ParsedToolResultLike = {
 ```typescript
 // 命令定义 (slash-commands.ts:3-8)
 type SlashCommandDefinition = {
-  name: string;           // 主名称
-  description: string;    // 描述文本
-  action: SlashCommandAction;  // 执行动作枚举
-  aliases?: string[];     // 别名数组
+  name: string; // 主名称
+  description: string; // 描述文本
+  action: SlashCommandAction; // 执行动作枚举
+  aliases?: string[]; // 别名数组
 };
 ```
 
 #### 预定义命令 (12个)
 
-| 命令 | 描述 | 状态 |
-|------|------|------|
-| `/help` | 帮助 | ✅ 支持 |
-| `/clear` | 清空对话 | ✅ 支持 |
-| `/exit` | 退出应用 | ✅ 支持 |
-| `/models` | 切换模型 | ✅ 支持 |
-| `/files` | 附加文件 | ✅ 支持 |
-| `/export` | 导出会话 | ❌ 未实现 |
-| `/fork` | 消息分叉 | ❌ 未实现 |
-| `/init` | 创建AGENTS.md | ❌ 未实现 |
-| `/mcps` | 切换MCP | ❌ 未实现 |
-| `/rename` | 重命名会话 | ❌ 未实现 |
-| `/review` | 审查变更 | ❌ 未实现 |
-| `/sessions` | 切换会话 | ❌ 未实现 |
+| 命令        | 描述          | 状态      |
+| ----------- | ------------- | --------- |
+| `/help`     | 帮助          | ✅ 支持   |
+| `/clear`    | 清空对话      | ✅ 支持   |
+| `/exit`     | 退出应用      | ✅ 支持   |
+| `/models`   | 切换模型      | ✅ 支持   |
+| `/files`    | 附加文件      | ✅ 支持   |
+| `/export`   | 导出会话      | ❌ 未实现 |
+| `/fork`     | 消息分叉      | ❌ 未实现 |
+| `/init`     | 创建AGENTS.md | ❌ 未实现 |
+| `/mcps`     | 切换MCP       | ❌ 未实现 |
+| `/rename`   | 重命名会话    | ❌ 未实现 |
+| `/review`   | 审查变更      | ❌ 未实现 |
+| `/sessions` | 切换会话      | ❌ 未实现 |
 
 #### 解析函数
 
 ```typescript
 // 核心解析逻辑 (L27-46)
-getCommandToken()      // 提取 / 后第一个 token
-resolveSlashCommand()  // 精确匹配 name 或 aliases
-filterSlashCommands()  // 模糊过滤（prefix/contains/alias匹配）
+getCommandToken(); // 提取 / 后第一个 token
+resolveSlashCommand(); // 精确匹配 name 或 aliases
+filterSlashCommands(); // 模糊过滤（prefix/contains/alias匹配）
 ```
 
 ### 输入处理流程
@@ -793,7 +792,7 @@ handleKeyDown(event)
 ```typescript
 useEffect(() => {
   if (textarea.plainText !== value) {
-    textarea.setText(value);           // 外部更新 → textarea
+    textarea.setText(value); // 外部更新 → textarea
     textarea.cursorOffset = value.length; // 游标移到末尾
   }
 }, [value]);
@@ -811,11 +810,11 @@ FileMentionMenu (高)  ──覆盖──►  SlashCommandMenu (低)
 
 #### 通用菜单结构
 
-| 属性 | 用途 |
-|------|------|
-| `visible` | 显示/隐藏控制 |
-| `options` | 选项列表 |
-| `selectedIndex` | 当前选中索引 |
+| 属性              | 用途           |
+| ----------------- | -------------- |
+| `visible`         | 显示/隐藏控制  |
+| `options`         | 选项列表       |
+| `selectedIndex`   | 当前选中索引   |
 | `handleKeyDown()` | 键盘事件处理器 |
 
 #### 渲染结构
@@ -844,27 +843,29 @@ FileMentionMenu (高)  ──覆盖──►  SlashCommandMenu (低)
 
 ```typescript
 const getSlashQuery = (value: string): string | null => {
-  if (!/^\/[^\s]*$/.test(value)) {  // 必须匹配 /开头+无空格
+  if (!/^\/[^\s]*$/.test(value)) {
+    // 必须匹配 /开头+无空格
     return null;
   }
-  return value.slice(1);  // 返回 / 后的查询字符串
+  return value.slice(1); // 返回 / 后的查询字符串
 };
 ```
 
 **可见性逻辑** (L54)
 
 ```typescript
-const visible = !disabled && 
-                query !== null && 
-                query !== dismissedQuery &&  // 未被用户Dismiss
-                options.length > 0;
+const visible =
+  !disabled &&
+  query !== null &&
+  query !== dismissedQuery && // 未被用户Dismiss
+  options.length > 0;
 ```
 
 **过滤算法** (`filterSlashCommands`, `slash-commands.ts:49-64`)
 
 1. 空查询 → 返回全部
 2. 优先: `name.startsWith(query)` 前缀匹配
-3. 其次: `name.includes(query)` 包含匹配  
+3. 其次: `name.includes(query)` 包含匹配
 4. 最后: `aliases.includes(query)` 别名匹配
 
 #### 文件提及补全
@@ -880,10 +881,10 @@ const FILE_MENTION_PATTERN = /(^|\s)(\@\/[^\s]*)$/;
 
 ```typescript
 type FileMentionMatch = {
-  token: string;   // "@/src/main.ts"
-  query: string;   // "src/main.ts" (去除 @/ 前缀)
-  start: number;   // 替换起始位置
-  end: number;     // 替换结束位置
+  token: string; // "@/src/main.ts"
+  query: string; // "src/main.ts" (去除 @/ 前缀)
+  start: number; // 替换起始位置
+  end: number; // 替换结束位置
 };
 ```
 
@@ -902,14 +903,14 @@ listWorkspaceFiles()  ──异步──►  加载完成
 
 ### 核心文件结构
 
-| 文件 | 职责 |
-|------|------|
-| `types.ts` | 类型定义 (`PromptFileSelection`) |
-| `attachment-capabilities.ts` | 媒体类型检测与模型能力解析 |
-| `attachment-content.ts` | 文件内容读取与格式化 |
-| `file-mention-query.ts` | `@/` 语法解析 |
-| `workspace-files.ts` | 工作区文件遍历 |
-| `prompt-display.ts` | 显示文本构建 |
+| 文件                         | 职责                             |
+| ---------------------------- | -------------------------------- |
+| `types.ts`                   | 类型定义 (`PromptFileSelection`) |
+| `attachment-capabilities.ts` | 媒体类型检测与模型能力解析       |
+| `attachment-content.ts`      | 文件内容读取与格式化             |
+| `file-mention-query.ts`      | `@/` 语法解析                    |
+| `workspace-files.ts`         | 工作区文件遍历                   |
+| `prompt-display.ts`          | 显示文本构建                     |
 
 ### 媒体类型检测
 
@@ -934,7 +935,13 @@ const IMAGE_MIME_BY_EXTENSION: Record<string, string> = {
 
 ```typescript
 const IGNORED_DIR_NAMES = new Set([
-  '.git', 'node_modules', 'dist', 'build', 'coverage', '.next', '.turbo'
+  '.git',
+  'node_modules',
+  'dist',
+  'build',
+  'coverage',
+  '.next',
+  '.turbo',
 ]);
 ```
 
@@ -946,11 +953,11 @@ const IGNORED_DIR_NAMES = new Set([
 
 根据 `AttachmentModelCapabilities` 决定格式：
 
-| 媒体类型 | 格式 |
-|---------|------|
-| 图片 | Base64 Data URL |
-| 音频/视频 | 文本描述 |
-| 其他 | 纯文本 |
+| 媒体类型  | 格式            |
+| --------- | --------------- |
+| 图片      | Base64 Data URL |
+| 音频/视频 | 文本描述        |
+| 其他      | 纯文本          |
 
 ---
 
@@ -958,13 +965,13 @@ const IGNORED_DIR_NAMES = new Set([
 
 ### Hooks 分类
 
-| Hook | 类型 | 用途 |
-|------|------|------|
-| `useAgentChat` | 状态管理 | 核心聊天状态（turns, input, files, thinking） |
-| `useFilePicker` | 选择器 | 文件多选 UI |
-| `useFileMentionMenu` | 自动补全 | `@/` 文件提及菜单 |
-| `useModelPicker` | 选择器 | 模型切换器 |
-| `useSlashCommandMenu` | 命令菜单 | `/` 命令自动补全 |
+| Hook                  | 类型     | 用途                                          |
+| --------------------- | -------- | --------------------------------------------- |
+| `useAgentChat`        | 状态管理 | 核心聊天状态（turns, input, files, thinking） |
+| `useFilePicker`       | 选择器   | 文件多选 UI                                   |
+| `useFileMentionMenu`  | 自动补全 | `@/` 文件提及菜单                             |
+| `useModelPicker`      | 选择器   | 模型切换器                                    |
+| `useSlashCommandMenu` | 命令菜单 | `/` 命令自动补全                              |
 
 ### useAgentChat 架构
 
@@ -989,11 +996,11 @@ const [pendingToolConfirm, setPendingToolConfirm] = useState<PendingToolConfirm 
 #### Refs 用于可变状态
 
 ```typescript
-const turnIdRef = useRef(1);           // ID 生成器
-const requestIdRef = useRef(0);         // 请求版本控制
-const activeTurnIdRef = useRef<number | null>(null);   // 当前活跃 turn
-const activeAbortControllerRef = useRef<AbortController | null>(null);  // 中断控制
-const activeRunPromiseRef = useRef<Promise<void> | null>(null);  // Promise 追踪
+const turnIdRef = useRef(1); // ID 生成器
+const requestIdRef = useRef(0); // 请求版本控制
+const activeTurnIdRef = useRef<number | null>(null); // 当前活跃 turn
+const activeAbortControllerRef = useRef<AbortController | null>(null); // 中断控制
+const activeRunPromiseRef = useRef<Promise<void> | null>(null); // Promise 追踪
 ```
 
 ### 请求版本控制模式
@@ -1014,16 +1021,16 @@ promise.then(() => {
 
 ### 架构亮点
 
-| 模式 | 应用位置 | 说明 |
-|------|----------|------|
-| **单例模式 + 延迟初始化** | `runtime.ts` L607-639 | `getRuntime()` 双重检查锁定 |
-| **模块动态加载** | `source-modules.ts` L245-290 | 通过 `file://` URL 动态 import |
-| **事件驱动架构** | `runtime.ts` L672-725 | 事件监听与分发 |
-| **缓冲批量处理** | `tool-call-buffer.ts` | 工具调用缓冲合并 |
-| **请求版本控制** | `hooks/` | `requestIdRef` 防竞态 |
-| **函数式状态更新** | `turn-updater.ts` | `patchTurn()` immutable 更新 |
-| **工厂函数** | `agent-event-handlers.ts` | `buildAgentEventHandlers()` |
-| **组合 Hooks** | `use-agent-chat.ts` | 整合多个子功能 |
+| 模式                      | 应用位置                     | 说明                           |
+| ------------------------- | ---------------------------- | ------------------------------ |
+| **单例模式 + 延迟初始化** | `runtime.ts` L607-639        | `getRuntime()` 双重检查锁定    |
+| **模块动态加载**          | `source-modules.ts` L245-290 | 通过 `file://` URL 动态 import |
+| **事件驱动架构**          | `runtime.ts` L672-725        | 事件监听与分发                 |
+| **缓冲批量处理**          | `tool-call-buffer.ts`        | 工具调用缓冲合并               |
+| **请求版本控制**          | `hooks/`                     | `requestIdRef` 防竞态          |
+| **函数式状态更新**        | `turn-updater.ts`            | `patchTurn()` immutable 更新   |
+| **工厂函数**              | `agent-event-handlers.ts`    | `buildAgentEventHandlers()`    |
+| **组合 Hooks**            | `use-agent-chat.ts`          | 整合多个子功能                 |
 
 ### 分层复用架构
 
@@ -1045,22 +1052,22 @@ promise.then(() => {
 
 ## 七、关键文件索引
 
-| 文件 | 行数 | 核心职责 |
-|------|------|----------|
-| `src/agent/runtime/runtime.ts` | ~939 | Agent 主循环、状态机、事件分发 |
-| `src/agent/runtime/types.ts` | ~300 | 事件类型定义 |
-| `src/agent/runtime/tool-catalog.ts` | ~200 | 工具过滤与分类 |
-| `src/agent/runtime/tool-call-buffer.ts` | ~150 | 工具调用缓冲 |
-| `src/agent/runtime/tool-confirmation.ts` | ~100 | 权限确认决策 |
-| `src/agent/runtime/source-modules.ts` | ~290 | 动态模块加载 |
-| `src/components/chat/assistant-reply.tsx` | ~200 | 助手回复渲染 |
-| `src/components/chat/segment-groups.ts` | ~250 | 消息分组算法 |
-| `src/components/chat/assistant-tool-group.tsx` | ~400 | 工具结果展示 |
-| `src/components/prompt.tsx` | ~200 | 输入组件 |
-| `src/commands/slash-commands.ts` | ~90 | Slash 命令定义 |
-| `src/hooks/use-agent-chat.ts` | ~500 | 核心状态管理 |
-| `src/files/attachment-capabilities.ts` | ~150 | 媒体类型检测 |
-| `src/files/workspace-files.ts` | ~200 | 文件遍历 |
+| 文件                                           | 行数 | 核心职责                       |
+| ---------------------------------------------- | ---- | ------------------------------ |
+| `src/agent/runtime/runtime.ts`                 | ~939 | Agent 主循环、状态机、事件分发 |
+| `src/agent/runtime/types.ts`                   | ~300 | 事件类型定义                   |
+| `src/agent/runtime/tool-catalog.ts`            | ~200 | 工具过滤与分类                 |
+| `src/agent/runtime/tool-call-buffer.ts`        | ~150 | 工具调用缓冲                   |
+| `src/agent/runtime/tool-confirmation.ts`       | ~100 | 权限确认决策                   |
+| `src/agent/runtime/source-modules.ts`          | ~290 | 动态模块加载                   |
+| `src/components/chat/assistant-reply.tsx`      | ~200 | 助手回复渲染                   |
+| `src/components/chat/segment-groups.ts`        | ~250 | 消息分组算法                   |
+| `src/components/chat/assistant-tool-group.tsx` | ~400 | 工具结果展示                   |
+| `src/components/prompt.tsx`                    | ~200 | 输入组件                       |
+| `src/commands/slash-commands.ts`               | ~90  | Slash 命令定义                 |
+| `src/hooks/use-agent-chat.ts`                  | ~500 | 核心状态管理                   |
+| `src/files/attachment-capabilities.ts`         | ~150 | 媒体类型检测                   |
+| `src/files/workspace-files.ts`                 | ~200 | 文件遍历                       |
 
 ---
 
