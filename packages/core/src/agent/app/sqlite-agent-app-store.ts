@@ -6,8 +6,10 @@ import type {
   ListRunLogsOptions,
   ListRunsOptions,
   ListRunsResult,
+  ListSessionSummariesOptions,
   RunRecord,
   RunLogRecord,
+  SessionSummaryRecord,
 } from './contracts';
 import type {
   ContextProjectionStorePort,
@@ -63,6 +65,16 @@ interface MessageRow {
 interface CursorToken {
   updatedAt: number;
   executionId: string;
+}
+
+interface SessionSummaryRow {
+  conversation_id: string;
+  created_at_ms: number;
+  updated_at_ms: number;
+  run_count: number;
+  last_run_status: RunRecord['status'] | null;
+  last_user_message: string | null;
+  last_assistant_message: string | null;
 }
 
 interface MessageEventPayload {
@@ -519,6 +531,82 @@ export class SqliteAgentAppStore
       items,
       nextCursor: hasNext && tail ? encodeCursor(tail.updatedAt, tail.executionId) : undefined,
     };
+  }
+
+  async listSessionSummaries(
+    opts: ListSessionSummariesOptions = {}
+  ): Promise<SessionSummaryRecord[]> {
+    await this.prepare();
+    const limit = clampLimit(opts.limit);
+    const rows = await this.client.all<SessionSummaryRow>(
+      `
+        WITH run_summary AS (
+          SELECT
+            conversation_id,
+            MIN(created_at_ms) AS created_at_ms,
+            MAX(updated_at_ms) AS updated_at_ms,
+            COUNT(*) AS run_count
+          FROM runs
+          GROUP BY conversation_id
+        ),
+        last_runs AS (
+          SELECT r1.conversation_id, r1.status AS last_run_status
+          FROM runs r1
+          INNER JOIN (
+            SELECT conversation_id, MAX(updated_at_ms) AS updated_at_ms
+            FROM runs
+            GROUP BY conversation_id
+          ) latest
+            ON latest.conversation_id = r1.conversation_id
+           AND latest.updated_at_ms = r1.updated_at_ms
+          WHERE r1.execution_id = (
+            SELECT r2.execution_id
+            FROM runs r2
+            WHERE r2.conversation_id = r1.conversation_id
+              AND r2.updated_at_ms = r1.updated_at_ms
+            ORDER BY r2.execution_id DESC
+            LIMIT 1
+          )
+        ),
+        last_user_messages AS (
+          SELECT m1.conversation_id, m1.content_json AS content_json
+          FROM context_messages m1
+          WHERE m1.role = 'user'
+            AND m1.seq = (
+              SELECT MAX(m2.seq)
+              FROM context_messages m2
+              WHERE m2.conversation_id = m1.conversation_id AND m2.role = 'user'
+            )
+        ),
+        last_assistant_messages AS (
+          SELECT m1.conversation_id, m1.content_json AS content_json
+          FROM context_messages m1
+          WHERE m1.role = 'assistant'
+            AND m1.seq = (
+              SELECT MAX(m2.seq)
+              FROM context_messages m2
+              WHERE m2.conversation_id = m1.conversation_id AND m2.role = 'assistant'
+            )
+        )
+        SELECT
+          rs.conversation_id,
+          rs.created_at_ms,
+          rs.updated_at_ms,
+          rs.run_count,
+          lr.last_run_status,
+          lum.content_json AS last_user_message,
+          lam.content_json AS last_assistant_message
+        FROM run_summary rs
+        LEFT JOIN last_runs lr ON lr.conversation_id = rs.conversation_id
+        LEFT JOIN last_user_messages lum ON lum.conversation_id = rs.conversation_id
+        LEFT JOIN last_assistant_messages lam ON lam.conversation_id = rs.conversation_id
+        ORDER BY rs.updated_at_ms DESC, rs.conversation_id DESC
+        LIMIT ?
+      `,
+      [limit]
+    );
+
+    return rows.map(mapSessionSummaryRow);
   }
 
   async appendAutoSeq(event: Omit<CliEventEnvelope, 'seq'>): Promise<CliEventEnvelope> {
@@ -1180,6 +1268,22 @@ function mapEventRow(row: EventRow): CliEventEnvelope {
   };
 }
 
+function mapSessionSummaryRow(row: SessionSummaryRow): SessionSummaryRecord {
+  return {
+    conversationId: row.conversation_id,
+    createdAt: row.created_at_ms,
+    updatedAt: row.updated_at_ms,
+    runCount: row.run_count,
+    lastRunStatus: row.last_run_status ?? undefined,
+    lastUserMessageText: extractPreviewText(
+      parseJsonOrDefault(row.last_user_message ?? 'null', null)
+    ),
+    lastAssistantMessageText: extractPreviewText(
+      parseJsonOrDefault(row.last_assistant_message ?? 'null', null)
+    ),
+  };
+}
+
 function mapRunLogRow(row: RunLogRow): RunLogRecord {
   return {
     id: row.id,
@@ -1199,6 +1303,39 @@ function mapRunLogRow(row: RunLogRow): RunLogRecord {
     data: row.data_json ? parseJsonOrDefault(row.data_json, undefined) : undefined,
     createdAt: row.created_at_ms,
   };
+}
+
+function compactPreview(text: string): string | undefined {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (normalized.length === 0) {
+    return undefined;
+  }
+  return normalized.length > 140 ? `${normalized.slice(0, 137)}...` : normalized;
+}
+
+function extractPreviewText(content: unknown): string | undefined {
+  if (typeof content === 'string') {
+    return compactPreview(content);
+  }
+  if (!Array.isArray(content)) {
+    return undefined;
+  }
+
+  const text = content
+    .map((part) => {
+      if (!part || typeof part !== 'object') {
+        return '';
+      }
+      const record = part as Record<string, unknown>;
+      if (record.type === 'text' && typeof record.text === 'string') {
+        return record.text;
+      }
+      return '';
+    })
+    .filter((value) => value.length > 0)
+    .join(' ');
+
+  return compactPreview(text);
 }
 
 function clampLimit(limit?: number): number {

@@ -48,6 +48,38 @@ pnpm run ci:check
 - 执行 `git push` 时会自动触发 `ci:check`
 - 任一环节失败都会阻止推送
 
+## CLI 使用
+
+`packages/cli` 提供命令 `renx`。
+
+常见用法：
+
+```bash
+renx
+renx run "为当前项目生成测试计划"
+renx ask "这个错误是什么意思"
+renx run "修复 lint 报错" --session-id my-session --model minimax-2.7
+renx session list
+renx session show --id my-session
+renx session open --id my-session
+```
+
+常用选项：
+
+- `--session-id <id>`：复用现有会话 ID
+- `--model <model>`：覆盖默认模型
+- `--cwd <path>`：切换工作目录后执行
+- `--output text|json`：非交互模式输出格式
+- `--json`：等价于 `--output json`
+- `-y` / `--yes`：自动批准非交互模式下的工具确认/权限请求
+
+行为说明：
+
+- `renx`：默认进入交互式 TUI
+- `renx run <prompt>`：执行任务型提示词，适合自动化调用
+- `renx ask <prompt>`：执行问答型提示词，适合脚本集成
+- `renx session list/show/open`：管理本地 SQLite 中保存的会话摘要与继续工作入口
+
 ## Monorepo 结构
 
 ```text

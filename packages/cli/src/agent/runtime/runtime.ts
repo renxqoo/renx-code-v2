@@ -60,6 +60,18 @@ type RunAgentPromptOptions = {
   abortSignal?: AbortSignal;
 };
 
+export type SessionSummary = {
+  conversationId: string;
+  createdAt: number;
+  updatedAt: number;
+  runCount: number;
+  lastRunStatus?: string;
+  lastUserMessageText?: string;
+  lastAssistantMessageText?: string;
+};
+
+export type NonInteractiveRunMode = 'run' | 'ask';
+
 export type AppendAgentPromptResult = {
   accepted: boolean;
   reason?: 'run_not_active' | 'conversation_mismatch' | 'empty_input';
@@ -218,6 +230,11 @@ const resolveConversationId = () => {
     return fromEnv;
   }
   return `opentui-${Date.now()}`;
+};
+
+const setConversationId = (conversationId: string) => {
+  process.env.AGENT_CONVERSATION_ID = conversationId;
+  process.env.AGENT_SESSION_ID = conversationId;
 };
 
 const resolveDbPath = (modules: SourceModules): string => {
@@ -518,6 +535,7 @@ const createRuntime = async (): Promise<RuntimeCore> => {
   const workspaceRoot = resolveWorkspaceRoot();
   await prepareRuntimeEnvironment(modules, workspaceRoot);
   const conversationId = resolveConversationId();
+  setConversationId(conversationId);
 
   const modelId = resolveModelId(modules, getPreferredModelId());
   const modelConfig = requireModelApiKey(modules, modelId);
@@ -675,6 +693,51 @@ const disposeRuntimeInstance = async () => {
   }
   await runtime.logger?.close?.();
   await runtime.appStore.close();
+};
+
+export const initializeAgentSession = async (
+  options: {
+    sessionId?: string;
+    modelId?: string;
+  } = {}
+): Promise<{ conversationId: string; modelLabel: string; modelId: string }> => {
+  if (options.sessionId?.trim()) {
+    setConversationId(options.sessionId.trim());
+  }
+  if (options.modelId?.trim()) {
+    sessionModelIdOverride = options.modelId.trim();
+  }
+  await disposeRuntimeInstance();
+  const runtime = await getRuntime();
+  return {
+    conversationId: runtime.conversationId,
+    modelLabel: runtime.modelLabel,
+    modelId: runtime.modelId,
+  };
+};
+
+export const listAgentSessions = async (limit = 20): Promise<SessionSummary[]> => {
+  const modules = await getSourceModules();
+  await prepareRuntimeEnvironment(modules, resolveWorkspaceRoot());
+  const store = modules.createSqliteAgentAppStore(resolveDbPath(modules));
+  try {
+    if (typeof store.prepare === 'function') {
+      await store.prepare();
+    }
+    const summaries = await store.listSessionSummaries?.({ limit });
+    return summaries ?? [];
+  } finally {
+    await store.close();
+  }
+};
+
+export const getAgentSession = async (conversationId: string): Promise<SessionSummary | null> => {
+  const target = conversationId.trim();
+  if (!target) {
+    return null;
+  }
+  const sessions = await listAgentSessions(100);
+  return sessions.find((session) => session.conversationId === target) ?? null;
 };
 
 export const runAgentPrompt = async (
@@ -958,6 +1021,8 @@ export const runAgentPrompt = async (
       : undefined;
 
   return {
+    executionId,
+    conversationId: runtime.conversationId,
     text: finalText,
     completionReason: result.finishReason,
     completionMessage,
@@ -965,6 +1030,92 @@ export const runAgentPrompt = async (
     modelLabel: runtime.modelLabel,
     usage: latestUsageEvent,
   };
+};
+
+export const runAgentPromptNonInteractive = async (
+  prompt: string,
+  mode: NonInteractiveRunMode,
+  options: {
+    sessionId?: string;
+    modelId?: string;
+    onStdout?: (chunk: string) => void;
+    onStderr?: (chunk: string) => void;
+    autoApprove?: boolean;
+    abortSignal?: AbortSignal;
+  } = {}
+): Promise<AgentRunResult> => {
+  await initializeAgentSession({
+    sessionId: options.sessionId,
+    modelId: options.modelId,
+  });
+
+  const stdout = options.onStdout;
+  const stderr = options.onStderr;
+  let outputBuffer = '';
+  let printedHeader = false;
+
+  const handlers: AgentEventHandlers = {
+    onTextDelta: (event) => {
+      if (event.isReasoning) {
+        return;
+      }
+      if (event.text.length > 0) {
+        outputBuffer += event.text;
+        stdout?.(event.text);
+      }
+    },
+    onToolConfirmRequest: async (event) => {
+      if (options.autoApprove) {
+        stderr?.(`[approve] ${event.toolName}\n`);
+        return { approved: true, message: 'Auto-approved by CLI.' };
+      }
+      stderr?.(`[approve-required] ${event.toolName}\n`);
+      return {
+        approved: false,
+        message: 'Interactive confirmation is unavailable in non-interactive mode.',
+      };
+    },
+    onToolPermissionRequest: async (event) => {
+      if (options.autoApprove) {
+        stderr?.(`[permission] ${event.toolName} scope=${event.requestedScope}\n`);
+        return { granted: event.permissions, scope: event.requestedScope };
+      }
+      stderr?.(`[permission-required] ${event.toolName} scope=${event.requestedScope}\n`);
+      return { granted: {}, scope: 'turn' };
+    },
+    onToolUse: (event) => {
+      const toolName =
+        readString(asRecord(event).toolName) ?? readString(asRecord(event).name) ?? 'tool';
+      stderr?.(`[tool] ${toolName}\n`);
+    },
+    onToolResult: (event) => {
+      const toolCall = asRecord(event.toolCall);
+      const toolName = readString(toolCall.toolName) ?? readString(toolCall.name) ?? 'tool';
+      const resultRecord = asRecord(event.result);
+      const summary = readString(resultRecord.summary) ?? readString(resultRecord.output);
+      if (summary) {
+        stderr?.(`[tool-result] ${toolName}: ${summary}\n`);
+      }
+    },
+    onStop: (event) => {
+      if (!printedHeader && mode === 'run' && outputBuffer.trim().length === 0) {
+        stderr?.(`[done] ${event.reason}${event.message ? `: ${event.message}` : ''}\n`);
+      }
+    },
+    onTextComplete: () => {
+      printedHeader = true;
+    },
+  };
+
+  const result = await runAgentPrompt(prompt, handlers, {
+    abortSignal: options.abortSignal,
+  });
+
+  if (stdout && outputBuffer.length > 0 && !outputBuffer.endsWith('\n')) {
+    stdout('\n');
+  }
+
+  return result;
 };
 
 export const appendAgentPrompt = async (

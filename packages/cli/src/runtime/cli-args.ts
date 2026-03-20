@@ -8,6 +8,7 @@ type CliArgsResult = {
 const CONVERSATION_ID_FLAGS = new Set(['--conversationId', '--conversation-id']);
 const SESSION_ID_FLAGS = new Set(['--sessionId', '--session-id']);
 const VERSION_FLAGS = new Set(['-v', '--version']);
+const HELP_FLAGS = new Set(['-h', '--help']);
 
 const readFlagValue = (argv: string[], index: number): string | null => {
   const inline = argv[index]?.split('=', 2)[1];
@@ -33,6 +34,12 @@ export const applyCliArgsToEnv = (
       ok: true,
       shouldExit: true,
       output: version,
+    };
+  }
+
+  if (argv.some((token) => HELP_FLAGS.has(token)) && argv.length === 1) {
+    return {
+      ok: true,
     };
   }
 

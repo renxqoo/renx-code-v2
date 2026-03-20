@@ -130,11 +130,27 @@ flowchart LR
 主要职责：
 
 - 获取 CLI 版本，见 `src/index.tsx:27`
-- 配置 bundled ripgrep，见 `src/index.tsx:58`
-- 解析命令行参数到环境变量，见 `src/index.tsx:59` 和 `src/runtime/cli-args.ts:26`
-- 绑定退出保护，见 `src/index.tsx:71`
-- 探测终端颜色并应用主题，见 `src/index.tsx:75`
-- 创建 OpenTUI renderer 并挂载 `App`，见 `src/index.tsx:101`
+- 配置 bundled ripgrep，见 `src/index.tsx:96`
+- 解析基础参数到环境变量，见 `src/index.tsx:97` 和 `src/runtime/cli-args.ts:26`
+- 解析命令路由（`run` / `ask` / `session` / 默认 TUI），见 `src/index.tsx:123` 和 `src/commands/cli-commands.ts:84`
+- 在非交互模式下选择 `text` / `json` 输出，见 `src/index.tsx:147`
+- 在交互模式下绑定退出保护、探测终端颜色并启动 OpenTUI，见 `src/index.tsx:59`
+
+### 3.2.1 非交互命令层
+
+新增命令路由主要包括：
+
+- `renx run <prompt>`：非交互执行任务型 prompt
+- `renx ask <prompt>`：非交互执行问答型 prompt
+- `renx session list`：列出本地会话摘要
+- `renx session show --id <id>`：查看单个会话摘要
+- `renx session open --id <id>`：加载指定会话并进入 TUI
+
+对应文件：
+
+- 参数/帮助：`src/commands/cli-commands.ts:1`
+- 会话输出格式：`src/commands/session-output.ts:1`
+- 入口分发：`src/index.tsx:147`
 
 ### 3.3 UI 层
 
@@ -236,6 +252,7 @@ flowchart LR
 
 ## 8. 一句话总结
 
-主链路可以概括为：
+主链路现在分为两条：
 
-`bin/renx.cjs` → `src/index.tsx` → `App` → `useAgentChat.submitInput` → `runAgentPrompt` → `appService.runForeground` → 事件流回传 → `turns` 更新 → `ConversationPanel` 渲染。
+- 交互式：`bin/renx.cjs` → `src/index.tsx` → `App` → `useAgentChat.submitInput` → `runAgentPrompt` → `appService.runForeground` → 事件流回传 → `turns` 更新 → `ConversationPanel` 渲染。
+- 非交互式：`bin/renx.cjs` → `src/index.tsx` → `parseCliCommand` → `runAgentPromptNonInteractive` / `listAgentSessions` / `getAgentSession` → 文本或 JSON 输出。

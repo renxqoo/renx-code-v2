@@ -170,6 +170,17 @@ export type ToolExecutorLike = {
 export type AgentAppStoreLike = {
   close: () => Promise<void>;
   prepare?: () => Promise<void>;
+  listSessionSummaries?: (options?: { limit?: number }) => Promise<
+    Array<{
+      conversationId: string;
+      createdAt: number;
+      updatedAt: number;
+      runCount: number;
+      lastRunStatus?: string;
+      lastUserMessageText?: string;
+      lastAssistantMessageText?: string;
+    }>
+  >;
 };
 
 type EnterpriseAgentAppCompositionLike = {
@@ -236,6 +247,10 @@ export type SourceModules = {
   StatelessAgent: StatelessAgentCtor;
   AgentAppService: AgentAppServiceCtor;
   createSqliteAgentAppStore: (dbPath: string) => AgentAppStoreLike;
+  AgentAppSqliteClient: new (dbPath: string) => {
+    prepare: () => Promise<void>;
+    close: () => Promise<void>;
+  };
   createEnterpriseAgentAppService: CreateEnterpriseAgentAppServiceFn;
   createEnterpriseToolSystemV2WithSubagents: (options: Record<string, unknown>) => unknown;
   SHELL_POLICY_PROFILES: ShellPolicyProfilesLike;
@@ -270,6 +285,7 @@ const loadSourceModules = async (): Promise<SourceModules> => {
     AgentAppService: core.AgentAppService as unknown as AgentAppServiceCtor,
     createSqliteAgentAppStore:
       core.createSqliteAgentAppStore as SourceModules['createSqliteAgentAppStore'],
+    AgentAppSqliteClient: core.AgentAppSqliteClient as SourceModules['AgentAppSqliteClient'],
     createEnterpriseAgentAppService:
       core.createEnterpriseAgentAppService as unknown as SourceModules['createEnterpriseAgentAppService'],
     createEnterpriseToolSystemV2WithSubagents:

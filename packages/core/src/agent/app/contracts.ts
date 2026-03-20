@@ -93,6 +93,20 @@ export interface ListRunsResult {
   nextCursor?: string;
 }
 
+export interface SessionSummaryRecord {
+  conversationId: string;
+  createdAt: number;
+  updatedAt: number;
+  runCount: number;
+  lastRunStatus?: RunStatus;
+  lastUserMessageText?: string;
+  lastAssistantMessageText?: string;
+}
+
+export interface ListSessionSummariesOptions {
+  limit?: number;
+}
+
 export interface ListConversationEventsOptions {
   fromSeq?: number;
   limit?: number;

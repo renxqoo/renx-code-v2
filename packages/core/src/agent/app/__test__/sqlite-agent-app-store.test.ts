@@ -164,6 +164,81 @@ describe('SqliteAgentAppStore', () => {
     });
   });
 
+  it('lists session summaries ordered by latest update', async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'renx-app-sqlite-sessions-'));
+    const dbPath = path.join(tempDir, 'agent.db');
+    store = new SqliteAgentAppStore(dbPath);
+
+    const now = Date.now();
+    await store.create({
+      executionId: 'exec_a1',
+      runId: 'exec_a1',
+      conversationId: 'session_a',
+      status: 'COMPLETED',
+      createdAt: now,
+      updatedAt: now + 10,
+      stepIndex: 1,
+      terminalReason: 'stop',
+    });
+    await store.create({
+      executionId: 'exec_b1',
+      runId: 'exec_b1',
+      conversationId: 'session_b',
+      status: 'RUNNING',
+      createdAt: now + 20,
+      updatedAt: now + 30,
+      stepIndex: 1,
+    });
+
+    const userMessageA: Message = {
+      messageId: 'msg_user_a',
+      type: 'user',
+      role: 'user',
+      content: 'hello from a',
+      timestamp: now + 1,
+    };
+    const assistantMessageB: Message = {
+      messageId: 'msg_assistant_b',
+      type: 'assistant-text',
+      role: 'assistant',
+      content: 'reply from b',
+      timestamp: now + 31,
+    };
+
+    const envelopeA = await store.appendAutoSeq({
+      conversationId: 'session_a',
+      executionId: 'exec_a1',
+      eventType: 'user_message',
+      data: { message: userMessageA, stepIndex: 0 },
+      createdAt: now + 1,
+    });
+    await store.upsertFromEvent(envelopeA);
+
+    const envelopeB = await store.appendAutoSeq({
+      conversationId: 'session_b',
+      executionId: 'exec_b1',
+      eventType: 'assistant_message',
+      data: { message: assistantMessageB, stepIndex: 1 },
+      createdAt: now + 31,
+    });
+    await store.upsertFromEvent(envelopeB);
+
+    const sessions = await store.listSessionSummaries({ limit: 10 });
+    expect(sessions).toHaveLength(2);
+    expect(sessions[0]).toMatchObject({
+      conversationId: 'session_b',
+      runCount: 1,
+      lastRunStatus: 'RUNNING',
+      lastAssistantMessageText: 'reply from b',
+    });
+    expect(sessions[1]).toMatchObject({
+      conversationId: 'session_a',
+      runCount: 1,
+      lastRunStatus: 'COMPLETED',
+      lastUserMessageText: 'hello from a',
+    });
+  });
+
   it('stores and lists run logs in created order', async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'renx-app-sqlite-run-logs-'));
     const dbPath = path.join(tempDir, 'agent.db');

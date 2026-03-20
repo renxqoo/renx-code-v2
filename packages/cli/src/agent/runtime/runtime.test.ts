@@ -24,7 +24,10 @@ import {
   disposeAgentRuntime,
   getAgentModelId,
   getAgentModelLabel,
+  getAgentSession,
+  initializeAgentSession,
   listAgentModels,
+  listAgentSessions,
   runAgentPrompt,
   switchAgentModel,
 } from './runtime';
@@ -842,6 +845,8 @@ describe('runtime', () => {
     await expect(getAgentModelLabel()).resolves.toBe('Claude 3.5 Sonnet');
     await expect(runAgentPrompt('Test prompt', {})).resolves.toEqual(
       expect.objectContaining({
+        executionId: expect.stringMatching(/^exec_cli_/),
+        conversationId: expect.stringMatching(/^opentui-|^session-/),
         modelLabel: 'Claude 3.5 Sonnet',
       })
     );
@@ -860,6 +865,8 @@ describe('runtime', () => {
 
     await expect(runAgentPrompt('Test prompt', handlers)).resolves.toEqual(
       expect.objectContaining({
+        executionId: expect.stringMatching(/^exec_cli_/),
+        conversationId: expect.stringMatching(/^opentui-|^session-/),
         text: 'done',
         completionReason: 'stop',
         modelLabel: 'GLM-5',
@@ -921,6 +928,56 @@ describe('runtime', () => {
     });
   });
 
+  it('initializes and lists agent sessions', async () => {
+    const modules = buildMockModules({
+      createSqliteAgentAppStore: () => ({
+        prepare: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn().mockResolvedValue(undefined),
+        listSessionSummaries: vi.fn().mockResolvedValue([
+          {
+            conversationId: 'session-01',
+            createdAt: 1,
+            updatedAt: 2,
+            runCount: 3,
+            lastRunStatus: 'COMPLETED',
+            lastUserMessageText: 'hello',
+            lastAssistantMessageText: 'world',
+          },
+        ]),
+      }),
+    });
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    const init = await initializeAgentSession({ sessionId: 'session-01', modelId: 'glm-5' });
+    expect(init).toMatchObject({
+      conversationId: 'session-01',
+      modelId: 'glm-5',
+      modelLabel: 'GLM-5',
+    });
+
+    await expect(listAgentSessions()).resolves.toEqual([
+      {
+        conversationId: 'session-01',
+        createdAt: 1,
+        updatedAt: 2,
+        runCount: 3,
+        lastRunStatus: 'COMPLETED',
+        lastUserMessageText: 'hello',
+        lastAssistantMessageText: 'world',
+      },
+    ]);
+    await expect(getAgentSession('session-01')).resolves.toEqual({
+      conversationId: 'session-01',
+      createdAt: 1,
+      updatedAt: 2,
+      runCount: 3,
+      lastRunStatus: 'COMPLETED',
+      lastUserMessageText: 'hello',
+      lastAssistantMessageText: 'world',
+    });
+  });
   it('returns run_not_active when appending without an active run', async () => {
     await expect(appendAgentPrompt('Follow up')).resolves.toEqual({
       accepted: false,
@@ -1003,7 +1060,7 @@ describe('runtime', () => {
 
     expect(appServiceClass.appendRequests).toHaveLength(1);
     expect(appServiceClass.appendRequests?.[0]).toMatchObject({
-      conversationId: expect.stringMatching(/^opentui-/),
+      conversationId: 'session-01',
       userInput: 'Follow up prompt',
     });
     expect(appServiceClass.appendRequests?.[0]?.executionId).toMatch(/^exec_cli_/);

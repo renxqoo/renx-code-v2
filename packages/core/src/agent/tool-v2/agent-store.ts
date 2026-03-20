@@ -85,9 +85,17 @@ export class FileSubagentExecutionStore implements SubagentExecutionStore {
       this.baseDir,
       `.${path.basename(this.filePath)}.${process.pid}.${randomUUID()}.tmp`
     );
-    await fs.writeFile(tempPath, JSON.stringify(state, null, 2), 'utf8');
+    await fs.writeFile(tempPath, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
     try {
       await fs.rename(tempPath, this.filePath);
+    } catch (error) {
+      const nodeError = error as NodeJS.ErrnoException;
+      if (nodeError.code === 'EPERM' && process.platform === 'win32') {
+        await fs.copyFile(tempPath, this.filePath);
+        await fs.unlink(tempPath).catch(() => undefined);
+        return;
+      }
+      throw error;
     } finally {
       await fs.rm(tempPath, { force: true });
     }

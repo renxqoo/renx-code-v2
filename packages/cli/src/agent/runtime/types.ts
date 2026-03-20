@@ -129,6 +129,8 @@ export type AgentEventHandlers = {
 };
 
 export type AgentRunResult = {
+  executionId: string;
+  conversationId: string;
   text: string;
   completionReason: string;
   completionMessage?: string;
