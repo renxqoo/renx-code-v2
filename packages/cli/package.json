@@ -1,7 +1,7 @@
 {
   "name": "@renxqoo/renx-code",
   "private": true,
-  "version": "0.0.48",
+  "version": "0.0.52",
   "description": "Renx Code terminal AI coding assistant",
   "type": "module",
   "main": "./src/index.tsx",
@@ -25,6 +25,7 @@
     "release:prepare:main": "bun ./scripts/prepare-release.mjs --main-only",
     "pack:dry": "pnpm run release:prepare && bun ./scripts/pack-release.mjs --dry-run",
     "pack:tgz": "pnpm run release:prepare && bun ./scripts/pack-release.mjs",
+    "test:install:smoke": "node ./scripts/smoke-install.mjs",
     "publish:release": "pnpm run publish:preflight && pnpm run release:prepare && bun ./scripts/publish-release.mjs",
     "publish:release:platform": "pnpm run publish:preflight && pnpm run release:prepare:platform && bun ./scripts/publish-release.mjs",
     "publish:release:main": "pnpm run publish:preflight && pnpm run release:prepare:main && bun ./scripts/publish-release.mjs",

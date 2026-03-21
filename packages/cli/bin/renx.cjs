@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 const childProcess = require('node:child_process');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const packageRoot = path.resolve(__dirname, '..');
@@ -56,7 +58,39 @@ function run(target, args, env = process.env) {
   process.exit(typeof result.status === 'number' ? result.status : 0);
 }
 
-function getBundledRipgrepEnv(binaryPackageRoot, baseEnv = process.env) {
+function resolveCacheRoot() {
+  if (process.env.RENX_BINARY_CACHE_DIR) {
+    return process.env.RENX_BINARY_CACHE_DIR;
+  }
+
+  if (process.platform === 'win32') {
+    return path.join(
+      process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'),
+      'Renx',
+      'binary-cache'
+    );
+  }
+
+  if (process.platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'Caches', 'Renx', 'binary-cache');
+  }
+
+  return path.join(
+    process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache'),
+    'renx',
+    'binary-cache'
+  );
+}
+
+function sanitizeCacheSegment(value) {
+  return value.replace(/[^a-zA-Z0-9._-]+/g, '-');
+}
+
+function resolveBundledRipgrepLayout(binaryPackageRoot) {
+  if (!binaryPackageRoot) {
+    return null;
+  }
+
   const targetByPlatform = {
     'darwin:arm64': 'aarch64-apple-darwin',
     'darwin:x64': 'x86_64-apple-darwin',
@@ -67,19 +101,43 @@ function getBundledRipgrepEnv(binaryPackageRoot, baseEnv = process.env) {
   };
   const target = targetByPlatform[`${process.platform}:${process.arch}`];
   if (!target) {
-    return {};
+    return null;
   }
 
   const dir = path.join(binaryPackageRoot, 'vendor', 'ripgrep', target, 'path');
   const binary = path.join(dir, process.platform === 'win32' ? 'rg.exe' : 'rg');
-  if (!fs.existsSync(binary)) {
-    return {};
+  return {
+    dir,
+    binary,
+  };
+}
+
+function getBundledRipgrepEnv(baseEnv = process.env, ...binaryPackageRoots) {
+  for (const binaryPackageRoot of binaryPackageRoots) {
+    const layout = resolveBundledRipgrepLayout(binaryPackageRoot);
+    if (!layout || !fs.existsSync(layout.binary)) {
+      continue;
+    }
+
+    return {
+      RENX_BUNDLED_RG_DIR: baseEnv.RENX_BUNDLED_RG_DIR || layout.dir,
+      RIPGREP_PATH: baseEnv.RIPGREP_PATH || layout.binary,
+    };
   }
 
-  return {
-    RENX_BUNDLED_RG_DIR: baseEnv.RENX_BUNDLED_RG_DIR || dir,
-    RIPGREP_PATH: baseEnv.RIPGREP_PATH || binary,
-  };
+  return {};
+}
+
+function copyBundledRipgrep(sourceBinaryPackageRoot, targetBinaryPackageRoot) {
+  const sourceLayout = resolveBundledRipgrepLayout(sourceBinaryPackageRoot);
+  const targetLayout = resolveBundledRipgrepLayout(targetBinaryPackageRoot);
+
+  if (!sourceLayout || !targetLayout || !fs.existsSync(sourceLayout.binary)) {
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(targetLayout.dir), { recursive: true });
+  fs.cpSync(sourceLayout.dir, targetLayout.dir, { recursive: true, force: true });
 }
 
 function resolveBunExecutable() {
@@ -110,6 +168,93 @@ function hasAgentSourceRoot(root) {
   );
 }
 
+function buildBinaryCacheFingerprint(candidate, packageName) {
+  const stats = fs.statSync(candidate);
+  return crypto
+    .createHash('sha256')
+    .update(
+      [
+        packageName || '',
+        packageJson.version || '0.0.0',
+        process.platform,
+        process.arch,
+        candidate,
+        String(stats.size),
+        String(Math.trunc(stats.mtimeMs)),
+      ].join('|')
+    )
+    .digest('hex')
+    .slice(0, 16);
+}
+
+function materializeBinaryCandidate(entry) {
+  if (
+    process.env.RENX_DISABLE_BINARY_CACHE === '1' ||
+    entry.skipCache ||
+    !entry.binaryPackageRoot
+  ) {
+    return entry;
+  }
+
+  const packageName = entry.packageName || path.basename(entry.binaryPackageRoot);
+  const version = packageJson.version || '0.0.0';
+  const fingerprint = buildBinaryCacheFingerprint(entry.candidate, packageName);
+  const cacheBase = path.join(
+    resolveCacheRoot(),
+    sanitizeCacheSegment(packageName),
+    sanitizeCacheSegment(version)
+  );
+  const cachedBinaryPackageRoot = path.join(cacheBase, fingerprint);
+  const cachedBinaryPath = path.join(
+    cachedBinaryPackageRoot,
+    'bin',
+    path.basename(entry.candidate)
+  );
+
+  if (fs.existsSync(cachedBinaryPath)) {
+    return {
+      ...entry,
+      candidate: cachedBinaryPath,
+      binaryPackageRoot: cachedBinaryPackageRoot,
+      fallbackBinaryPackageRoot: entry.binaryPackageRoot,
+    };
+  }
+
+  const tempRoot = path.join(cacheBase, `.tmp-${fingerprint}-${process.pid}`);
+  const tempBinaryPath = path.join(tempRoot, 'bin', path.basename(entry.candidate));
+
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(tempBinaryPath), { recursive: true });
+  fs.copyFileSync(entry.candidate, tempBinaryPath);
+  if (process.platform !== 'win32') {
+    fs.chmodSync(tempBinaryPath, 0o755);
+  }
+  copyBundledRipgrep(entry.binaryPackageRoot, tempRoot);
+
+  try {
+    fs.mkdirSync(cacheBase, { recursive: true });
+    fs.renameSync(tempRoot, cachedBinaryPackageRoot);
+  } catch {
+    if (!fs.existsSync(cachedBinaryPath)) {
+      return {
+        ...entry,
+        candidate: tempBinaryPath,
+        binaryPackageRoot: tempRoot,
+        fallbackBinaryPackageRoot: entry.binaryPackageRoot,
+      };
+    }
+
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+
+  return {
+    ...entry,
+    candidate: cachedBinaryPath,
+    binaryPackageRoot: cachedBinaryPackageRoot,
+    fallbackBinaryPackageRoot: entry.binaryPackageRoot,
+  };
+}
+
 function resolveInstalledPlatformPackageCandidate() {
   const platformPackage = platformPackageMap[`${process.platform}:${process.arch}`];
   if (!platformPackage) {
@@ -128,6 +273,7 @@ function resolveInstalledPlatformPackageCandidate() {
     return {
       candidate,
       binaryPackageRoot,
+      packageName: platformPackage.packageName,
     };
   } catch {
     return null;
@@ -151,6 +297,7 @@ function resolveLocalReleaseCandidate() {
       return {
         candidate,
         binaryPackageRoot,
+        packageName: platformPackage.packageName,
       };
     }
   }
@@ -163,11 +310,14 @@ const binaryCandidates = [
     ? {
         candidate: process.env.RENX_BIN_PATH,
         binaryPackageRoot: packageRoot,
+        packageName: packageJson.name,
+        skipCache: true,
       }
     : null,
   {
     candidate: path.join(__dirname, binaryName),
     binaryPackageRoot: packageRoot,
+    packageName: packageJson.name,
   },
   resolveLocalReleaseCandidate(),
   resolveInstalledPlatformPackageCandidate(),
@@ -175,10 +325,16 @@ const binaryCandidates = [
 
 for (const entry of binaryCandidates) {
   if (fs.existsSync(entry.candidate)) {
-    run(entry.candidate, cliArgs, {
+    const runnableEntry = materializeBinaryCandidate(entry);
+    run(runnableEntry.candidate, cliArgs, {
       ...process.env,
       RENX_VERSION: process.env.RENX_VERSION || packageJson.version || '0.0.0',
-      ...getBundledRipgrepEnv(entry.binaryPackageRoot, process.env),
+      ...getBundledRipgrepEnv(
+        process.env,
+        runnableEntry.binaryPackageRoot,
+        runnableEntry.fallbackBinaryPackageRoot,
+        entry.binaryPackageRoot
+      ),
     });
   }
 }
@@ -202,7 +358,7 @@ if (fs.existsSync(sourceEntry)) {
       RENX_VERSION: process.env.RENX_VERSION || packageJson.version || '0.0.0',
       AGENT_WORKDIR: process.env.AGENT_WORKDIR || process.cwd(),
       ...(resolvedRepoRoot ? { AGENT_REPO_ROOT: resolvedRepoRoot } : {}),
-      ...getBundledRipgrepEnv(packageRoot, process.env),
+      ...getBundledRipgrepEnv(process.env, packageRoot),
     });
   }
 }

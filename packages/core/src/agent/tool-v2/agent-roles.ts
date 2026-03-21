@@ -7,7 +7,7 @@ export const DEFAULT_SUBAGENT_ROLES: Record<string, SubagentRole> = {
     systemPrompt:
       'You are a shell execution specialist. Use local_shell for focused non-interactive commands, prefer platform-native command shapes, report exact outcomes, and avoid file edits unless they are explicitly required.',
     allowedTools: ['local_shell'],
-    defaultMaxSteps: 6,
+    defaultMaxSteps: 10000,
   },
   'general-purpose': {
     name: 'general-purpose',
@@ -24,7 +24,7 @@ export const DEFAULT_SUBAGENT_ROLES: Record<string, SubagentRole> = {
       'skill',
       'web_fetch',
     ],
-    defaultMaxSteps: 12,
+    defaultMaxSteps: 10000,
   },
   Explore: {
     name: 'Explore',
@@ -32,7 +32,7 @@ export const DEFAULT_SUBAGENT_ROLES: Record<string, SubagentRole> = {
     systemPrompt:
       'You are a codebase exploration specialist. Start with local_shell for broad search, symbol discovery, and directory inspection. Use read_file only after narrowing to likely files. Return concrete file paths, command findings, and short evidence-backed conclusions.',
     allowedTools: ['local_shell', 'read_file', 'skill'],
-    defaultMaxSteps: 8,
+    defaultMaxSteps: 10000,
   },
   Restore: {
     name: 'Restore',
@@ -40,7 +40,7 @@ export const DEFAULT_SUBAGENT_ROLES: Record<string, SubagentRole> = {
     systemPrompt:
       'You are a file restoration specialist. Prefer exact paths, use local_shell only when you need to locate files or verify state, inspect history before restoring, restore precisely, and verify the result after rollback.',
     allowedTools: ['local_shell', 'read_file', 'file_history_list', 'file_history_restore'],
-    defaultMaxSteps: 6,
+    defaultMaxSteps: 10000,
   },
   Plan: {
     name: 'Plan',
@@ -48,7 +48,7 @@ export const DEFAULT_SUBAGENT_ROLES: Record<string, SubagentRole> = {
     systemPrompt:
       'You are a planning specialist. Use local_shell to locate relevant code and constraints before planning. Produce concrete implementation steps, affected files, key risks, and acceptance criteria. Do not edit unless explicitly asked.',
     allowedTools: ['local_shell', 'read_file', 'skill'],
-    defaultMaxSteps: 8,
+    defaultMaxSteps: 10000,
   },
   research: {
     name: 'research',
@@ -56,7 +56,7 @@ export const DEFAULT_SUBAGENT_ROLES: Record<string, SubagentRole> = {
     systemPrompt:
       'You are a research subagent. Use local_shell for local search and repository inspection, use read_file once you identify exact files, collect evidence carefully, and synthesize concise findings.',
     allowedTools: ['local_shell', 'read_file', 'skill', 'web_fetch'],
-    defaultMaxSteps: 10,
+    defaultMaxSteps: 10000,
   },
   'research-agent': {
     name: 'research-agent',
@@ -64,7 +64,7 @@ export const DEFAULT_SUBAGENT_ROLES: Record<string, SubagentRole> = {
     systemPrompt:
       'You are a research-focused subagent. Use local_shell for local search and repository inspection, use read_file once you identify exact files, collect evidence carefully, prefer direct citations from tool results, and synthesize concise findings.',
     allowedTools: ['local_shell', 'read_file', 'skill', 'web_fetch'],
-    defaultMaxSteps: 10,
+    defaultMaxSteps: 10000,
   },
   planner: {
     name: 'planner',
@@ -72,7 +72,7 @@ export const DEFAULT_SUBAGENT_ROLES: Record<string, SubagentRole> = {
     systemPrompt:
       'You are a planning subagent. Use local_shell to locate relevant code and constraints before planning. Produce implementation-ready steps, affected files, risks, and acceptance checks. Do not edit unless explicitly asked.',
     allowedTools: ['local_shell', 'read_file', 'skill'],
-    defaultMaxSteps: 8,
+    defaultMaxSteps: 10000,
   },
   'find-skills': {
     name: 'find-skills',
@@ -114,6 +114,6 @@ Your response must include:
 What the parent agent should do next.
 Keep the response **concise, clear, and action-oriented**.`,
     allowedTools: ['local_shell', 'read_file', 'skill', 'web_fetch'],
-    defaultMaxSteps: 8,
+    defaultMaxSteps: 10000,
   },
 };
