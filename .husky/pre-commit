@@ -2,3 +2,8 @@
 . "$(dirname -- "$0")/_/husky.sh"
 
 pnpm lint-staged
+if [ $? -ne 0 ]; then
+  exit $?
+fi
+
+pnpm ci:check

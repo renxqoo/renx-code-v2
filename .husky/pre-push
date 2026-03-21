@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-pnpm ci:check
+# Intentionally no CI checks here.
+# Full local validation runs in pre-commit.

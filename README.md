@@ -41,12 +41,15 @@ pnpm run ci:check
 3. `lint`
 4. `test`
 
-> 所有代码在 push 前必须保证上述检查通过。
+> 所有代码在 commit 前必须保证上述检查通过。
 
-仓库启用了 `husky` 的 `pre-push` 钩子：
+仓库启用了 `husky` 的 `pre-commit` 钩子：
 
-- 执行 `git push` 时会自动触发 `ci:check`
-- 任一环节失败都会阻止推送
+- 执行 `git commit` 时会先运行 `pnpm lint-staged`
+- 然后自动触发 `ci:check`
+- 任一环节失败都会阻止提交
+- `pre-push` 不再承载本地 CI 校验
+- 仓库流程不允许使用 `--no-verify` 跳过校验；如需真正强制约束，应结合远端必过检查或分支保护
 
 ## CLI 使用
 
