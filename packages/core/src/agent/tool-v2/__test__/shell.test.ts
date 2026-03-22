@@ -790,6 +790,245 @@ describe('local_shell v2', () => {
     }
   });
 
+  it('does not treat a completed foreground shell result as aborted when the parent signal aborts afterward', async () => {
+    const runtime: ShellRuntime = {
+      getCapabilities() {
+        return {
+          sandboxing: [
+            { mode: 'workspace-write', enforcement: 'advisory' },
+            { mode: 'full-access', enforcement: 'advisory' },
+          ],
+          escalation: {
+            supported: true,
+          },
+        };
+      },
+      async execute(request) {
+        request.signal?.addEventListener('abort', () => undefined, { once: true });
+        return {
+          exitCode: 0,
+          timedOut: false,
+          aborted: false,
+          output: 'ok',
+        };
+      },
+    };
+    const system = new EnterpriseToolSystem([
+      new LocalShellToolV2({
+        runtime,
+        approvalMode: 'policy',
+      }),
+    ]);
+    const controller = new AbortController();
+
+    const result = await system.execute(
+      {
+        toolCallId: 'shell-foreground-late-abort',
+        toolName: 'local_shell',
+        arguments: JSON.stringify({
+          command: 'echo ok',
+        }),
+      },
+      createContext(workspaceDir, {
+        signal: controller.signal,
+      })
+    );
+
+    controller.abort();
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect((result.structured as { exitCode: number; timedOut: boolean }).exitCode).toBe(0);
+    expect((result.structured as { exitCode: number; timedOut: boolean }).timedOut).toBe(false);
+    expect(result.output).toBe('ok');
+  });
+
+  it('returns abort metadata and artifact paths when a foreground shell command is cancelled after producing output', async () => {
+    const system = new EnterpriseToolSystem([
+      new LocalShellToolV2({
+        approvalMode: 'policy',
+      }),
+    ]);
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 80);
+
+    const result = await system.execute(
+      {
+        toolCallId: 'shell-foreground-parent-abort-artifact',
+        toolName: 'local_shell',
+        arguments: JSON.stringify({
+          command: `"${process.execPath}" -e "process.stdout.write('before abort\\n'); setInterval(function () {}, 1000)"`,
+          timeoutMs: 5_000,
+        }),
+      },
+      createContext(workspaceDir, {
+        signal: controller.signal,
+      })
+    );
+
+    expect(result.success).toBe(false);
+    if (result.success) {
+      return;
+    }
+    expect(result.error.errorCode).toBe('TOOL_V2_ABORTED');
+    expect(result.error.category).toBe('abort');
+    expect(result.output).toContain('Shell command aborted');
+    expect(result.metadata).toMatchObject({
+      exitCode: 130,
+      timedOut: false,
+      aborted: true,
+      outputArtifact: {
+        combinedPath: expect.any(String),
+        metaPath: expect.any(String),
+      },
+    });
+    const artifact = result.metadata as {
+      outputArtifact: { combinedPath: string; metaPath: string };
+    };
+    const meta = JSON.parse(await fs.readFile(artifact.outputArtifact.metaPath, 'utf8')) as {
+      aborted: boolean;
+      exitCode: number;
+      timedOut: boolean;
+    };
+    expect(meta.aborted).toBe(true);
+    expect(meta.exitCode).toBe(130);
+    expect(meta.timedOut).toBe(false);
+  });
+
+  it('does not start a background shell task when the parent signal is already aborted', async () => {
+    const runtime = new BackgroundRecordingShellRuntime({ autoComplete: false });
+    const backgroundStoreDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'renx-tool-v2-shell-bg-preaborted-')
+    );
+    const system = new EnterpriseToolSystem(
+      createBuiltInToolHandlersV2({
+        shell: {
+          runtime,
+          approvalMode: 'policy',
+        },
+        shellBackgroundStore: new FileShellBackgroundExecutionStore({
+          baseDir: backgroundStoreDir,
+        }),
+      })
+    );
+    const controller = new AbortController();
+    controller.abort();
+
+    try {
+      const result = await system.execute(
+        {
+          toolCallId: 'shell-background-preaborted',
+          toolName: 'local_shell',
+          arguments: JSON.stringify({
+            command: 'pnpm dev',
+            runInBackground: true,
+          }),
+        },
+        createContext(workspaceDir, {
+          signal: controller.signal,
+        })
+      );
+
+      expect(result.success).toBe(false);
+      if (result.success) {
+        return;
+      }
+      expect(result.error.errorCode).toBe('TOOL_V2_ABORTED');
+      expect(runtime.backgroundTaskCount()).toBe(0);
+    } finally {
+      await fs.rm(backgroundStoreDir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns a tool failure when background shell startup fails before a task is created', async () => {
+    class FailingBackgroundRuntime extends RecordingShellRuntime {
+      override getCapabilities(): ShellRuntimeCapabilities {
+        return {
+          ...super.getCapabilities(),
+          background: {
+            supported: true,
+          },
+        };
+      }
+
+      async startBackground(): Promise<ShellBackgroundExecutionRecord> {
+        throw new Error('spawn failed');
+      }
+    }
+
+    const runtime = new FailingBackgroundRuntime();
+    const backgroundStoreDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'renx-tool-v2-shell-bg-failing-')
+    );
+    const system = new EnterpriseToolSystem(
+      createBuiltInToolHandlersV2({
+        shell: {
+          runtime,
+          approvalMode: 'policy',
+        },
+        shellBackgroundStore: new FileShellBackgroundExecutionStore({
+          baseDir: backgroundStoreDir,
+        }),
+      })
+    );
+
+    try {
+      const result = await system.execute(
+        {
+          toolCallId: 'shell-background-start-failure',
+          toolName: 'local_shell',
+          arguments: JSON.stringify({
+            command: 'pnpm dev',
+            runInBackground: true,
+          }),
+        },
+        createContext(workspaceDir)
+      );
+
+      expect(result.success).toBe(false);
+      if (result.success) {
+        return;
+      }
+      expect(result.output).toContain('spawn failed');
+    } finally {
+      await fs.rm(backgroundStoreDir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns a tool abort error when a foreground shell command is cancelled by the parent signal', async () => {
+    const system = new EnterpriseToolSystem([
+      new LocalShellToolV2({
+        approvalMode: 'policy',
+      }),
+    ]);
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 50);
+
+    const result = await system.execute(
+      {
+        toolCallId: 'shell-foreground-parent-abort',
+        toolName: 'local_shell',
+        arguments: JSON.stringify({
+          command: `"${process.execPath}" -e "setInterval(function () {}, 1000)"`,
+          timeoutMs: 5_000,
+        }),
+      },
+      createContext(workspaceDir, {
+        signal: controller.signal,
+      })
+    );
+
+    expect(result.success).toBe(false);
+    if (result.success) {
+      return;
+    }
+    expect(result.error.errorCode).toBe('TOOL_V2_ABORTED');
+    expect(result.error.category).toBe('abort');
+    expect(result.output).toContain('Shell command aborted');
+  });
+
   it('cascades parent abort into background shell cancellation', async () => {
     const runtime = new BackgroundRecordingShellRuntime({ autoComplete: false });
     const backgroundStoreDir = await fs.mkdtemp(
@@ -900,6 +1139,7 @@ class RecordingShellRuntime implements ShellRuntime {
     return {
       exitCode: 0,
       timedOut: false,
+      aborted: false,
       output: 'ok',
     };
   }
@@ -909,6 +1149,10 @@ class BackgroundRecordingShellRuntime extends RecordingShellRuntime {
   private nextId = 1;
   private readonly backgroundRecords = new Map<string, ShellBackgroundExecutionRecord>();
   private readonly autoComplete: boolean;
+
+  backgroundTaskCount(): number {
+    return this.backgroundRecords.size;
+  }
 
   constructor(options?: { autoComplete?: boolean }) {
     super();

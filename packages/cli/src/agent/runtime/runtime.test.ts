@@ -255,6 +255,7 @@ describe('runtime', () => {
   const originalAgentModel = process.env.AGENT_MODEL;
   const originalFullAccess = process.env.AGENT_FULL_ACCESS;
   const originalServerSideContinuation = process.env.AGENT_ENABLE_SERVER_SIDE_CONTINUATION;
+  const originalTimeoutBudgetMs = process.env.AGENT_TIMEOUT_BUDGET_MS;
   const originalOpenAIBase = process.env.OPENAI_API_BASE;
   const originalPromptCacheKey = process.env.AGENT_PROMPT_CACHE_KEY;
   const originalPromptCacheRetention = process.env.AGENT_PROMPT_CACHE_RETENTION;
@@ -271,6 +272,7 @@ describe('runtime', () => {
     delete process.env.AGENT_TOOL_NETWORK_MODE;
     delete process.env.AGENT_FULL_ACCESS;
     delete process.env.AGENT_ENABLE_SERVER_SIDE_CONTINUATION;
+    delete process.env.AGENT_TIMEOUT_BUDGET_MS;
     delete process.env.OPENAI_API_BASE;
     delete process.env.AGENT_PROMPT_CACHE_KEY;
     delete process.env.AGENT_PROMPT_CACHE_RETENTION;
@@ -304,6 +306,11 @@ describe('runtime', () => {
       delete process.env.AGENT_ENABLE_SERVER_SIDE_CONTINUATION;
     } else {
       process.env.AGENT_ENABLE_SERVER_SIDE_CONTINUATION = originalServerSideContinuation;
+    }
+    if (originalTimeoutBudgetMs === undefined) {
+      delete process.env.AGENT_TIMEOUT_BUDGET_MS;
+    } else {
+      process.env.AGENT_TIMEOUT_BUDGET_MS = originalTimeoutBudgetMs;
     }
     if (originalOpenAIBase === undefined) {
       delete process.env.OPENAI_API_BASE;
@@ -684,6 +691,67 @@ describe('runtime', () => {
         },
       })
     );
+  });
+
+  it('forwards AGENT_TIMEOUT_BUDGET_MS into the agent runtime config', async () => {
+    process.env.AGENT_TIMEOUT_BUDGET_MS = '90000';
+    const modules = buildMockModules();
+    const createEnterpriseAgentAppService = modules.createEnterpriseAgentAppService as ReturnType<
+      typeof vi.fn
+    >;
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    await runAgentPrompt('Test prompt', {});
+
+    expect(createEnterpriseAgentAppService).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentConfig: expect.objectContaining({
+          timeoutBudgetMs: 90000,
+        }),
+      })
+    );
+  });
+
+  it('ignores non-positive AGENT_TIMEOUT_BUDGET_MS values', async () => {
+    process.env.AGENT_TIMEOUT_BUDGET_MS = '0';
+    const modules = buildMockModules();
+    const createEnterpriseAgentAppService = modules.createEnterpriseAgentAppService as ReturnType<
+      typeof vi.fn
+    >;
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    await runAgentPrompt('Test prompt', {});
+
+    const options = createEnterpriseAgentAppService.mock.calls.at(-1)?.[0] as {
+      agentConfig?: {
+        timeoutBudgetMs?: number;
+      };
+    };
+    expect(options.agentConfig?.timeoutBudgetMs).toBeUndefined();
+  });
+
+  it('ignores unparsable AGENT_TIMEOUT_BUDGET_MS values', async () => {
+    process.env.AGENT_TIMEOUT_BUDGET_MS = 'abc';
+    const modules = buildMockModules();
+    const createEnterpriseAgentAppService = modules.createEnterpriseAgentAppService as ReturnType<
+      typeof vi.fn
+    >;
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    await runAgentPrompt('Test prompt', {});
+
+    const options = createEnterpriseAgentAppService.mock.calls.at(-1)?.[0] as {
+      agentConfig?: {
+        timeoutBudgetMs?: number;
+      };
+    };
+    expect(options.agentConfig?.timeoutBudgetMs).toBeUndefined();
   });
 
   it('enables server-side continuation by default for official responses models', async () => {

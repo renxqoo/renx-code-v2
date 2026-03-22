@@ -104,6 +104,7 @@ const syncPreferredModelIdFromEnv = (): string | undefined => {
 const DEFAULT_MODEL = 'minimax-2.7';
 const DEFAULT_MAX_STEPS = 10000;
 const DEFAULT_MAX_RETRY_COUNT = 10;
+const AGENT_TIMEOUT_BUDGET_MS_ENV = 'AGENT_TIMEOUT_BUDGET_MS';
 const PARENT_HIDDEN_TOOL_NAMES = new Set(['file_history_list', 'file_history_restore']);
 const AGENT_FULL_ACCESS_ENV = 'AGENT_FULL_ACCESS';
 const AGENT_ENABLE_SERVER_SIDE_CONTINUATION_ENV = 'AGENT_ENABLE_SERVER_SIDE_CONTINUATION';
@@ -120,9 +121,24 @@ const parsePositiveInt = (raw: string | undefined, fallback: number): number => 
   return value;
 };
 
+const parseOptionalPositiveInt = (raw: string | undefined): number | undefined => {
+  if (!raw || raw.trim().length === 0) {
+    return undefined;
+  }
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  return value;
+};
+
 const isFullAccessEnabled = (env: NodeJS.ProcessEnv = process.env): boolean => {
   const raw = env[AGENT_FULL_ACCESS_ENV]?.trim().toLowerCase();
   return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+};
+
+const resolveTimeoutBudgetMs = (env: NodeJS.ProcessEnv = process.env): number | undefined => {
+  return parseOptionalPositiveInt(env[AGENT_TIMEOUT_BUDGET_MS_ENV]);
 };
 
 const parseBooleanEnv = (raw: string | undefined): boolean | undefined => {
@@ -608,6 +624,7 @@ const createRuntime = async (): Promise<RuntimeCore> => {
       maxRetryCount: parsePositiveInt(process.env.AGENT_MAX_RETRY_COUNT, DEFAULT_MAX_RETRY_COUNT),
       enableCompaction: true,
       enableServerSideContinuation: isServerSideContinuationEnabled(modelConfig, process.env),
+      timeoutBudgetMs: resolveTimeoutBudgetMs(process.env),
       logger: agentLogger,
     },
     storePath: resolveDbPath(modules),

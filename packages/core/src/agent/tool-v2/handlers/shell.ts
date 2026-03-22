@@ -7,7 +7,7 @@ import type {
   ToolPermissionProfile,
   ToolSandboxMode,
 } from '../contracts';
-import { ToolV2ExecutionError } from '../errors';
+import { ToolV2AbortError, ToolV2ExecutionError } from '../errors';
 import {
   arraySchema,
   booleanSchema,
@@ -318,6 +318,9 @@ export class LocalShellToolV2 extends StructuredToolHandler<typeof schema> {
     });
     await syncShellRuntimeSandboxPolicy(this.runtime, sandboxPolicy);
     if (args.runInBackground === true) {
+      if (context.signal?.aborted) {
+        throw new ToolV2AbortError('Background shell command aborted before start');
+      }
       if (!this.backgroundService || !shellRuntimeSupportsBackground(this.runtime)) {
         throw new ToolV2ExecutionError('Shell runtime is not configured for background execution', {
           policyProfile: this.policyProfileName,
@@ -377,6 +380,29 @@ export class LocalShellToolV2 extends StructuredToolHandler<typeof schema> {
       emit: context.emit,
     });
     const formattedOutput = formatForegroundShellOutput(result.output, result.artifact);
+    if (result.aborted) {
+      throw new ToolV2AbortError(
+        formattedOutput ? `Shell command aborted\n${formattedOutput}` : 'Shell command aborted',
+        {
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          aborted: result.aborted,
+          outputTruncated: result.artifact?.truncated || false,
+          ...(result.artifact
+            ? {
+                outputArtifact: {
+                  runId: result.artifact.runId,
+                  runDir: result.artifact.runDir,
+                  combinedPath: result.artifact.combinedPath,
+                  stdoutPath: result.artifact.stdoutPath,
+                  stderrPath: result.artifact.stderrPath,
+                  metaPath: result.artifact.metaPath,
+                },
+              }
+            : {}),
+        }
+      );
+    }
     return {
       output: formattedOutput,
       structured: {
@@ -470,6 +496,7 @@ async function executeShellCommand(options: {
 }): Promise<{
   exitCode: number;
   timedOut: boolean;
+  aborted: boolean;
   output: string;
   artifact?: ShellOutputArtifact;
 }> {

@@ -40,10 +40,45 @@ const FALLBACK_FILE_MIME = 'application/octet-stream';
 const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024;
 const MAX_TEXT_ATTACHMENT_CHARS = 80_000;
 const TEXT_DECODER = new TextDecoder('utf-8', { fatal: false });
+const STRICT_TEXT_DECODER = new TextDecoder('utf-8', { fatal: true });
+const TEXT_FILE_EXTENSIONS = new Set([
+  '.c',
+  '.cc',
+  '.cpp',
+  '.cs',
+  '.css',
+  '.csv',
+  '.go',
+  '.html',
+  '.java',
+  '.js',
+  '.json',
+  '.jsx',
+  '.log',
+  '.md',
+  '.mjs',
+  '.py',
+  '.rb',
+  '.rs',
+  '.sh',
+  '.sql',
+  '.svg',
+  '.toml',
+  '.ts',
+  '.tsx',
+  '.txt',
+  '.xml',
+  '.yaml',
+  '.yml',
+]);
 
 const formatFileFence = (path: string, content: string, truncated: boolean) => {
   const suffix = truncated ? '\n\n[truncated for prompt size]' : '';
   return `Attached file: ${path}\n\n\`\`\`\n${content}\n\`\`\`${suffix}`;
+};
+
+const formatBinaryFileNotice = (path: string) => {
+  return `Attached file: ${path}\n\n[binary attachment omitted from prompt text]`;
 };
 
 const inferMimeType = (path: string) => {
@@ -59,6 +94,54 @@ const inferMimeType = (path: string) => {
 const isImageMimeType = (mimeType: string) => mimeType.startsWith('image/');
 const isAudioMimeType = (mimeType: string) => mimeType.startsWith('audio/');
 const isVideoMimeType = (mimeType: string) => mimeType.startsWith('video/');
+
+const hasBinaryControlBytes = (buffer: Uint8Array) => {
+  for (const byte of buffer) {
+    if (byte === 0) {
+      return true;
+    }
+    if (byte < 0x09 || (byte > 0x0d && byte < 0x20)) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const hasSuspiciousControlChars = (text: string) => {
+  for (let index = 0; index < text.length; index += 1) {
+    const codePoint = text.charCodeAt(index);
+    if (codePoint === 0xfffd) {
+      return true;
+    }
+    if (codePoint < 0x20 && codePoint !== 0x09 && codePoint !== 0x0a && codePoint !== 0x0d) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const isTextLikeBuffer = (buffer: Uint8Array) => {
+  if (buffer.byteLength === 0) {
+    return true;
+  }
+  if (hasBinaryControlBytes(buffer)) {
+    return false;
+  }
+  try {
+    const text = STRICT_TEXT_DECODER.decode(buffer);
+    return !hasSuspiciousControlChars(text);
+  } catch {
+    return false;
+  }
+};
+
+const isTextLikeFile = (file: PromptFileSelection, buffer: Uint8Array) => {
+  const extension = extname(file.relativePath).toLowerCase();
+  if (TEXT_FILE_EXTENSIONS.has(extension)) {
+    return true;
+  }
+  return isTextLikeBuffer(buffer);
+};
 
 const toImagePart = (file: PromptFileSelection, buffer: Uint8Array): InputContentPart => {
   const mimeType = inferMimeType(file.relativePath);
@@ -97,6 +180,13 @@ const toVideoTextPart = (file: PromptFileSelection): InputContentPart => {
   };
 };
 
+const toBinaryNoticePart = (file: PromptFileSelection): InputContentPart => {
+  return {
+    type: 'text',
+    text: formatBinaryFileNotice(file.relativePath),
+  };
+};
+
 const toFileParts = async (
   file: PromptFileSelection,
   capabilities: AttachmentModelCapabilities
@@ -123,6 +213,10 @@ const toFileParts = async (
 
   if (isVideoMimeType(mimeType) && capabilities.video && isVideoSelection(file)) {
     return [toVideoTextPart(file)];
+  }
+
+  if (!isTextLikeFile(file, buffer)) {
+    return [toBinaryNoticePart(file)];
   }
 
   return [toTextPart(file, buffer)];

@@ -318,6 +318,7 @@ class RecordingShellRuntime implements ShellRuntime {
     return {
       exitCode: 0,
       timedOut: false,
+      aborted: false,
       output: 'ok',
     };
   }

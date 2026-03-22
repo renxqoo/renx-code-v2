@@ -11,6 +11,7 @@ import { BrokeredShellRuntime } from '../runtimes/brokered-shell-runtime';
 import { resolveBundledRipgrepPathEntries } from '../runtimes/bundled-ripgrep';
 import type {
   LocalProcessShellRuntime,
+  ShellBackgroundExecutionRecord,
   ShellRuntime,
   ShellRuntimeCapabilities,
   ShellRuntimeRequest,
@@ -18,6 +19,7 @@ import type {
 } from '../runtimes/shell-runtime';
 import {
   LocalProcessShellRuntime as LocalProcessShellRuntimeImpl,
+  createForegroundProcessLifecycleController,
   resolvePreferredShell,
 } from '../runtimes/shell-runtime';
 import { truncateShellOutput } from '../runtimes/shell-output';
@@ -116,6 +118,72 @@ describe('shell runtime adapters', () => {
     expect(result.output).toContain('before');
     expect(result.output).toContain('after');
     expect(result.output).not.toContain('65;72;22M');
+  });
+
+  it('preserves UTF-8 characters when stdout bytes are split across chunks', async () => {
+    const runtime = new LocalProcessShellRuntimeImpl();
+    const stdoutChunks: string[] = [];
+    const scriptPath = path.join(workspaceDir, 'split-utf8.js');
+    await fs.writeFile(
+      scriptPath,
+      "const b = Buffer.from('中', 'utf8'); process.stdout.write(b.subarray(0, 1)); setTimeout(() => process.stdout.write(b.subarray(1)), 20);",
+      'utf8'
+    );
+
+    const command =
+      process.platform === 'win32'
+        ? `& "${process.execPath}" "${scriptPath}"`
+        : `"${process.execPath}" "${scriptPath}"`;
+
+    const result = await runtime.execute({
+      command,
+      cwd: workspaceDir,
+      timeoutMs: 5_000,
+      sandbox: 'workspace-write',
+      onStdout: async (chunk) => {
+        stdoutChunks.push(chunk);
+      },
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.output).toContain('中');
+    expect(result.output).not.toContain('�');
+    expect(stdoutChunks.join('')).toContain('中');
+    expect(stdoutChunks.join('')).not.toContain('�');
+  });
+
+  it('does not leak split ANSI control sequences into streamed stdout', async () => {
+    const runtime = new LocalProcessShellRuntimeImpl();
+    const stdoutChunks: string[] = [];
+    const scriptPath = path.join(workspaceDir, 'split-ansi.js');
+    await fs.writeFile(
+      scriptPath,
+      "process.stdout.write('\\u001b'); setTimeout(() => process.stdout.write('[31mRED'), 20); setTimeout(() => process.stdout.write('\\u001b[0m'), 40);",
+      'utf8'
+    );
+
+    const command =
+      process.platform === 'win32'
+        ? `& "${process.execPath}" "${scriptPath}"`
+        : `"${process.execPath}" "${scriptPath}"`;
+
+    const result = await runtime.execute({
+      command,
+      cwd: workspaceDir,
+      timeoutMs: 5_000,
+      sandbox: 'workspace-write',
+      onStdout: async (chunk) => {
+        stdoutChunks.push(chunk);
+      },
+    });
+
+    const streamed = stdoutChunks.join('');
+    expect(result.exitCode).toBe(0);
+    expect(streamed).toContain('RED');
+    expect(streamed).not.toContain('[31m');
+    expect(streamed).not.toContain('[0m');
+    expect(result.output).toContain('RED');
+    expect(result.output).not.toContain('[31m');
   });
 
   it('routes sandboxed and escalated executions through the brokered runtime', async () => {
@@ -260,6 +328,58 @@ describe('shell runtime adapters', () => {
     }
   });
 
+  it('does not persist a foreground artifact for short successful output', async () => {
+    const runtime: LocalProcessShellRuntime = new LocalProcessShellRuntimeImpl({
+      maxForegroundPreviewChars: 256,
+    });
+    const system = new EnterpriseToolSystem([
+      new LocalShellToolV2({
+        runtime,
+        approvalMode: 'policy',
+        policy: createRuleBasedShellCommandPolicy({
+          rules: [],
+          fallback: {
+            evaluate(command) {
+              return {
+                effect: 'allow',
+                commands: [command],
+                preferredSandbox: 'workspace-write',
+                executionMode: 'sandboxed',
+              };
+            },
+          },
+        }),
+      }),
+    ]);
+
+    const cacheDir = path.join(workspaceDir, '.renx', 'cache', 'shell');
+    const result = await system.execute(
+      {
+        toolCallId: 'local-process-short-success',
+        toolName: 'local_shell',
+        arguments: JSON.stringify({
+          command: `node -e "process.stdout.write('short output');"`,
+        }),
+      },
+      createContext(workspaceDir)
+    );
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+
+    expect(result.output).toContain('short output');
+    expect(result.output).not.toContain('Full output saved to:');
+    const structured = result.structured as {
+      outputTruncated: boolean;
+      outputArtifact?: unknown;
+    };
+    expect(structured.outputTruncated).toBe(false);
+    expect(structured.outputArtifact).toBeUndefined();
+    await expect(fs.access(cacheDir)).rejects.toThrow();
+  });
+
   it('writes full foreground output to a project-local cache directory and returns truncated preview paths', async () => {
     const runtime: LocalProcessShellRuntime = new LocalProcessShellRuntimeImpl({
       maxForegroundPreviewChars: 256,
@@ -329,6 +449,389 @@ describe('shell runtime adapters', () => {
     expect(meta.combinedPath).toBe(structured.outputArtifact.combinedPath);
   });
 
+  it('persists a foreground artifact for short failed output', async () => {
+    const runtime: LocalProcessShellRuntime = new LocalProcessShellRuntimeImpl({
+      maxForegroundPreviewChars: 256,
+    });
+    const system = new EnterpriseToolSystem([
+      new LocalShellToolV2({
+        runtime,
+        approvalMode: 'policy',
+        policy: createRuleBasedShellCommandPolicy({
+          rules: [],
+          fallback: {
+            evaluate(command) {
+              return {
+                effect: 'allow',
+                commands: [command],
+                preferredSandbox: 'workspace-write',
+                executionMode: 'sandboxed',
+              };
+            },
+          },
+        }),
+      }),
+    ]);
+
+    const result = await system.execute(
+      {
+        toolCallId: 'local-process-short-failure',
+        toolName: 'local_shell',
+        arguments: JSON.stringify({
+          command: `node -e "process.stderr.write('boom'); process.exit(7);"`,
+        }),
+      },
+      createContext(workspaceDir)
+    );
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+
+    const structured = result.structured as {
+      exitCode: number;
+      outputTruncated: boolean;
+      outputArtifact?: {
+        combinedPath: string;
+        metaPath: string;
+      };
+    };
+    expect(structured.exitCode).toBe(7);
+    expect(structured.outputTruncated).toBe(false);
+    expect(structured.outputArtifact).toBeDefined();
+    expect(result.output).toContain('boom');
+    expect(result.output).not.toContain('Full output saved to:');
+
+    const combined = await fs.readFile(structured.outputArtifact!.combinedPath, 'utf8');
+    const meta = JSON.parse(await fs.readFile(structured.outputArtifact!.metaPath, 'utf8')) as {
+      truncated: boolean;
+      exitCode: number;
+    };
+
+    expect(combined).toContain('boom');
+    expect(meta.truncated).toBe(false);
+    expect(meta.exitCode).toBe(7);
+  });
+
+  it('marks foreground abort results explicitly in the runtime result', async () => {
+    const terminatedPids: number[] = [];
+    const runtime = new LocalProcessShellRuntimeImpl({
+      terminateProcess: (pid) => {
+        terminatedPids.push(pid);
+        try {
+          process.kill(pid);
+        } catch {
+          // ignore races while shutting down the spawned command
+        }
+      },
+    });
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 50);
+
+    const result = await runtime.execute({
+      command: `"${process.execPath}" -e "setInterval(function () {}, 1000)"`,
+      cwd: workspaceDir,
+      timeoutMs: 5_000,
+      sandbox: 'workspace-write',
+      signal: controller.signal,
+    });
+
+    expect(result.timedOut).toBe(false);
+    expect(result.aborted).toBe(true);
+    expect(result.exitCode).toBe(130);
+    expect(terminatedPids).toHaveLength(1);
+    expect(terminatedPids[0]).toEqual(expect.any(Number));
+  });
+
+  it('freezes foreground lifecycle abort state after exit is observed', async () => {
+    let terminateCalls = 0;
+    const controller = new AbortController();
+    const child = {
+      pid: 4242,
+      kill: () => undefined,
+    } as {
+      pid?: number;
+      kill: () => void;
+    } & import('node:events').EventEmitter;
+
+    const lifecycle = createForegroundProcessLifecycleController({
+      child: {
+        ...child,
+      } as never,
+      timeoutMs: 5_000,
+      signal: controller.signal,
+      terminateProcess: () => {
+        terminateCalls += 1;
+      },
+    });
+
+    lifecycle.markExited();
+    controller.abort();
+
+    expect(lifecycle.aborted()).toBe(false);
+    expect(lifecycle.timedOut()).toBe(false);
+    expect(terminateCalls).toBe(0);
+    lifecycle.cleanup();
+  });
+
+  it('returns an aborted result without spawning when the foreground signal is already aborted', async () => {
+    const runtime = new LocalProcessShellRuntimeImpl();
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await runtime.execute({
+      command: `"${process.execPath}" -e "require('node:fs').writeFileSync('should-not-exist.txt', 'x')"`,
+      cwd: workspaceDir,
+      timeoutMs: 5_000,
+      sandbox: 'workspace-write',
+      signal: controller.signal,
+    });
+
+    expect(result.aborted).toBe(true);
+    expect(result.timedOut).toBe(false);
+    expect(result.exitCode).toBe(130);
+    await expect(fs.access(path.join(workspaceDir, 'should-not-exist.txt'))).rejects.toThrow();
+  });
+
+  it('does not let lifecycle aborts override an already-exited foreground process result', async () => {
+    let terminateCalls = 0;
+    const controller = new AbortController();
+    const lifecycle = createForegroundProcessLifecycleController({
+      child: {
+        pid: 4242,
+        kill: () => undefined,
+      } as never,
+      timeoutMs: 5_000,
+      signal: controller.signal,
+      terminateProcess: () => {
+        terminateCalls += 1;
+      },
+    });
+
+    lifecycle.markExited();
+    controller.abort();
+
+    expect(lifecycle.aborted()).toBe(false);
+    expect(lifecycle.timedOut()).toBe(false);
+    expect(terminateCalls).toBe(0);
+    lifecycle.cleanup();
+  });
+
+  it('marks timed out background runs as timed_out when they exceed timeoutMs', async () => {
+    const terminatedPids: number[] = [];
+    const record: ShellBackgroundExecutionRecord = {
+      taskId: 'task_background_timeout',
+      command: 'node -e "setInterval(function () {}, 1000)"',
+      cwd: workspaceDir,
+      pid: 4243,
+      logPath: path.join(workspaceDir, 'background-timeout.log'),
+      statusPath: path.join(workspaceDir, 'background-timeout.status'),
+      status: 'running',
+      sandbox: 'workspace-write',
+      executionMode: 'sandboxed',
+      timeoutMs: 10,
+      createdAt: 1,
+      updatedAt: 1,
+      startedAt: 1,
+    };
+    await fs.writeFile(record.logPath, 'still running\n', 'utf8');
+
+    const advancedRuntime = new LocalProcessShellRuntimeImpl({
+      terminateProcess: (pid) => {
+        terminatedPids.push(pid);
+      },
+      now: () => 50,
+    });
+
+    const result = await advancedRuntime.pollBackground(record);
+    const statusContents = await fs.readFile(record.statusPath, 'utf8');
+
+    expect(result.status).toBe('timed_out');
+    expect(result.exitCode).toBe(124);
+    expect(result.error).toContain('timed out');
+    expect(statusContents).toBe('124');
+    expect(terminatedPids).toEqual([4243]);
+  });
+
+  it('fails background polling with timed_out when the status file reports exit code 124', async () => {
+    const runtime = new LocalProcessShellRuntimeImpl();
+    const logPath = path.join(workspaceDir, 'background-existing-timeout.log');
+    const statusPath = path.join(workspaceDir, 'background-existing-timeout.status');
+    await fs.writeFile(logPath, 'timed out output\n', 'utf8');
+    await fs.writeFile(statusPath, '124', 'utf8');
+
+    const result = await runtime.pollBackground({
+      taskId: 'task_background_existing_timeout',
+      command: 'sleep 999',
+      cwd: workspaceDir,
+      pid: 4244,
+      logPath,
+      statusPath,
+      status: 'running',
+      sandbox: 'workspace-write',
+      executionMode: 'sandboxed',
+      timeoutMs: 100,
+      createdAt: 1,
+      updatedAt: 1,
+      startedAt: 1,
+    });
+
+    expect(result.status).toBe('timed_out');
+    expect(result.exitCode).toBe(124);
+    expect(result.output).toContain('timed out output');
+  });
+
+  it('reads background output from a UTF-8 safe tail boundary', async () => {
+    const runtime = new LocalProcessShellRuntimeImpl({
+      maxBackgroundOutputBytes: 4,
+    });
+    const logPath = path.join(workspaceDir, 'background-utf8-tail.log');
+    const statusPath = path.join(workspaceDir, 'background-utf8-tail.status');
+    await fs.writeFile(logPath, '甲乙', 'utf8');
+
+    const result = await runtime.pollBackground({
+      taskId: 'task_background_utf8_tail',
+      command: 'echo utf8',
+      cwd: workspaceDir,
+      pid: 4245,
+      logPath,
+      statusPath,
+      status: 'completed',
+      sandbox: 'workspace-write',
+      executionMode: 'sandboxed',
+      timeoutMs: 100,
+      createdAt: 1,
+      updatedAt: 1,
+      startedAt: 1,
+      endedAt: 1,
+    });
+
+    expect(result.output).toBe('乙');
+    expect(result.output).not.toContain('�');
+  });
+
+  it('persists abort metadata when a foreground shell command is cancelled', async () => {
+    const runtime = new LocalProcessShellRuntimeImpl({
+      foregroundBaseDir: path.join(workspaceDir, 'foreground-artifacts'),
+    });
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 50);
+
+    const result = await runtime.execute({
+      command: `"${process.execPath}" -e "setInterval(function () {}, 1000)"`,
+      cwd: workspaceDir,
+      timeoutMs: 5_000,
+      sandbox: 'workspace-write',
+      signal: controller.signal,
+    });
+
+    expect(result.aborted).toBe(true);
+    expect(result.artifact).toBeDefined();
+    const meta = JSON.parse(await fs.readFile(result.artifact!.metaPath, 'utf8')) as {
+      aborted: boolean;
+      timedOut: boolean;
+      exitCode: number;
+    };
+    expect(meta.aborted).toBe(true);
+    expect(meta.timedOut).toBe(false);
+    expect(meta.exitCode).toBe(130);
+  });
+
+  it('does not report foreground aborts as timeouts', async () => {
+    const terminatedPids: number[] = [];
+    const runtime = new LocalProcessShellRuntimeImpl({
+      terminateProcess: (pid) => {
+        terminatedPids.push(pid);
+        try {
+          process.kill(pid);
+        } catch {
+          // ignore races while shutting down the spawned command
+        }
+      },
+    });
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 50);
+
+    const result = await runtime.execute({
+      command: `"${process.execPath}" -e "setInterval(function () {}, 1000)"`,
+      cwd: workspaceDir,
+      timeoutMs: 5_000,
+      sandbox: 'workspace-write',
+      signal: controller.signal,
+    });
+
+    expect(result.timedOut).toBe(false);
+    expect(result.aborted).toBe(true);
+    expect(result.exitCode).toBe(130);
+    expect(terminatedPids).toHaveLength(1);
+    expect(terminatedPids[0]).toEqual(expect.any(Number));
+  });
+
+  it('uses the configured process terminator for foreground timeout handling', async () => {
+    const terminatedPids: number[] = [];
+    const runtime = new LocalProcessShellRuntimeImpl({
+      terminateProcess: (pid) => {
+        terminatedPids.push(pid);
+        try {
+          process.kill(pid);
+        } catch {
+          // ignore races while shutting down the spawned command
+        }
+      },
+    });
+
+    const result = await runtime.execute({
+      command: `"${process.execPath}" -e "setInterval(function () {}, 1000)"`,
+      cwd: workspaceDir,
+      timeoutMs: 50,
+      sandbox: 'workspace-write',
+    });
+
+    expect(result.timedOut).toBe(true);
+    expect(result.aborted).toBe(false);
+    expect(terminatedPids).toHaveLength(1);
+    expect(terminatedPids[0]).toEqual(expect.any(Number));
+  });
+
+  it('uses the configured process terminator for background cancellation', async () => {
+    const terminatedPids: number[] = [];
+    const runtime = new LocalProcessShellRuntimeImpl({
+      terminateProcess: (pid) => {
+        terminatedPids.push(pid);
+      },
+    });
+    const logPath = path.join(workspaceDir, 'background.log');
+    const statusPath = path.join(workspaceDir, 'background.status');
+    await fs.writeFile(logPath, 'background output\n', 'utf8');
+
+    const record: ShellBackgroundExecutionRecord = {
+      taskId: 'task_background_cancel',
+      command: 'node -e "setInterval(function () {}, 1000)"',
+      cwd: workspaceDir,
+      pid: 4242,
+      logPath,
+      statusPath,
+      status: 'running',
+      sandbox: 'workspace-write',
+      executionMode: 'sandboxed',
+      timeoutMs: 1000,
+      createdAt: 1,
+      updatedAt: 1,
+      startedAt: 1,
+    };
+
+    const result = await runtime.cancelBackground(record, 'Cancelled by test');
+    const statusContents = await fs.readFile(statusPath, 'utf8');
+
+    expect(terminatedPids).toEqual([4242]);
+    expect(statusContents).toBe('130');
+    expect(result.status).toBe('cancelled');
+    expect(result.exitCode).toBe(130);
+    expect(result.error).toBe('Cancelled by test');
+    expect(result.output).toContain('background output');
+  });
+
   it('runs PowerShell-native commands directly on Windows by default', async () => {
     if (process.platform !== 'win32') {
       return;
@@ -371,6 +874,51 @@ describe('shell runtime adapters', () => {
       expect((result.structured as { exitCode: number }).exitCode).toBe(0);
       expect(result.output).toContain('alpha');
       expect(result.output).toContain('beta');
+    }
+  });
+
+  it('preserves native child exit codes even when later PowerShell statements succeed on Windows', async () => {
+    if (process.platform !== 'win32') {
+      return;
+    }
+
+    const runtime: LocalProcessShellRuntime = new LocalProcessShellRuntimeImpl();
+    const system = new EnterpriseToolSystem([
+      new LocalShellToolV2({
+        runtime,
+        approvalMode: 'policy',
+        policy: createRuleBasedShellCommandPolicy({
+          rules: [],
+          fallback: {
+            evaluate(command) {
+              return {
+                effect: 'allow',
+                commands: [command],
+                preferredSandbox: 'workspace-write',
+                executionMode: 'sandboxed',
+              };
+            },
+          },
+        }),
+      }),
+    ]);
+
+    const result = await system.execute(
+      {
+        toolCallId: 'local-process-powershell-native-exitcode',
+        toolName: 'local_shell',
+        arguments: JSON.stringify({
+          command: 'cmd /c exit 7; Write-Output ok',
+        }),
+      },
+      createContext(workspaceDir)
+    );
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect((result.structured as { exitCode: number; timedOut: boolean }).exitCode).toBe(7);
+      expect((result.structured as { exitCode: number; timedOut: boolean }).timedOut).toBe(false);
+      expect(result.output).toContain('ok');
     }
   });
 
@@ -503,6 +1051,7 @@ class RecordingRuntime implements ShellRuntime {
     return {
       exitCode: 0,
       timedOut: false,
+      aborted: false,
       output: request.command,
     };
   }

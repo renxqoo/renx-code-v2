@@ -4,6 +4,13 @@ import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 import stripAnsi from 'strip-ansi';
 
+export type ShellOutputStream = 'stdout' | 'stderr';
+
+export interface BufferedShellChunk {
+  readonly stream: ShellOutputStream;
+  readonly chunk: string;
+}
+
 export interface ShellOutputArtifact {
   readonly runId: string;
   readonly runDir: string;
@@ -28,6 +35,10 @@ export interface ShellOutputCaptureResult extends ShellOutputPreview {
   readonly artifact: ShellOutputArtifact;
 }
 
+export interface DeferredShellOutputCaptureResult extends ShellOutputPreview {
+  readonly artifact?: ShellOutputArtifact;
+}
+
 interface ShellOutputCaptureOptions {
   readonly baseDir: string;
   readonly command: string;
@@ -43,6 +54,7 @@ interface ShellOutputCaptureMeta {
   readonly createdAt: number;
   readonly exitCode: number;
   readonly timedOut: boolean;
+  readonly aborted: boolean;
   readonly stdoutPath: string;
   readonly stderrPath: string;
   readonly combinedPath: string;
@@ -64,7 +76,7 @@ type ShellStreamSanitizerState = {
   awaitingStringTerminator: boolean;
 };
 
-const createShellStreamSanitizerState = (): ShellStreamSanitizerState => ({
+export const createShellStreamSanitizerState = (): ShellStreamSanitizerState => ({
   mode: 'text',
   awaitingStringTerminator: false,
 });
@@ -277,6 +289,18 @@ export class ShellOutputCapture {
     });
   }
 
+  static createSync(options: ShellOutputCaptureOptions): ShellOutputCapture {
+    const runId = `run_${(options.now || Date.now)()}_${randomUUID().slice(0, 8)}`;
+    const runDir = path.join(path.resolve(options.baseDir), runId);
+    fs.mkdirSync(runDir, { recursive: true });
+    return new ShellOutputCapture({
+      ...options,
+      previewChars: normalizePreviewChars(options.previewChars),
+      runId,
+      runDir,
+    });
+  }
+
   appendStdout(chunk: string): void {
     this.stdoutBytes += Buffer.byteLength(chunk, 'utf8');
     this.appendCombined(chunk);
@@ -289,9 +313,24 @@ export class ShellOutputCapture {
     this.stderrStream.write(chunk);
   }
 
+  appendChunk(entry: BufferedShellChunk): void {
+    if (entry.stream === 'stdout') {
+      this.appendStdout(entry.chunk);
+      return;
+    }
+    this.appendStderr(entry.chunk);
+  }
+
+  appendChunks(entries: Iterable<BufferedShellChunk>): void {
+    for (const entry of entries) {
+      this.appendChunk(entry);
+    }
+  }
+
   async finalize(params: {
     exitCode: number;
     timedOut: boolean;
+    aborted: boolean;
   }): Promise<ShellOutputCaptureResult> {
     await Promise.all([
       closeStream(this.stdoutStream),
@@ -321,6 +360,7 @@ export class ShellOutputCapture {
       createdAt: this.createdAt,
       exitCode: params.exitCode,
       timedOut: params.timedOut,
+      aborted: params.aborted,
       stdoutPath: this.stdoutPath,
       stderrPath: this.stderrPath,
       combinedPath: this.combinedPath,
@@ -346,6 +386,72 @@ export class ShellOutputCapture {
   }
 }
 
+export class DeferredShellOutputCapture {
+  private readonly preview: RollingShellOutputPreview;
+  private readonly bufferedChunks: BufferedShellChunk[] = [];
+  private readonly options: ShellOutputCaptureOptions;
+  private persistedCapture?: ShellOutputCapture;
+
+  constructor(options: ShellOutputCaptureOptions) {
+    this.options = {
+      ...options,
+      baseDir: path.resolve(options.baseDir),
+      previewChars: normalizePreviewChars(options.previewChars),
+    };
+    this.preview = new RollingShellOutputPreview(this.options.previewChars);
+  }
+
+  appendStdout(chunk: string): void {
+    this.appendChunk({ stream: 'stdout', chunk });
+  }
+
+  appendStderr(chunk: string): void {
+    this.appendChunk({ stream: 'stderr', chunk });
+  }
+
+  async finalize(params: {
+    exitCode: number;
+    timedOut: boolean;
+    aborted: boolean;
+  }): Promise<DeferredShellOutputCaptureResult> {
+    if (
+      !this.persistedCapture &&
+      (this.preview.hasTruncated || params.exitCode !== 0 || params.timedOut || params.aborted)
+    ) {
+      this.persistBufferedOutput();
+    }
+
+    if (this.persistedCapture) {
+      return this.persistedCapture.finalize(params);
+    }
+
+    return this.preview.finish();
+  }
+
+  private appendChunk(entry: BufferedShellChunk): void {
+    this.preview.append(entry.chunk);
+    if (this.persistedCapture) {
+      this.persistedCapture.appendChunk(entry);
+      return;
+    }
+
+    this.bufferedChunks.push(entry);
+    if (this.preview.hasTruncated) {
+      this.persistBufferedOutput();
+    }
+  }
+
+  private persistBufferedOutput(): void {
+    if (this.persistedCapture) {
+      return;
+    }
+
+    this.persistedCapture = ShellOutputCapture.createSync(this.options);
+    this.persistedCapture.appendChunks(this.bufferedChunks);
+    this.bufferedChunks.length = 0;
+  }
+}
+
 class RollingShellOutputPreview {
   readonly maxChars: number;
   private readonly headChars: number;
@@ -360,6 +466,10 @@ class RollingShellOutputPreview {
     this.maxChars = normalizePreviewChars(maxChars);
     this.headChars = Math.ceil(this.maxChars / 2);
     this.tailChars = Math.floor(this.maxChars / 2);
+  }
+
+  get hasTruncated(): boolean {
+    return this.truncated;
   }
 
   append(chunk: string): void {

@@ -50,9 +50,10 @@ export function createWindowsForegroundShellInvocation(
   command: string
 ): { shellPath: string; shellArgs: string[] } {
   if (shell.flavor === 'powershell') {
+    const script = buildPowerShellExitPreservingScript(command);
     return {
       shellPath: shell.shellPath,
-      shellArgs: ['-NoProfile', '-Command', prefixPowerShellScriptWithUtf8(command)],
+      shellArgs: ['-NoProfile', '-EncodedCommand', encodePowerShellScript(script)],
     };
   }
 
@@ -70,8 +71,7 @@ export function createWindowsBackgroundShellInvocation(
   if (shell.flavor === 'powershell') {
     const statusPathLiteral = escapePowerShellSingleQuotedString(statusPath);
     const script = [
-      prefixPowerShellScriptWithUtf8(command),
-      '$__renx_exit = if ($null -ne $LASTEXITCODE) { [int]$LASTEXITCODE } elseif ($?) { 0 } else { 1 }',
+      buildPowerShellExitPreservingScript(command, false),
       `Set-Content -Path '${statusPathLiteral}' -Value $__renx_exit -NoNewline`,
       'exit $__renx_exit',
     ].join('\n');
@@ -94,6 +94,17 @@ export function createWindowsBackgroundShellInvocation(
 
 function encodePowerShellScript(script: string): string {
   return Buffer.from(script, 'utf16le').toString('base64');
+}
+
+function buildPowerShellExitPreservingScript(command: string, appendExit = true): string {
+  const script = [
+    prefixPowerShellScriptWithUtf8(command),
+    '$__renx_exit = if ($null -ne $LASTEXITCODE) { [int]$LASTEXITCODE } elseif ($?) { 0 } else { 1 }',
+  ];
+  if (appendExit) {
+    script.push('exit $__renx_exit');
+  }
+  return script.join('\n');
 }
 
 function escapePowerShellSingleQuotedString(value: string): string {

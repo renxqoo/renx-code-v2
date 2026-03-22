@@ -1,9 +1,12 @@
 import { spawn, spawnSync } from 'node:child_process';
+import type { ChildProcessByStdio } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import type { Readable } from 'node:stream';
 import {
   createPosixBackgroundShellInvocation,
   createPosixForegroundShellInvocation,
@@ -15,11 +18,13 @@ import {
   resolvePreferredWindowsShell,
 } from './shell-runtime-windows';
 import {
-  ShellOutputCapture,
+  createShellStreamSanitizerState,
+  DeferredShellOutputCapture,
   type ShellOutputArtifact,
   sanitizeShellStreamChunk,
 } from './shell-output';
 import { resolveBundledRipgrepPathEntries } from './bundled-ripgrep';
+import { ToolV2AbortError } from '../errors';
 import type { ToolSandboxMode } from '../contracts';
 import type { ShellExecutionMode } from '../shell-policy';
 import type { ShellSandboxPolicy } from '../shell-sandbox';
@@ -92,6 +97,7 @@ export interface ShellBackgroundExecutionRecord {
 export interface ShellRuntimeResult {
   readonly exitCode: number;
   readonly timedOut: boolean;
+  readonly aborted: boolean;
   readonly output: string;
   readonly artifact?: ShellOutputArtifact;
 }
@@ -131,7 +137,17 @@ export interface LocalProcessShellRuntimeOptions {
   readonly maxBackgroundOutputBytes?: number;
   readonly maxForegroundPreviewChars?: number;
   readonly extraPathEntries?: readonly string[];
+  readonly terminateProcess?: (pid: number) => void;
 }
+
+interface ForegroundProcessLifecycleController {
+  readonly timedOut: () => boolean;
+  readonly aborted: () => boolean;
+  markExited: () => void;
+  cleanup: () => void;
+}
+
+type ForegroundShellChildProcess = ChildProcessByStdio<null, Readable, Readable>;
 
 export class LocalProcessShellRuntime implements ShellRuntime {
   private readonly backgroundBaseDir: string;
@@ -141,6 +157,7 @@ export class LocalProcessShellRuntime implements ShellRuntime {
   private readonly maxForegroundPreviewChars: number;
   private readonly preferredShell: ResolvedShell;
   private readonly extraPathEntries: readonly string[];
+  private readonly terminateProcessFn: (pid: number) => void;
 
   constructor(options: LocalProcessShellRuntimeOptions = {}) {
     this.backgroundBaseDir = path.resolve(
@@ -154,6 +171,7 @@ export class LocalProcessShellRuntime implements ShellRuntime {
     this.maxForegroundPreviewChars = options.maxForegroundPreviewChars ?? 16000;
     this.preferredShell = resolvePreferredShell();
     this.extraPathEntries = options.extraPathEntries || resolveBundledRipgrepPathEntries();
+    this.terminateProcessFn = options.terminateProcess || terminateProcess;
   }
 
   getCapabilities(): ShellRuntimeCapabilities {
@@ -182,14 +200,22 @@ export class LocalProcessShellRuntime implements ShellRuntime {
   }
 
   async execute(request: ShellRuntimeRequest): Promise<ShellRuntimeResult> {
+    if (request.signal?.aborted) {
+      return {
+        exitCode: 130,
+        timedOut: false,
+        aborted: true,
+        output: '',
+      };
+    }
+
     const { shellPath, shellArgs } = createForegroundShellInvocation(
       this.preferredShell,
       request.command
     );
     const foregroundBaseDir =
       this.foregroundBaseDir || path.join(path.resolve(request.cwd), '.renx', 'cache', 'shell');
-    await fsp.mkdir(foregroundBaseDir, { recursive: true });
-    const capture = await ShellOutputCapture.create({
+    const capture = new DeferredShellOutputCapture({
       baseDir: foregroundBaseDir,
       command: request.command,
       cwd: path.resolve(request.cwd),
@@ -204,44 +230,44 @@ export class LocalProcessShellRuntime implements ShellRuntime {
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
       });
-
-      let timedOut = false;
+      const lifecycle = createForegroundProcessLifecycleController({
+        child,
+        timeoutMs: request.timeoutMs,
+        signal: request.signal,
+        terminateProcess: this.terminateProcessFn,
+      });
       let settled = false;
+      let observedExitCode: number | null | undefined;
 
-      const timeout = setTimeout(() => {
-        timedOut = true;
-        child.kill();
-      }, request.timeoutMs);
+      const stdoutDecoder = new StringDecoder('utf8');
+      const stderrDecoder = new StringDecoder('utf8');
+      const stdoutSanitizerState = createShellStreamSanitizerState();
+      const stderrSanitizerState = createShellStreamSanitizerState();
 
-      if (request.signal) {
-        if (request.signal.aborted) {
-          timedOut = true;
-          child.kill();
-        } else {
-          request.signal.addEventListener(
-            'abort',
-            () => {
-              timedOut = true;
-              child.kill();
-            },
-            { once: true }
-          );
-        }
-      }
+      child.once('exit', (code) => {
+        observedExitCode = code;
+        lifecycle.markExited();
+      });
 
       child.stdout?.on('data', (chunk: Buffer) => {
-        const text = chunk.toString('utf8');
+        const text = stdoutDecoder.write(chunk);
+        if (!text) {
+          return;
+        }
         capture.appendStdout(text);
-        const sanitized = sanitizeShellStreamChunk(text);
+        const sanitized = sanitizeShellStreamChunk(text, stdoutSanitizerState);
         if (sanitized) {
           void request.onStdout?.(sanitized);
         }
       });
 
       child.stderr?.on('data', (chunk: Buffer) => {
-        const text = chunk.toString('utf8');
+        const text = stderrDecoder.write(chunk);
+        if (!text) {
+          return;
+        }
         capture.appendStderr(text);
-        const sanitized = sanitizeShellStreamChunk(text);
+        const sanitized = sanitizeShellStreamChunk(text, stderrSanitizerState);
         if (sanitized) {
           void request.onStderr?.(sanitized);
         }
@@ -252,11 +278,12 @@ export class LocalProcessShellRuntime implements ShellRuntime {
           return;
         }
         settled = true;
-        clearTimeout(timeout);
+        lifecycle.cleanup();
         try {
           await capture.finalize({
-            exitCode: timedOut ? 124 : 1,
-            timedOut,
+            exitCode: lifecycle.timedOut() ? 124 : lifecycle.aborted() ? 130 : 1,
+            timedOut: lifecycle.timedOut(),
+            aborted: lifecycle.aborted(),
           });
         } catch {
           // Ignore artifact cleanup errors and surface the spawn error.
@@ -265,20 +292,40 @@ export class LocalProcessShellRuntime implements ShellRuntime {
       });
 
       child.once('close', async (code) => {
+        const remainingStdout = stdoutDecoder.end();
+        if (remainingStdout) {
+          capture.appendStdout(remainingStdout);
+          const sanitized = sanitizeShellStreamChunk(remainingStdout, stdoutSanitizerState);
+          if (sanitized) {
+            void request.onStdout?.(sanitized);
+          }
+        }
+        const remainingStderr = stderrDecoder.end();
+        if (remainingStderr) {
+          capture.appendStderr(remainingStderr);
+          const sanitized = sanitizeShellStreamChunk(remainingStderr, stderrSanitizerState);
+          if (sanitized) {
+            void request.onStderr?.(sanitized);
+          }
+        }
         if (settled) {
           return;
         }
         settled = true;
-        clearTimeout(timeout);
+        lifecycle.cleanup();
         try {
-          const exitCode = code ?? (timedOut ? 124 : 1);
+          const timedOut = lifecycle.timedOut();
+          const aborted = lifecycle.aborted();
+          const exitCode = timedOut ? 124 : aborted ? 130 : (observedExitCode ?? code ?? 1);
           const finalized = await capture.finalize({
             exitCode,
             timedOut,
+            aborted,
           });
           resolve({
             exitCode,
             timedOut,
+            aborted,
             output: finalized.output,
             artifact: finalized.artifact,
           });
@@ -290,6 +337,10 @@ export class LocalProcessShellRuntime implements ShellRuntime {
   }
 
   async startBackground(request: ShellRuntimeRequest): Promise<ShellBackgroundExecutionRecord> {
+    if (request.signal?.aborted) {
+      throw new ToolV2AbortError('Background shell command aborted before start');
+    }
+
     await fsp.mkdir(this.backgroundBaseDir, { recursive: true });
     const taskId = `task_${this.now()}_${randomUUID().slice(0, 8)}`;
     const runDir = path.join(this.backgroundBaseDir, taskId);
@@ -298,42 +349,49 @@ export class LocalProcessShellRuntime implements ShellRuntime {
     const statusPath = path.join(runDir, 'status');
     fs.writeFileSync(logPath, '', 'utf8');
     const outputFd = fs.openSync(logPath, 'a');
-    const { shellPath, shellArgs } = resolveBackgroundShell(
-      this.preferredShell,
-      request.command,
-      statusPath
-    );
-    const child = spawn(shellPath, shellArgs, {
-      cwd: path.resolve(request.cwd),
-      env: buildShellEnvironment(request.environment, this.extraPathEntries),
-      detached: true,
-      stdio: ['ignore', outputFd, outputFd],
-      windowsHide: true,
-    });
-    fs.closeSync(outputFd);
-    child.unref();
+    try {
+      const { shellPath, shellArgs } = resolveBackgroundShell(
+        this.preferredShell,
+        request.command,
+        statusPath
+      );
+      const child = spawn(shellPath, shellArgs, {
+        cwd: path.resolve(request.cwd),
+        env: buildShellEnvironment(request.environment, this.extraPathEntries),
+        detached: true,
+        stdio: ['ignore', outputFd, outputFd],
+        windowsHide: true,
+      });
+      await waitForSpawn(child);
+      child.unref();
 
-    const now = this.now();
-    return {
-      taskId,
-      command: request.command,
-      cwd: path.resolve(request.cwd),
-      pid: child.pid,
-      logPath,
-      statusPath,
-      status: 'running',
-      sandbox: request.sandbox,
-      sandboxProfile: request.sandboxProfile,
-      policyProfile: request.policyProfile,
-      executionMode: request.executionMode || 'sandboxed',
-      timeoutMs: request.timeoutMs,
-      createdAt: now,
-      updatedAt: now,
-      startedAt: now,
-      metadata: {
-        networkAccess: request.sandboxPolicy?.networkAccess,
-      },
-    };
+      const now = this.now();
+      return {
+        taskId,
+        command: request.command,
+        cwd: path.resolve(request.cwd),
+        pid: child.pid,
+        logPath,
+        statusPath,
+        status: 'running',
+        sandbox: request.sandbox,
+        sandboxProfile: request.sandboxProfile,
+        policyProfile: request.policyProfile,
+        executionMode: request.executionMode || 'sandboxed',
+        timeoutMs: request.timeoutMs,
+        createdAt: now,
+        updatedAt: now,
+        startedAt: now,
+        metadata: {
+          networkAccess: request.sandboxPolicy?.networkAccess,
+        },
+      };
+    } catch (error) {
+      await fsp.rm(runDir, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    } finally {
+      fs.closeSync(outputFd);
+    }
   }
 
   async pollBackground(
@@ -352,11 +410,32 @@ export class LocalProcessShellRuntime implements ShellRuntime {
       const endedAt = await readMtimeMs(record.statusPath);
       return {
         ...record,
-        status: statusFile.exitCode === 0 ? 'completed' : 'failed',
+        status: resolveBackgroundTerminalStatus(statusFile.exitCode),
         exitCode: statusFile.exitCode,
         output,
         updatedAt: this.now(),
         endedAt: endedAt || this.now(),
+      };
+    }
+
+    if (
+      typeof record.startedAt === 'number' &&
+      record.timeoutMs > 0 &&
+      this.now() - record.startedAt >= record.timeoutMs
+    ) {
+      if (typeof record.pid === 'number') {
+        this.terminateProcessFn(record.pid);
+      }
+      const now = this.now();
+      await fsp.writeFile(record.statusPath, '124', 'utf8').catch(() => undefined);
+      return {
+        ...record,
+        status: 'timed_out',
+        exitCode: 124,
+        error: 'Background shell command timed out',
+        output,
+        updatedAt: now,
+        endedAt: now,
       };
     }
 
@@ -387,7 +466,7 @@ export class LocalProcessShellRuntime implements ShellRuntime {
     }
 
     if (typeof record.pid === 'number') {
-      terminateProcess(record.pid);
+      this.terminateProcessFn(record.pid);
     }
 
     const now = this.now();
@@ -546,11 +625,31 @@ async function readBackgroundOutput(
 ): Promise<string | undefined> {
   try {
     const buffer = await fsp.readFile(logPath);
-    const slice = buffer.length > maxBytes ? buffer.subarray(buffer.length - maxBytes) : buffer;
-    return slice.toString('utf8').trim() || undefined;
+    const slice =
+      buffer.length > maxBytes
+        ? decodeUtf8SafeTail(buffer, Math.max(0, maxBytes))
+        : buffer.toString('utf8');
+    return slice.trim() || undefined;
   } catch {
     return undefined;
   }
+}
+
+function decodeUtf8SafeTail(buffer: Buffer, maxBytes: number): string {
+  if (maxBytes <= 0 || buffer.length === 0) {
+    return '';
+  }
+
+  let start = Math.max(0, buffer.length - maxBytes);
+  while (start < buffer.length && isUtf8ContinuationByte(buffer[start]!)) {
+    start += 1;
+  }
+
+  return buffer.subarray(start).toString('utf8');
+}
+
+function isUtf8ContinuationByte(byte: number): boolean {
+  return (byte & 0b1100_0000) === 0b1000_0000;
 }
 
 async function readStatusFile(statusPath: string): Promise<{ exitCode: number } | null> {
@@ -564,6 +663,45 @@ async function readStatusFile(statusPath: string): Promise<{ exitCode: number } 
   } catch {
     return null;
   }
+}
+
+function resolveBackgroundTerminalStatus(exitCode: number): ShellBackgroundExecutionStatus {
+  if (exitCode === 0) {
+    return 'completed';
+  }
+  if (exitCode === 124) {
+    return 'timed_out';
+  }
+  return 'failed';
+}
+
+async function waitForSpawn(child: import('node:child_process').ChildProcess): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => {
+      child.removeListener('spawn', onSpawn);
+      child.removeListener('error', onError);
+    };
+    const onSpawn = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve();
+    };
+    const onError = (error: Error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+
+    child.once('spawn', onSpawn);
+    child.once('error', onError);
+  });
 }
 
 async function readMtimeMs(filePath: string): Promise<number | undefined> {
@@ -582,6 +720,73 @@ function isProcessAlive(pid: number): boolean {
   } catch {
     return false;
   }
+}
+
+export function createForegroundProcessLifecycleController(options: {
+  child: ForegroundShellChildProcess;
+  timeoutMs: number;
+  signal?: AbortSignal;
+  terminateProcess: (pid: number) => void;
+}): ForegroundProcessLifecycleController {
+  let timedOut = false;
+  let aborted = false;
+  let exited = false;
+
+  const terminateChild = () => {
+    const pid = options.child.pid;
+    if (typeof pid === 'number') {
+      options.terminateProcess(pid);
+      return;
+    }
+    options.child.kill();
+  };
+
+  let abortListener: (() => void) | undefined;
+  const removeAbortListener = () => {
+    if (options.signal && abortListener) {
+      options.signal.removeEventListener('abort', abortListener);
+      abortListener = undefined;
+    }
+  };
+
+  const timeout = setTimeout(() => {
+    if (aborted || exited || timedOut) {
+      return;
+    }
+    timedOut = true;
+    removeAbortListener();
+    terminateChild();
+  }, options.timeoutMs);
+
+  if (options.signal) {
+    abortListener = () => {
+      if (timedOut || exited || aborted) {
+        return;
+      }
+      aborted = true;
+      clearTimeout(timeout);
+      removeAbortListener();
+      terminateChild();
+    };
+    options.signal.addEventListener('abort', abortListener, { once: true });
+    if (options.signal.aborted) {
+      abortListener();
+    }
+  }
+
+  return {
+    timedOut: () => timedOut,
+    aborted: () => aborted,
+    markExited: () => {
+      exited = true;
+      clearTimeout(timeout);
+      removeAbortListener();
+    },
+    cleanup: () => {
+      clearTimeout(timeout);
+      removeAbortListener();
+    },
+  };
 }
 
 function terminateProcess(pid: number): void {
