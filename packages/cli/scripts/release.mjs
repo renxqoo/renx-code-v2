@@ -106,7 +106,7 @@ const pickArgs = (flags, values, { withValue = false } = {}) => {
 };
 
 const resolvePrepareArgs = (values) => [
-  ...pickArgs(['--all', '--main-only', '--platform-only'], values),
+  ...pickArgs(['--single', '--all', '--skip-install'], values),
   ...pickArgs(['--target'], values, { withValue: true }),
 ];
 
@@ -199,7 +199,7 @@ switch (command) {
     break;
   default:
     console.error(
-      'Usage: bun ./scripts/release.mjs <preflight|pack|publish> [--all] [--target <id>] [--main-only] [--platform-only] [--dry-run] [--tag <tag>] [--otp <otp>]'
+      'Usage: bun ./scripts/release.mjs <preflight|pack|publish> [--single] [--all] [--target <id>] [--skip-install] [--dry-run] [--tag <tag>] [--otp <otp>]'
     );
     process.exit(1);
 }

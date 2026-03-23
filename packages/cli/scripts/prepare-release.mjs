@@ -1,16 +1,8 @@
 #!/usr/bin/env bun
 
-import {
-  chmodSync,
-  cpSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -34,153 +26,47 @@ const wrapperPath = path.join(packageRoot, 'bin', 'renx.cjs');
 const ripgrepManifestPath = path.join(packageRoot, 'bin', 'rg');
 const ripgrepInstallScriptPath = path.join(packageRoot, 'scripts', 'install-ripgrep.mjs');
 const entryPath = path.join(packageRoot, 'src', 'index.tsx');
-const stagedAssetsRoot = path.join(packageRoot, '.release-assets');
-const stagedNodeModulesRoot = path.join(stagedAssetsRoot, 'node_modules');
-const stagedWebTreeSitterRoot = path.join(stagedNodeModulesRoot, 'web-tree-sitter');
-const parserWorkerPath = path.join(stagedAssetsRoot, 'parser.worker.js');
 
 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
 const version = packageJson.version ?? '0.0.0';
 const description = packageJson.description ?? 'Renx Code terminal AI coding assistant';
 const args = process.argv.slice(2);
-const mainOnly = args.includes('--main-only');
-const platformOnly = args.includes('--platform-only');
+const singleTarget = args.includes('--single');
 const allTargets = args.includes('--all');
+const skipInstall = args.includes('--skip-install');
 
-if (mainOnly && platformOnly) {
-  throw new Error('Cannot use --main-only and --platform-only together.');
+if (singleTarget && allTargets) {
+  throw new Error('Cannot use --single and --all together.');
 }
 
-const run = (command, args, cwd = workspaceRoot) => {
-  const result = spawnSync(command, args, {
+const run = (command, commandArgs, cwd = packageRoot, env = process.env) => {
+  const result = spawnSync(command, commandArgs, {
     cwd,
     stdio: 'inherit',
-    env: process.env,
+    env,
   });
 
   if (result.error) {
     throw result.error;
   }
   if (result.status !== 0) {
-    throw new Error(`${command} ${args.join(' ')} failed with exit code ${result.status ?? 1}`);
+    throw new Error(`${command} ${commandArgs.join(' ')} failed with exit code ${result.status ?? 1}`);
   }
 };
 
-const cleanupStagedAssets = () => {
-  rmSync(stagedAssetsRoot, { recursive: true, force: true });
-};
-
-const resolveParserWorkerSourcePath = () => {
-  const directCandidates = [
-    path.join(packageRoot, 'node_modules', '@opentui', 'core', 'parser.worker.js'),
-    path.join(workspaceRoot, 'node_modules', '@opentui', 'core', 'parser.worker.js'),
-  ];
-
-  for (const candidate of directCandidates) {
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  const pnpmStoreRoot = path.join(workspaceRoot, 'node_modules', '.pnpm');
-  if (existsSync(pnpmStoreRoot)) {
-    for (const entry of readdirSync(pnpmStoreRoot, { withFileTypes: true })) {
-      if (!entry.isDirectory() || !entry.name.startsWith('@opentui+core@')) {
-        continue;
-      }
-
-      const candidate = path.join(
-        pnpmStoreRoot,
-        entry.name,
-        'node_modules',
-        '@opentui',
-        'core',
-        'parser.worker.js'
-      );
-      if (existsSync(candidate)) {
-        return candidate;
-      }
-    }
-  }
-
-  throw new Error(
-    `Cannot find OpenTUI parser worker in installed dependencies under ${packageRoot} or ${workspaceRoot}`
-  );
-};
-
-const resolveWebTreeSitterSourcePath = () => {
-  const directCandidates = [
-    path.join(packageRoot, 'node_modules', 'web-tree-sitter'),
-    path.join(workspaceRoot, 'node_modules', 'web-tree-sitter'),
-  ];
-
-  for (const candidate of directCandidates) {
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  const pnpmStoreRoot = path.join(workspaceRoot, 'node_modules', '.pnpm');
-  if (existsSync(pnpmStoreRoot)) {
-    for (const entry of readdirSync(pnpmStoreRoot, { withFileTypes: true })) {
-      if (!entry.isDirectory() || !entry.name.startsWith('web-tree-sitter@')) {
-        continue;
-      }
-
-      const candidate = path.join(pnpmStoreRoot, entry.name, 'node_modules', 'web-tree-sitter');
-      if (existsSync(candidate)) {
-        return candidate;
-      }
-    }
-  }
-
-  throw new Error(
-    `Cannot find web-tree-sitter in installed dependencies under ${packageRoot} or ${workspaceRoot}`
-  );
-};
-
-const stageParserWorker = () => {
-  const sourcePath = resolveParserWorkerSourcePath();
-  mkdirSync(stagedAssetsRoot, { recursive: true });
-  cpSync(sourcePath, parserWorkerPath);
-};
-
-const stageWebTreeSitter = () => {
-  const sourcePath = resolveWebTreeSitterSourcePath();
-  mkdirSync(stagedNodeModulesRoot, { recursive: true });
-  rmSync(stagedWebTreeSitterRoot, { recursive: true, force: true });
-  cpSync(sourcePath, stagedWebTreeSitterRoot, { recursive: true });
-};
-
-const ensureReleaseInputs = () => {
+const ensureRequiredInputs = () => {
   mkdirSync(bunInstallCacheDir, { recursive: true });
   process.env.BUN_INSTALL_CACHE_DIR = bunInstallCacheDir;
-  cleanupStagedAssets();
+
   const requiredPaths = [readmePath, wrapperPath, ripgrepManifestPath, ripgrepInstallScriptPath, entryPath];
   for (const candidate of requiredPaths) {
     if (!existsSync(candidate)) {
       throw new Error(`Required release input is missing: ${candidate}`);
     }
   }
-  stageParserWorker();
-  stageWebTreeSitter();
-  if (!existsSync(parserWorkerPath)) {
-    throw new Error(`Cannot find staged OpenTUI parser worker: ${parserWorkerPath}`);
-  }
-  if (!existsSync(path.join(stagedWebTreeSitterRoot, 'package.json'))) {
-    throw new Error(`Cannot find staged web-tree-sitter package: ${stagedWebTreeSitterRoot}`);
-  }
 };
 
 const resolveSelectedTargets = () => {
-  if (mainOnly) {
-    return [];
-  }
-
-  if (allTargets) {
-    return RELEASE_TARGETS;
-  }
-
   const explicitTargets = [];
   for (let index = 0; index < args.length; index += 1) {
     if (args[index] === '--target') {
@@ -191,6 +77,14 @@ const resolveSelectedTargets = () => {
       explicitTargets.push(value);
       index += 1;
     }
+  }
+
+  if (singleTarget && explicitTargets.length > 0) {
+    throw new Error('Cannot combine --single with --target.');
+  }
+
+  if (allTargets) {
+    return RELEASE_TARGETS;
   }
 
   const requestedIds =
@@ -212,11 +106,49 @@ const resolveSelectedTargets = () => {
     (target) => target.os === process.platform && target.cpu === process.arch
   );
   if (!currentTarget) {
-    throw new Error(
-      `No bundled release target is configured for ${process.platform}/${process.arch}.`
-    );
+    throw new Error(`No bundled release target is configured for ${process.platform}/${process.arch}.`);
   }
   return [currentTarget];
+};
+
+const installBuildDependencies = async () => {
+  if (skipInstall) {
+    return;
+  }
+
+  const openTuiVersion = packageJson.dependencies?.['@opentui/core'];
+  if (!openTuiVersion) {
+    throw new Error('Missing @opentui/core dependency version in package.json');
+  }
+
+  run(
+    'bun',
+    [
+      'install',
+      '--cwd',
+      workspaceRoot,
+      '--filter',
+      packageJson.name,
+      '--os=*',
+      '--cpu=*',
+      '--no-save',
+      '--ignore-scripts',
+      `@opentui/core@${openTuiVersion}`,
+    ],
+    workspaceRoot,
+    {
+      ...process.env,
+      BUN_INSTALL_CACHE_DIR: bunInstallCacheDir,
+    }
+  );
+};
+
+const resolveParserWorkerPath = () => {
+  const candidate = path.join(packageRoot, 'node_modules', '@opentui', 'core', 'parser.worker.js');
+  if (!existsSync(candidate)) {
+    throw new Error(`Cannot find OpenTUI parser worker at ${candidate}`);
+  }
+  return fs.realpathSync(candidate);
 };
 
 const prepareMainPackage = () => {
@@ -245,41 +177,24 @@ const prepareMainPackage = () => {
   writeFileSync(path.join(mainRoot, 'package.json'), `${JSON.stringify(mainPackageJson, null, 2)}\n`);
 };
 
-const preparePlatformPackage = async (target) => {
+const compileTargetScriptPath = path.join(packageRoot, 'scripts', 'compile-release-target.mjs');
+
+const preparePlatformPackage = async (target, parserWorkerPath) => {
   const targetRoot = path.join(platformsRoot, target.id);
   const binaryOutputPath = path.join(targetRoot, 'bin', target.binaryName);
 
   mkdirSync(path.join(targetRoot, 'bin'), { recursive: true });
   mkdirSync(path.join(targetRoot, 'scripts'), { recursive: true });
 
-  const compile = {
-    target: target.bunTarget,
-    outfile: binaryOutputPath,
-    execArgv: ['--'],
-  };
-  if (target.os === 'win32') {
-    compile.windows = {};
-  }
-
-  const result = await Bun.build({
-    entrypoints: [entryPath, parserWorkerPath],
-    compile,
-    define: {
-      OTUI_TREE_SITTER_WORKER_PATH: JSON.stringify(
-        `${target.os === 'win32' ? 'B:/~BUN/root/' : '/$bunfs/root/'}${path
-          .relative(packageRoot, parserWorkerPath)
-          .replaceAll('\\', '/')}`
-      ),
-      RENX_BUILD_VERSION: JSON.stringify(version),
-    },
-  });
-
-  if (!result.success) {
-    for (const log of result.logs) {
-      console.error(log.message);
+  run(
+    'bun',
+    [compileTargetScriptPath, target.id, binaryOutputPath, parserWorkerPath, version],
+    packageRoot,
+    {
+      ...process.env,
+      BUN_INSTALL_CACHE_DIR: bunInstallCacheDir,
     }
-    throw new Error(`Failed to compile target ${target.id}.`);
-  }
+  );
 
   cpSync(readmePath, path.join(targetRoot, 'README.md'));
   cpSync(ripgrepManifestPath, path.join(targetRoot, 'bin', 'rg'));
@@ -307,36 +222,37 @@ const preparePlatformPackage = async (target) => {
     engines: packageJson.engines,
   };
 
-  writeFileSync(
-    path.join(targetRoot, 'package.json'),
-    `${JSON.stringify(targetPackageJson, null, 2)}\n`
-  );
+  writeFileSync(path.join(targetRoot, 'package.json'), `${JSON.stringify(targetPackageJson, null, 2)}\n`);
 };
 
 try {
-  ensureReleaseInputs();
+  ensureRequiredInputs();
   const selectedTargets = resolveSelectedTargets();
   if (selectedTargets.length > 0) {
-    run('pnpm', ['--filter', '@renx-code/core', 'build']);
+    await installBuildDependencies();
+    run('pnpm', ['--dir', workspaceRoot, '--filter', '@renx-code/core', 'build'], workspaceRoot);
   }
+
   rmSync(releaseRoot, { recursive: true, force: true });
   mkdirSync(mainRoot, { recursive: true });
   mkdirSync(platformsRoot, { recursive: true });
 
-  if (!platformOnly) {
-    prepareMainPackage();
-  }
-  for (const target of selectedTargets) {
-    await preparePlatformPackage(target);
+  prepareMainPackage();
+
+  if (selectedTargets.length > 0) {
+    const parserWorkerPath = resolveParserWorkerPath();
+    for (const target of selectedTargets) {
+      console.log(`building ${target.packageName}`);
+      await preparePlatformPackage(target, parserWorkerPath);
+    }
   }
 
   console.log(`Prepared multi-platform release directory at ${releaseRoot}`);
-  if (!platformOnly) {
-    console.log(`Main package: ${packageJson.name}@${version}`);
-  }
+  console.log(`Main package: ${packageJson.name}@${version}`);
   if (selectedTargets.length > 0) {
     console.log(`Platform packages: ${selectedTargets.map((target) => target.packageName).join(', ')}`);
   }
-} finally {
-  cleanupStagedAssets();
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
 }

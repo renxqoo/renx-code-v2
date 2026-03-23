@@ -83,12 +83,13 @@ npm install -g @renxqoo/renx-code@next
 Before triggering the publish workflow, these local commands are useful:
 
 ```bash
-pnpm --filter @renxqoo/renx-code release:pack -- --main-only --dry-run
-pnpm --filter @renxqoo/renx-code release:pack -- --platform-only --target darwin-arm64 --dry-run
-pnpm --filter @renxqoo/renx-code release:pack -- --platform-only --target darwin-x64 --dry-run
-pnpm --filter @renxqoo/renx-code release:pack -- --platform-only --target linux-arm64 --dry-run
-pnpm --filter @renxqoo/renx-code release:pack -- --platform-only --target linux-x64 --dry-run
-pnpm --filter @renxqoo/renx-code release:pack -- --platform-only --target win32-x64 --dry-run
+pnpm --filter @renxqoo/renx-code release:pack -- --single --dry-run
+pnpm --filter @renxqoo/renx-code release:pack -- --target darwin-arm64 --dry-run
+pnpm --filter @renxqoo/renx-code release:pack -- --target darwin-x64 --dry-run
+pnpm --filter @renxqoo/renx-code release:pack -- --target linux-arm64 --dry-run
+pnpm --filter @renxqoo/renx-code release:pack -- --target linux-x64 --dry-run
+pnpm --filter @renxqoo/renx-code release:pack -- --target win32-x64 --dry-run
+pnpm --filter @renxqoo/renx-code release:pack -- --all --dry-run
 ```
 
 For local npm authentication checks, run:
@@ -102,6 +103,6 @@ pnpm --filter @renxqoo/renx-code release:preflight
 If you need to publish outside GitHub Actions, use the same unified script entrypoints:
 
 ```bash
-pnpm --filter @renxqoo/renx-code release:publish -- --platform-only --target darwin-arm64 --tag next
-pnpm --filter @renxqoo/renx-code release:publish -- --main-only --tag next
+pnpm --filter @renxqoo/renx-code release:publish -- --target darwin-arm64 --tag next
+pnpm --filter @renxqoo/renx-code release:publish -- --single --tag next
 ```
