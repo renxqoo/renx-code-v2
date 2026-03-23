@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import type { ChildProcessByStdio } from 'node:child_process';
+import type { ChildProcessByStdio, SpawnOptionsWithoutStdio } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -137,7 +137,7 @@ export interface LocalProcessShellRuntimeOptions {
   readonly maxBackgroundOutputBytes?: number;
   readonly maxForegroundPreviewChars?: number;
   readonly extraPathEntries?: readonly string[];
-  readonly terminateProcess?: (pid: number) => void;
+  readonly terminateProcess?: (pid: number, signal?: NodeJS.Signals) => void;
 }
 
 interface ForegroundProcessLifecycleController {
@@ -157,7 +157,7 @@ export class LocalProcessShellRuntime implements ShellRuntime {
   private readonly maxForegroundPreviewChars: number;
   private readonly preferredShell: ResolvedShell;
   private readonly extraPathEntries: readonly string[];
-  private readonly terminateProcessFn: (pid: number) => void;
+  private readonly terminateProcessFn: (pid: number, signal?: NodeJS.Signals) => void;
 
   constructor(options: LocalProcessShellRuntimeOptions = {}) {
     this.backgroundBaseDir = path.resolve(
@@ -225,6 +225,7 @@ export class LocalProcessShellRuntime implements ShellRuntime {
 
     return new Promise((resolve, reject) => {
       const child = spawn(shellPath, shellArgs, {
+        ...createForegroundSpawnOptions(this.preferredShell),
         cwd: path.resolve(request.cwd),
         env: buildShellEnvironment(request.environment, this.extraPathEntries),
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -575,6 +576,14 @@ function createForegroundShellInvocation(
   return createWindowsForegroundShellInvocation(shell, command);
 }
 
+function createForegroundSpawnOptions(shell: ResolvedShell): SpawnOptionsWithoutStdio {
+  if (shell.flavor === 'posix') {
+    return { detached: true };
+  }
+
+  return {};
+}
+
 function resolveBackgroundShell(
   shell: ResolvedShell,
   command: string,
@@ -726,19 +735,40 @@ export function createForegroundProcessLifecycleController(options: {
   child: ForegroundShellChildProcess;
   timeoutMs: number;
   signal?: AbortSignal;
-  terminateProcess: (pid: number) => void;
+  terminateProcess: (pid: number, signal?: NodeJS.Signals) => void;
+  escalationDelayMs?: number;
 }): ForegroundProcessLifecycleController {
   let timedOut = false;
   let aborted = false;
   let exited = false;
+  let escalationTimer: NodeJS.Timeout | undefined;
 
-  const terminateChild = () => {
+  const clearEscalationTimer = () => {
+    if (escalationTimer) {
+      clearTimeout(escalationTimer);
+      escalationTimer = undefined;
+    }
+  };
+
+  const terminateChild = (signal?: NodeJS.Signals) => {
     const pid = options.child.pid;
     if (typeof pid === 'number') {
-      options.terminateProcess(pid);
+      options.terminateProcess(pid, signal);
       return;
     }
-    options.child.kill();
+    options.child.kill(signal);
+  };
+
+  const requestTermination = (primarySignal: NodeJS.Signals) => {
+    terminateChild(primarySignal);
+    clearEscalationTimer();
+    const escalationDelayMs = Math.max(1, options.escalationDelayMs ?? 1_000);
+    escalationTimer = setTimeout(() => {
+      if (exited) {
+        return;
+      }
+      terminateChild('SIGKILL');
+    }, escalationDelayMs);
   };
 
   let abortListener: (() => void) | undefined;
@@ -755,7 +785,7 @@ export function createForegroundProcessLifecycleController(options: {
     }
     timedOut = true;
     removeAbortListener();
-    terminateChild();
+    requestTermination('SIGTERM');
   }, options.timeoutMs);
 
   if (options.signal) {
@@ -766,7 +796,7 @@ export function createForegroundProcessLifecycleController(options: {
       aborted = true;
       clearTimeout(timeout);
       removeAbortListener();
-      terminateChild();
+      requestTermination('SIGTERM');
     };
     options.signal.addEventListener('abort', abortListener, { once: true });
     if (options.signal.aborted) {
@@ -780,16 +810,18 @@ export function createForegroundProcessLifecycleController(options: {
     markExited: () => {
       exited = true;
       clearTimeout(timeout);
+      clearEscalationTimer();
       removeAbortListener();
     },
     cleanup: () => {
       clearTimeout(timeout);
+      clearEscalationTimer();
       removeAbortListener();
     },
   };
 }
 
-function terminateProcess(pid: number): void {
+function terminateProcess(pid: number, signal: NodeJS.Signals = 'SIGTERM'): void {
   if (process.platform === 'win32') {
     spawnSync('taskkill', ['/pid', String(pid), '/t', '/f'], {
       stdio: 'ignore',
@@ -798,10 +830,10 @@ function terminateProcess(pid: number): void {
     return;
   }
   try {
-    process.kill(-pid, 'SIGTERM');
+    process.kill(-pid, signal);
   } catch {
     try {
-      process.kill(pid, 'SIGTERM');
+      process.kill(pid, signal);
     } catch {
       // ignore cancellation races
     }

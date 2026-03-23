@@ -515,12 +515,14 @@ describe('shell runtime adapters', () => {
   });
 
   it('marks foreground abort results explicitly in the runtime result', async () => {
+    const terminatedSignals: Array<NodeJS.Signals | undefined> = [];
     const terminatedPids: number[] = [];
     const runtime = new LocalProcessShellRuntimeImpl({
-      terminateProcess: (pid) => {
+      terminateProcess: (pid, signal) => {
         terminatedPids.push(pid);
+        terminatedSignals.push(signal);
         try {
-          process.kill(pid);
+          process.kill(pid, signal ?? 'SIGTERM');
         } catch {
           // ignore races while shutting down the spawned command
         }
@@ -542,6 +544,7 @@ describe('shell runtime adapters', () => {
     expect(result.exitCode).toBe(130);
     expect(terminatedPids).toHaveLength(1);
     expect(terminatedPids[0]).toEqual(expect.any(Number));
+    expect(terminatedSignals).toEqual(['SIGTERM']);
   });
 
   it('freezes foreground lifecycle abort state after exit is observed', async () => {
@@ -638,7 +641,7 @@ describe('shell runtime adapters', () => {
     await fs.writeFile(record.logPath, 'still running\n', 'utf8');
 
     const advancedRuntime = new LocalProcessShellRuntimeImpl({
-      terminateProcess: (pid) => {
+      terminateProcess: (pid, signal) => {
         terminatedPids.push(pid);
       },
       now: () => 50,
@@ -739,12 +742,14 @@ describe('shell runtime adapters', () => {
   });
 
   it('does not report foreground aborts as timeouts', async () => {
+    const terminatedSignals: Array<NodeJS.Signals | undefined> = [];
     const terminatedPids: number[] = [];
     const runtime = new LocalProcessShellRuntimeImpl({
-      terminateProcess: (pid) => {
+      terminateProcess: (pid, signal) => {
         terminatedPids.push(pid);
+        terminatedSignals.push(signal);
         try {
-          process.kill(pid);
+          process.kill(pid, signal ?? 'SIGTERM');
         } catch {
           // ignore races while shutting down the spawned command
         }
@@ -766,15 +771,18 @@ describe('shell runtime adapters', () => {
     expect(result.exitCode).toBe(130);
     expect(terminatedPids).toHaveLength(1);
     expect(terminatedPids[0]).toEqual(expect.any(Number));
+    expect(terminatedSignals).toEqual(['SIGTERM']);
   });
 
-  it('uses the configured process terminator for foreground timeout handling', async () => {
+  it('uses staged termination signals for foreground timeout handling', async () => {
+    const terminatedSignals: Array<NodeJS.Signals | undefined> = [];
     const terminatedPids: number[] = [];
     const runtime = new LocalProcessShellRuntimeImpl({
-      terminateProcess: (pid) => {
+      terminateProcess: (pid, signal) => {
         terminatedPids.push(pid);
+        terminatedSignals.push(signal);
         try {
-          process.kill(pid);
+          process.kill(pid, signal ?? 'SIGTERM');
         } catch {
           // ignore races while shutting down the spawned command
         }
@@ -792,12 +800,45 @@ describe('shell runtime adapters', () => {
     expect(result.aborted).toBe(false);
     expect(terminatedPids).toHaveLength(1);
     expect(terminatedPids[0]).toEqual(expect.any(Number));
+    expect(terminatedSignals[0]).toBe('SIGTERM');
+  });
+
+  it('returns after foreground timeout when a POSIX shell command leaves a child running', async () => {
+    if (process.platform === 'win32') {
+      return;
+    }
+
+    const scriptPath = path.join(workspaceDir, 'foreground-child-hang.js');
+    await fs.writeFile(
+      scriptPath,
+      [
+        "const { spawn } = require('node:child_process');",
+        "spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });",
+        "setInterval(() => {}, 1000);",
+      ].join('\n'),
+      'utf8'
+    );
+
+    const startedAt = Date.now();
+    const runtime = new LocalProcessShellRuntimeImpl();
+    const result = await runtime.execute({
+      command: `"${process.execPath}" "${scriptPath}"`,
+      cwd: workspaceDir,
+      timeoutMs: 100,
+      sandbox: 'workspace-write',
+    });
+    const elapsedMs = Date.now() - startedAt;
+
+    expect(result.timedOut).toBe(true);
+    expect(result.aborted).toBe(false);
+    expect(result.exitCode).toBe(124);
+    expect(elapsedMs).toBeLessThan(5_000);
   });
 
   it('uses the configured process terminator for background cancellation', async () => {
     const terminatedPids: number[] = [];
     const runtime = new LocalProcessShellRuntimeImpl({
-      terminateProcess: (pid) => {
+      terminateProcess: (pid, signal) => {
         terminatedPids.push(pid);
       },
     });
