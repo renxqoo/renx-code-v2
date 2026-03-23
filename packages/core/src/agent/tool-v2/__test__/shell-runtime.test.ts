@@ -641,7 +641,7 @@ describe('shell runtime adapters', () => {
     await fs.writeFile(record.logPath, 'still running\n', 'utf8');
 
     const advancedRuntime = new LocalProcessShellRuntimeImpl({
-      terminateProcess: (pid, signal) => {
+      terminateProcess: (pid) => {
         terminatedPids.push(pid);
       },
       now: () => 50,
@@ -814,7 +814,7 @@ describe('shell runtime adapters', () => {
       [
         "const { spawn } = require('node:child_process');",
         "spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });",
-        "setInterval(() => {}, 1000);",
+        'setInterval(() => {}, 1000);',
       ].join('\n'),
       'utf8'
     );
@@ -838,7 +838,7 @@ describe('shell runtime adapters', () => {
   it('uses the configured process terminator for background cancellation', async () => {
     const terminatedPids: number[] = [];
     const runtime = new LocalProcessShellRuntimeImpl({
-      terminateProcess: (pid, signal) => {
+      terminateProcess: (pid) => {
         terminatedPids.push(pid);
       },
     });
