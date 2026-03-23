@@ -20,9 +20,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const packageRoot = path.resolve(__dirname, '..');
 const workspaceRoot = path.resolve(packageRoot, '..', '..');
-const releaseRoot = path.join(packageRoot, 'release');
+const resolvePathOverride = (value, fallback) => path.resolve(value || fallback);
+const releaseRoot = resolvePathOverride(process.env.RENX_RELEASE_ROOT, path.join(packageRoot, 'release'));
 const mainRoot = path.join(releaseRoot, 'main');
 const platformsRoot = path.join(releaseRoot, 'platforms');
+const bunInstallCacheDir = resolvePathOverride(
+  process.env.RENX_BUN_INSTALL_CACHE_DIR || process.env.BUN_INSTALL_CACHE_DIR,
+  path.join(workspaceRoot, '.bun-cache')
+);
 const packageJsonPath = path.join(packageRoot, 'package.json');
 const readmePath = path.join(packageRoot, 'README.md');
 const wrapperPath = path.join(packageRoot, 'bin', 'renx.cjs');
@@ -148,6 +153,8 @@ const stageWebTreeSitter = () => {
 };
 
 const ensureReleaseInputs = () => {
+  mkdirSync(bunInstallCacheDir, { recursive: true });
+  process.env.BUN_INSTALL_CACHE_DIR = bunInstallCacheDir;
   cleanupStagedAssets();
   const requiredPaths = [readmePath, wrapperPath, ripgrepManifestPath, ripgrepInstallScriptPath, entryPath];
   for (const candidate of requiredPaths) {

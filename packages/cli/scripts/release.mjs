@@ -10,8 +10,10 @@ import { RELEASE_TARGETS } from './release-targets.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const packageRoot = path.resolve(__dirname, '..');
-const releaseRoot = path.join(packageRoot, 'release');
+const resolvePathOverride = (value, fallback) => path.resolve(value || fallback);
+const releaseRoot = resolvePathOverride(process.env.RENX_RELEASE_ROOT, path.join(packageRoot, 'release'));
 const prepareScriptPath = path.join(packageRoot, 'scripts', 'prepare-release.mjs');
+const npmCacheDir = resolvePathOverride(process.env.RENX_NPM_CACHE_DIR, path.join(packageRoot, '.npm-cache'));
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const bunCommand = process.platform === 'win32' ? 'bun.exe' : 'bun';
 
@@ -21,7 +23,7 @@ const args = process.argv.slice(3);
 const buildNpmEnv = () => {
   const env = {
     ...process.env,
-    NPM_CONFIG_CACHE: path.join(packageRoot, '.npm-cache'),
+    NPM_CONFIG_CACHE: npmCacheDir,
   };
 
   for (const key of Object.keys(env)) {
