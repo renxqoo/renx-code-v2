@@ -1,0 +1,129 @@
+name: CLI Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      npm_tag:
+        description: npm dist-tag for publish (leave empty for default latest)
+        required: false
+        type: string
+      otp:
+        description: Optional npm OTP for manual publish
+        required: false
+        type: string
+
+concurrency:
+  group: cli-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish-platform:
+    name: Publish Platform (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: darwin-arm64
+          - os: macos-15-intel
+            target: darwin-x64
+          - os: ubuntu-24.04-arm
+            target: linux-arm64
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: windows-latest
+            target: win32-x64
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Dry-run package build
+        run: pnpm --filter @renxqoo/renx-code run release:pack -- --platform-only --target ${{ matrix.target }} --dry-run
+
+      - name: Publish platform package
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--platform-only --target "${{ matrix.target }}")
+          if [ -n "${{ inputs.npm_tag }}" ]; then
+            args+=(--tag "${{ inputs.npm_tag }}")
+          fi
+          if [ -n "${{ inputs.otp }}" ]; then
+            args+=(--otp "${{ inputs.otp }}")
+          fi
+          pnpm --filter @renxqoo/renx-code run release:publish -- "${args[@]}"
+
+  publish-main:
+    name: Publish Main Package
+    needs: publish-platform
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Dry-run main package build
+        run: pnpm --filter @renxqoo/renx-code run release:pack -- --main-only --dry-run
+
+      - name: Publish main package
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--main-only)
+          if [ -n "${{ inputs.npm_tag }}" ]; then
+            args+=(--tag "${{ inputs.npm_tag }}")
+          fi
+          if [ -n "${{ inputs.otp }}" ]; then
+            args+=(--otp "${{ inputs.otp }}")
+          fi
+          pnpm --filter @renxqoo/renx-code run release:publish -- "${args[@]}"

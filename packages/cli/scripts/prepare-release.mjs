@@ -61,6 +61,10 @@ const run = (command, args, cwd = workspaceRoot) => {
   }
 };
 
+const cleanupStagedAssets = () => {
+  rmSync(stagedAssetsRoot, { recursive: true, force: true });
+};
+
 const resolveParserWorkerSourcePath = () => {
   const directCandidates = [
     path.join(packageRoot, 'node_modules', '@opentui', 'core', 'parser.worker.js'),
@@ -144,6 +148,7 @@ const stageWebTreeSitter = () => {
 };
 
 const ensureReleaseInputs = () => {
+  cleanupStagedAssets();
   const requiredPaths = [readmePath, wrapperPath, ripgrepManifestPath, ripgrepInstallScriptPath, entryPath];
   for (const candidate of requiredPaths) {
     if (!existsSync(candidate)) {
@@ -301,26 +306,30 @@ const preparePlatformPackage = async (target) => {
   );
 };
 
-ensureReleaseInputs();
-const selectedTargets = resolveSelectedTargets();
-if (selectedTargets.length > 0) {
-  run('pnpm', ['--filter', '@renx-code/core', 'build']);
-}
-rmSync(releaseRoot, { recursive: true, force: true });
-mkdirSync(mainRoot, { recursive: true });
-mkdirSync(platformsRoot, { recursive: true });
+try {
+  ensureReleaseInputs();
+  const selectedTargets = resolveSelectedTargets();
+  if (selectedTargets.length > 0) {
+    run('pnpm', ['--filter', '@renx-code/core', 'build']);
+  }
+  rmSync(releaseRoot, { recursive: true, force: true });
+  mkdirSync(mainRoot, { recursive: true });
+  mkdirSync(platformsRoot, { recursive: true });
 
-if (!platformOnly) {
-  prepareMainPackage();
-}
-for (const target of selectedTargets) {
-  await preparePlatformPackage(target);
-}
+  if (!platformOnly) {
+    prepareMainPackage();
+  }
+  for (const target of selectedTargets) {
+    await preparePlatformPackage(target);
+  }
 
-console.log(`Prepared multi-platform release directory at ${releaseRoot}`);
-if (!platformOnly) {
-  console.log(`Main package: ${packageJson.name}@${version}`);
-}
-if (selectedTargets.length > 0) {
-  console.log(`Platform packages: ${selectedTargets.map((target) => target.packageName).join(', ')}`);
+  console.log(`Prepared multi-platform release directory at ${releaseRoot}`);
+  if (!platformOnly) {
+    console.log(`Main package: ${packageJson.name}@${version}`);
+  }
+  if (selectedTargets.length > 0) {
+    console.log(`Platform packages: ${selectedTargets.map((target) => target.packageName).join(', ')}`);
+  }
+} finally {
+  cleanupStagedAssets();
 }

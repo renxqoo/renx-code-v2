@@ -849,6 +849,7 @@ describe('local_shell v2', () => {
     const system = new EnterpriseToolSystem([
       new LocalShellToolV2({
         approvalMode: 'policy',
+        profile: SHELL_POLICY_PROFILES.fullAccess,
       }),
     ]);
     const controller = new AbortController();
@@ -1001,6 +1002,7 @@ describe('local_shell v2', () => {
     const system = new EnterpriseToolSystem([
       new LocalShellToolV2({
         approvalMode: 'policy',
+        profile: SHELL_POLICY_PROFILES.fullAccess,
       }),
     ]);
     const controller = new AbortController();

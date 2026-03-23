@@ -31,7 +31,7 @@ export function createPosixForegroundShellInvocation(
 ): { shellPath: string; shellArgs: string[] } {
   return {
     shellPath: shell.shellPath,
-    shellArgs: ['-lc', command],
+    shellArgs: ['-c', command],
   };
 }
 
@@ -43,7 +43,7 @@ export function createPosixBackgroundShellInvocation(
   return {
     shellPath: shell.shellPath,
     shellArgs: [
-      '-lc',
+      '-c',
       `{ ${command}; }; __renx_exit=$?; printf '%s' "$__renx_exit" > '${statusPath.replace(/'/g, `'\\''`)}'; exit "$__renx_exit"`,
     ],
   };

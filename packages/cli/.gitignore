@@ -10,4 +10,5 @@ coverage/
 .renx
 .env
 release/
-.release-assets/*
+.release-assets/
+.npm-cache/
