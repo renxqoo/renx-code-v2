@@ -232,12 +232,12 @@ export const CodeBlock = ({
   onToggleExpanded,
 }: CodeBlockProps) => {
   const normalized = content.replace(/\n+$/, '\n');
-  const collapsed = buildCollapsedContent(normalized, collapsedLines);
-  const isTruncated = collapsible && collapsed.hiddenLines > 0;
-  const renderedContent = isTruncated && !expanded ? collapsed.content : normalized;
   const filetype = inferCodeFiletype(normalized, languageHint);
   const isDiff = filetype === 'diff';
-  const shouldRenderDiff = isDiff && (!isTruncated || expanded);
+  const collapsed = buildCollapsedContent(normalized, collapsedLines);
+  const isTruncated = !isDiff && collapsible && collapsed.hiddenLines > 0;
+  const renderedContent = isTruncated && !expanded ? collapsed.content : normalized;
+  const shouldRenderDiff = isDiff;
   const codeFiletype = isDiff ? 'diff' : filetype;
   const diffFiletype = isDiff ? inferFiletypeFromPath(extractDiffPath(normalized)) : undefined;
   const headerLabel = label ?? 'code';

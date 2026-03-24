@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { RELEASE_TARGETS } from './release-targets.mjs';
+import { resolveExplicitTargets, resolveReleaseScope } from './release-args';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,13 +32,10 @@ const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
 const version = packageJson.version ?? '0.0.0';
 const description = packageJson.description ?? 'Renx Code terminal AI coding assistant';
 const args = process.argv.slice(2);
+const releaseScope = resolveReleaseScope(args);
 const singleTarget = args.includes('--single');
 const allTargets = args.includes('--all');
 const skipInstall = args.includes('--skip-install');
-
-if (singleTarget && allTargets) {
-  throw new Error('Cannot use --single and --all together.');
-}
 
 const run = (command, commandArgs, cwd = packageRoot, env = process.env) => {
   const result = spawnSync(command, commandArgs, {
@@ -67,20 +65,22 @@ const ensureRequiredInputs = () => {
 };
 
 const resolveSelectedTargets = () => {
-  const explicitTargets = [];
-  for (let index = 0; index < args.length; index += 1) {
-    if (args[index] === '--target') {
-      const value = args[index + 1];
-      if (!value) {
-        throw new Error('Missing value for --target.');
-      }
-      explicitTargets.push(value);
-      index += 1;
-    }
-  }
+  const explicitTargets = resolveExplicitTargets(args);
 
   if (singleTarget && explicitTargets.length > 0) {
     throw new Error('Cannot combine --single with --target.');
+  }
+
+  if (releaseScope === 'main-only' && explicitTargets.length > 0) {
+    throw new Error('Cannot combine --main-only with --target.');
+  }
+
+  if (releaseScope === 'platform-only' && explicitTargets.length === 0) {
+    throw new Error('Missing --target for --platform-only.');
+  }
+
+  if (releaseScope === 'main-only') {
+    return [];
   }
 
   if (allTargets) {
@@ -102,6 +102,10 @@ const resolveSelectedTargets = () => {
     });
   }
 
+  if (releaseScope === 'platform-only') {
+    throw new Error('Missing --target for --platform-only.');
+  }
+
   const currentTarget = RELEASE_TARGETS.find(
     (target) => target.os === process.platform && target.cpu === process.arch
   );
@@ -110,6 +114,8 @@ const resolveSelectedTargets = () => {
   }
   return [currentTarget];
 };
+
+
 
 const installBuildDependencies = async () => {
   if (skipInstall) {

@@ -20,7 +20,7 @@ describe('TaskPanel', () => {
     expect(container.textContent?.trim() ?? '').toBe('');
   });
 
-  it('renders summary and task rows without detail area', () => {
+  it('renders a single compact task with subagent info', () => {
     const { container } = render(
       <TaskPanel
         visible
@@ -32,13 +32,13 @@ describe('TaskPanel', () => {
         tasks={[
           {
             id: 'task-1',
-            subject: '实现 task panel',
-            status: 'in_progress',
+            subject: 'Search info',
+            status: 'pending',
             priority: 'high',
-            owner: 'cli',
+            owner: 'agent:abcd1234efgh5678',
             blockedBy: [],
             blocks: [],
-            progress: 60,
+            progress: 0,
             isBlocked: false,
             canBeClaimed: false,
             createdAt: 1,
@@ -46,44 +46,63 @@ describe('TaskPanel', () => {
           },
           {
             id: 'task-2',
-            subject: '补 task tests',
+            subject: 'Collect sources',
             status: 'pending',
             priority: 'normal',
             owner: null,
-            blockedBy: ['task-1'],
-            blocks: [],
-            progress: 0,
-            isBlocked: true,
-            canBeClaimed: false,
-            createdAt: 2,
-            updatedAt: 2,
-          },
-          {
-            id: 'task-3',
-            subject: '写回归测试',
-            status: 'completed',
-            priority: 'low',
-            owner: null,
             blockedBy: [],
             blocks: [],
-            progress: 100,
+            progress: 0,
             isBlocked: false,
-            canBeClaimed: false,
-            createdAt: 3,
-            updatedAt: 3,
+            canBeClaimed: true,
+            createdAt: 2,
+            updatedAt: 2,
           },
         ]}
       />
     );
 
-    const text = container.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+    const text = container.textContent?.replace(/\s+/g, '').trim() ?? '';
 
-    expect(text).toContain('Tasks');
-    expect(text).toContain('Tasks · 1 active · 1 blocked · 1 done');
-    expect(text).toContain('session_01');
-    expect(text).toContain('实现 task panel');
-    expect(text).toContain('补 task tests');
-    expect(text).toContain('+1 more');
-    expect(text).not.toContain('Detail');
+    expect(text).toContain('>Searchinfo');
+    expect(text).toContain('pending');
+    expect(text).toContain('subagentabcd1234');
+    expect(text).toContain('+1');
+    expect(text).not.toContain('Collectsources');
+  });
+
+  it('renders progress for in-progress tasks', () => {
+    const { container } = render(
+      <TaskPanel
+        visible
+        loading={false}
+        error={null}
+        namespace="session_01"
+        selectedIndex={0}
+        onSelectIndex={() => {}}
+        tasks={[
+          {
+            id: 'task-1',
+            subject: 'Implement UI',
+            status: 'in_progress',
+            priority: 'high',
+            owner: 'agent:worker9999',
+            blockedBy: [],
+            blocks: [],
+            progress: 62,
+            isBlocked: false,
+            canBeClaimed: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ]}
+      />
+    );
+
+    const text = container.textContent?.replace(/\s+/g, '').trim() ?? '';
+
+    expect(text).toContain('ImplementUI');
+    expect(text).toContain('62%');
+    expect(text).toContain('subagentworker99');
   });
 });

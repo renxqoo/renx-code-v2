@@ -8,23 +8,14 @@ import { uiTheme } from '../../ui/theme';
 type PromptCardProps = {
   prompt: string;
   files?: string[];
-  createdAtMs: number;
+  createdAtMs?: number;
   isFirst?: boolean;
-};
-
-const formatTime = (timestamp: number) => {
-  return new Date(timestamp).toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
 };
 
 export const PromptCard = ({
   prompt,
   files = [],
-  createdAtMs,
+  createdAtMs: _createdAtMs,
   isFirst = false,
 }: PromptCardProps) => {
   const mediaFiles = files.filter(
@@ -36,7 +27,23 @@ export const PromptCard = ({
 
   return (
     <box flexDirection="row" marginTop={isFirst ? 0 : 1} marginBottom={1}>
-      <box width={0.5} backgroundColor={uiTheme.accent} />
+      <box
+        border={['left']}
+        borderColor={uiTheme.accent}
+        customBorderChars={{
+          topLeft: '',
+          topRight: '',
+          bottomRight: '',
+          horizontal: ' ',
+          bottomT: '',
+          topT: '',
+          cross: '',
+          leftT: '',
+          rightT: '',
+          vertical: '┃',
+          bottomLeft: '╹',
+        }}
+      />
       <box
         flexGrow={1}
         backgroundColor={uiTheme.userPromptBg}
@@ -70,11 +77,6 @@ export const PromptCard = ({
             ))}
           </box>
         ) : null}
-        <box paddingTop={1}>
-          <text fg={uiTheme.muted} attributes={uiTheme.typography.note} selectable={true}>
-            {formatTime(createdAtMs)}
-          </text>
-        </box>
       </box>
     </box>
   );

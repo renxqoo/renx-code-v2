@@ -922,7 +922,7 @@ export const AssistantToolGroup = ({ group }: AssistantToolGroupProps) => {
       </box>
       {hasBody ? (
         <box flexDirection="row" marginTop={1}>
-          <box width={1} backgroundColor={uiTheme.divider} />
+          <box border={['left']} borderColor={uiTheme.divider} />
           <box
             flexGrow={1}
             backgroundColor={uiTheme.panel}

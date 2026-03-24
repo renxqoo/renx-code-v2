@@ -90,7 +90,7 @@ describe('CodeBlock', () => {
     expect(diffNode?.props?.showLineNumbers).toBe(true);
   });
 
-  it('falls back to code preview when a diff block is collapsed', () => {
+  it('renders full diff content without truncation even when collapsible is enabled', () => {
     const content = [
       'diff --git a/src/a.ts b/src/a.ts',
       '--- a/src/a.ts',
@@ -108,11 +108,17 @@ describe('CodeBlock', () => {
       expanded: false,
     });
 
-    expect(findElementByType(tree, 'diff')).toBeNull();
-    expect(findElementByType(tree, 'code')).not.toBeNull();
+    const diffNode = findElementByType(tree, 'diff');
+    const codeNode = findElementByType(tree, 'code');
+    const hiddenText = findElementByType(tree, 'text');
+
+    expect(diffNode).not.toBeNull();
+    expect(diffNode?.props?.diff).toBe(content);
+    expect(codeNode).toBeNull();
+    expect(hiddenText?.props?.children).not.toContain('hidden');
   });
 
-  it('renders diff component when a collapsed diff block is expanded', () => {
+  it('renders diff component when a long diff is marked expanded', () => {
     const content = [
       'diff --git a/src/a.ts b/src/a.ts',
       '--- a/src/a.ts',

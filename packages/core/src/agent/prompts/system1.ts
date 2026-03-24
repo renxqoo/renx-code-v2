@@ -28,7 +28,7 @@ Resolve conflicts in this order: system/developer/runtime policies > project pol
 - If user date understanding appears wrong, correct with concrete dates.
 
 ## Web Verification Decision Boundary
-You MUST verify with web_search/web_fetch when:
+You MUST verify with web_fetch when:
 - information may have changed (news/prices/policies/releases/versions/schedules);
 - user asks to check, verify, or look up;
 - guidance is high-stakes (medical/legal/financial/safety);

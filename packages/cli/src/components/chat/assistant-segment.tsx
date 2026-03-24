@@ -73,21 +73,6 @@ const CodeSegment = ({ content }: { content: string }) => {
   );
 };
 
-const NoteSegment = ({ content }: { content: string }) => {
-  return (
-    <box paddingLeft={3}>
-      <text
-        fg={uiTheme.muted}
-        attributes={uiTheme.typography.note}
-        wrapMode="word"
-        selectable={true}
-      >
-        {content}
-      </text>
-    </box>
-  );
-};
-
 const TextSegment = ({ content, streaming }: { content: string; streaming: boolean }) => {
   const normalized = content.trim();
   if (!normalized) {
@@ -117,9 +102,9 @@ export const AssistantSegment = ({ segment, streaming }: AssistantSegmentProps) 
     return <CodeSegment content={segment.content} />;
   }
 
-  if (segment.type === 'note') {
-    return <NoteSegment content={segment.content} />;
-  }
+  // if (segment.type === 'note') {
+  //   return <NoteSegment content={segment.content} />;
+  // }
 
   return <TextSegment content={segment.content} streaming={streaming} />;
 };

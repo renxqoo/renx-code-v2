@@ -6,6 +6,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { RELEASE_TARGETS } from './release-targets.mjs';
+import {
+  filterReleasePackageDirs,
+  resolvePackArgs,
+  resolvePrepareArgs,
+  resolvePublishArgs,
+  resolveReleaseScope,
+} from './release-args';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -69,53 +76,6 @@ const resolveReleasePackageDirs = () =>
     path.join(releaseRoot, 'main'),
   ].filter((packageDir) => existsSync(path.join(packageDir, 'package.json')));
 
-const takeArgValue = (flag, values) => {
-  const selected = [];
-  for (let index = 0; index < values.length; index += 1) {
-    if (values[index] === flag) {
-      const value = values[index + 1];
-      if (!value || value.startsWith('--')) {
-        throw new Error(`Missing value for ${flag}`);
-      }
-      selected.push(value);
-      index += 1;
-    }
-  }
-  return selected;
-};
-
-const pickArgs = (flags, values, { withValue = false } = {}) => {
-  const selected = [];
-  for (let index = 0; index < values.length; index += 1) {
-    const current = values[index];
-    if (!flags.includes(current)) {
-      continue;
-    }
-
-    selected.push(current);
-    if (withValue) {
-      const value = values[index + 1];
-      if (!value || value.startsWith('--')) {
-        throw new Error(`Missing value for ${current}`);
-      }
-      selected.push(value);
-      index += 1;
-    }
-  }
-  return selected;
-};
-
-const resolvePrepareArgs = (values) => [
-  ...pickArgs(['--single', '--all', '--skip-install'], values),
-  ...pickArgs(['--target'], values, { withValue: true }),
-];
-
-const resolvePackArgs = (values) => pickArgs(['--dry-run'], values);
-
-const resolvePublishArgs = (values) => [
-  ...pickArgs(['--tag', '--otp'], values, { withValue: true }),
-];
-
 const runPrepare = (prepareArgs) => {
   run(bunCommand, [prepareScriptPath, ...prepareArgs], {
     cwd: packageRoot,
@@ -149,12 +109,13 @@ const runPreflight = () => {
 };
 
 const runPack = (commandArgs) => {
+  const scope = resolveReleaseScope(commandArgs);
   const prepareArgs = resolvePrepareArgs(commandArgs);
   const packArgs = resolvePackArgs(commandArgs);
 
   runPrepare(prepareArgs);
 
-  const packageDirs = resolveReleasePackageDirs();
+  const packageDirs = filterReleasePackageDirs(resolveReleasePackageDirs(), scope);
   if (packageDirs.length === 0) {
     throw new Error('No release packages found after prepare.');
   }
@@ -170,12 +131,13 @@ const runPack = (commandArgs) => {
 const runPublish = (commandArgs) => {
   runPreflight();
 
+  const scope = resolveReleaseScope(commandArgs);
   const prepareArgs = resolvePrepareArgs(commandArgs);
   const publishArgs = resolvePublishArgs(commandArgs);
 
   runPrepare(prepareArgs);
 
-  const packageDirs = resolveReleasePackageDirs();
+  const packageDirs = filterReleasePackageDirs(resolveReleasePackageDirs(), scope);
   if (packageDirs.length === 0) {
     throw new Error('No release packages found after prepare.');
   }
@@ -186,6 +148,7 @@ const runPublish = (commandArgs) => {
     });
   }
 };
+
 
 switch (command) {
   case 'preflight':
@@ -199,7 +162,7 @@ switch (command) {
     break;
   default:
     console.error(
-      'Usage: bun ./scripts/release.mjs <preflight|pack|publish> [--single] [--all] [--target <id>] [--skip-install] [--dry-run] [--tag <tag>] [--otp <otp>]'
+      'Usage: bun ./scripts/release.mjs <preflight|pack|publish> [--platform-only|--main-only] [--target <id>] [--skip-install] [--dry-run] [--tag <tag>] [--otp <otp>]'
     );
     process.exit(1);
 }

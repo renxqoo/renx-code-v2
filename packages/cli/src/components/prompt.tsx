@@ -142,6 +142,19 @@ const PromptComponent = ({
     event.preventDefault();
     textareaRef.current?.insertText(normalized);
   }, []);
+  const EmptyBorder = {
+    topLeft: '',
+    bottomLeft: '',
+    vertical: '',
+    topRight: '',
+    bottomRight: '',
+    horizontal: ' ',
+    bottomT: '',
+    topT: '',
+    cross: '',
+    leftT: '',
+    rightT: '',
+  };
 
   return (
     <box
@@ -165,7 +178,11 @@ const PromptComponent = ({
           selectedIndex={slashMenu.selectedIndex}
         />
         <box width="100%" flexDirection="row" overflow="hidden">
-          <box width={1} backgroundColor={uiTheme.accent} />
+          <box
+            border={['left']}
+            borderColor={uiTheme.accent}
+            customBorderChars={{ ...EmptyBorder, vertical: '┃', bottomLeft: '╹' }}
+          />
           <box
             width="100%"
             flexGrow={1}
@@ -191,7 +208,7 @@ const PromptComponent = ({
               minWidth="100%"
               maxWidth="100%"
               minHeight={1}
-              maxHeight={4}
+              maxHeight={3}
               wrapMode="char"
               initialValue={value}
               textColor={uiTheme.userPromptText}
@@ -217,9 +234,9 @@ const PromptComponent = ({
               <text fg={uiTheme.text} attributes={uiTheme.typography.heading}>
                 {modelLabel}
               </text>
-              <text fg={uiTheme.muted} attributes={uiTheme.typography.muted}>
+              {/* <text fg={uiTheme.muted} attributes={uiTheme.typography.muted}>
                 Coding Agent
-              </text>
+              </text> */}
             </box>
           </box>
         </box>

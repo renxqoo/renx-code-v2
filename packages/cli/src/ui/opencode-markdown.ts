@@ -21,7 +21,10 @@ type SyntaxRenderOptions = {
   platform: MarkdownThemePlatform;
 };
 
-const getSyntaxRules = (theme: OpenCodeTheme, options: SyntaxRenderOptions): SyntaxRule[] => {
+export const getSyntaxRules = (
+  theme: OpenCodeTheme,
+  options: SyntaxRenderOptions
+): SyntaxRule[] => {
   const useItalic = options.platform !== 'darwin';
   const useUnderline = options.platform !== 'darwin';
 
@@ -36,11 +39,18 @@ const getSyntaxRules = (theme: OpenCodeTheme, options: SyntaxRenderOptions): Syn
     },
     { scope: ['comment'], style: { foreground: theme.syntaxComment, italic: useItalic } },
     {
-      scope: ['comment.documentation'],
+      scope: ['comment.documentation', 'comment.line', 'comment.block'],
       style: { foreground: theme.syntaxComment, italic: useItalic },
     },
     { scope: ['string', 'symbol'], style: { foreground: theme.syntaxString } },
-    { scope: ['number', 'boolean'], style: { foreground: theme.syntaxNumber } },
+    {
+      scope: ['string.special.symbol'],
+      style: { foreground: theme.syntaxString },
+    },
+    {
+      scope: ['number', 'number.float', 'number.integer', 'boolean'],
+      style: { foreground: theme.syntaxNumber },
+    },
     { scope: ['character.special'], style: { foreground: theme.syntaxString } },
     {
       scope: ['keyword.return', 'keyword.conditional', 'keyword.repeat', 'keyword.coroutine'],
@@ -50,29 +60,81 @@ const getSyntaxRules = (theme: OpenCodeTheme, options: SyntaxRenderOptions): Syn
       scope: ['keyword.type'],
       style: { foreground: theme.syntaxType, bold: true, italic: useItalic },
     },
-    { scope: ['keyword.function', 'function.method'], style: { foreground: theme.syntaxFunction } },
-    { scope: ['keyword'], style: { foreground: theme.syntaxKeyword, italic: useItalic } },
+    {
+      scope: ['keyword.function', 'function.method'],
+      style: { foreground: theme.syntaxFunction },
+    },
+    {
+      scope: [
+        'keyword',
+        'keyword.storage',
+        'keyword.async',
+        'keyword.await',
+        'keyword.debug',
+        'keyword.special',
+        'keyword.namespace',
+        'keyword.control',
+      ],
+      style: { foreground: theme.syntaxKeyword, italic: useItalic },
+    },
     { scope: ['keyword.import'], style: { foreground: theme.syntaxKeyword } },
     {
-      scope: ['operator', 'keyword.operator', 'punctuation.delimiter'],
+      scope: [
+        'operator',
+        'operator.assignment',
+        'operator.arithmetic',
+        'operator.logical',
+        'operator.relational',
+        'operator.bitwise',
+        'keyword.operator',
+        'punctuation.delimiter',
+      ],
       style: { foreground: theme.syntaxOperator },
     },
     { scope: ['keyword.conditional.ternary'], style: { foreground: theme.syntaxOperator } },
     {
-      scope: ['variable', 'variable.parameter', 'function.method.call', 'function.call'],
+      scope: [
+        'variable',
+        'variable.parameter',
+        'variable.local',
+        'variable.readonly',
+        'variable.global',
+        'variable.constant',
+        'function.method.call',
+        'function.call',
+      ],
       style: { foreground: theme.syntaxVariable },
     },
     {
-      scope: ['variable.member', 'function', 'constructor'],
+      scope: [
+        'variable.member',
+        'function',
+        'function.definition',
+        'function.special',
+        'function.macro',
+        'constructor',
+        'constructor.special',
+      ],
       style: { foreground: theme.syntaxFunction },
     },
-    { scope: ['type', 'module'], style: { foreground: theme.syntaxType } },
-    { scope: ['constant'], style: { foreground: theme.syntaxNumber } },
-    { scope: ['property'], style: { foreground: theme.syntaxVariable } },
-    { scope: ['class'], style: { foreground: theme.syntaxType } },
-    { scope: ['parameter'], style: { foreground: theme.syntaxVariable } },
     {
-      scope: ['punctuation', 'punctuation.bracket'],
+      scope: ['type', 'module', 'type.enum', 'type.interface', 'type.class', 'type.struct'],
+      style: { foreground: theme.syntaxType },
+    },
+    {
+      scope: ['constant', 'constant.language', 'constant.character', 'constant.numeric'],
+      style: { foreground: theme.syntaxNumber },
+    },
+    { scope: ['property', 'property.definition'], style: { foreground: theme.syntaxVariable } },
+    { scope: ['class'], style: { foreground: theme.syntaxType } },
+    { scope: ['parameter', 'type.parameter'], style: { foreground: theme.syntaxVariable } },
+    {
+      scope: [
+        'punctuation',
+        'punctuation.bracket',
+        'punctuation.separator',
+        'punctuation.definition',
+      ],
       style: { foreground: theme.syntaxPunctuation },
     },
     {
@@ -91,6 +153,7 @@ const getSyntaxRules = (theme: OpenCodeTheme, options: SyntaxRenderOptions): Syn
     { scope: ['punctuation.special'], style: { foreground: theme.syntaxOperator } },
     { scope: ['keyword.modifier'], style: { foreground: theme.syntaxKeyword, italic: useItalic } },
     { scope: ['keyword.exception'], style: { foreground: theme.syntaxKeyword, italic: useItalic } },
+    { scope: ['none', 'embedded'], style: {} },
     { scope: ['markup.heading'], style: { foreground: theme.markdownHeading, bold: true } },
     { scope: ['markup.heading.1'], style: { foreground: theme.markdownHeading, bold: true } },
     { scope: ['markup.heading.2'], style: { foreground: theme.markdownHeading, bold: true } },
@@ -110,9 +173,12 @@ const getSyntaxRules = (theme: OpenCodeTheme, options: SyntaxRenderOptions): Syn
       scope: ['markup.raw.inline'],
       style: { foreground: theme.markdownCode, background: theme.background },
     },
-    { scope: ['markup.link'], style: { foreground: theme.markdownLink, underline: useUnderline } },
     {
-      scope: ['markup.link.label'],
+      scope: ['markup.link', 'markup.link.bracket.close'],
+      style: { foreground: theme.markdownLink, underline: useUnderline },
+    },
+    {
+      scope: ['markup.link.label', 'markup.link.text'],
       style: { foreground: theme.markdownLinkText, underline: useUnderline },
     },
     {
@@ -137,7 +203,7 @@ const getSyntaxRules = (theme: OpenCodeTheme, options: SyntaxRenderOptions): Syn
       scope: ['comment.todo', 'comment.note'],
       style: { foreground: theme.info, italic: useItalic, bold: true },
     },
-    { scope: ['namespace'], style: { foreground: theme.syntaxType } },
+    { scope: ['namespace', 'meta'], style: { foreground: theme.textMuted } },
     { scope: ['field'], style: { foreground: theme.syntaxVariable } },
     { scope: ['type.definition'], style: { foreground: theme.syntaxType, bold: true } },
     { scope: ['keyword.export'], style: { foreground: theme.syntaxKeyword } },
@@ -148,6 +214,18 @@ const getSyntaxRules = (theme: OpenCodeTheme, options: SyntaxRenderOptions): Syn
     { scope: ['markup.strikethrough'], style: { foreground: theme.textMuted } },
     { scope: ['markup.underline'], style: { foreground: theme.text, underline: useUnderline } },
     { scope: ['markup.list.checked'], style: { foreground: theme.success } },
+    {
+      scope: ['markup.inserted'],
+      style: { foreground: theme.diffAdded, background: theme.diffAddedBg },
+    },
+    {
+      scope: ['markup.deleted'],
+      style: { foreground: theme.diffRemoved, background: theme.diffRemovedBg },
+    },
+    {
+      scope: ['markup.changed'],
+      style: { foreground: theme.diffContext, background: theme.diffContextBg },
+    },
     { scope: ['markup.list.unchecked'], style: { foreground: theme.textMuted } },
     { scope: ['diff.plus'], style: { foreground: theme.diffAdded, background: theme.diffAddedBg } },
     {
@@ -155,7 +233,7 @@ const getSyntaxRules = (theme: OpenCodeTheme, options: SyntaxRenderOptions): Syn
       style: { foreground: theme.diffRemoved, background: theme.diffRemovedBg },
     },
     {
-      scope: ['diff.delta'],
+      scope: ['diff.delta', 'diff.changed'],
       style: { foreground: theme.diffContext, background: theme.diffContextBg },
     },
     { scope: ['error'], style: { foreground: theme.error, bold: true } },
