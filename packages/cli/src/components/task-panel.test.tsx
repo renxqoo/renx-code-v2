@@ -20,7 +20,7 @@ describe('TaskPanel', () => {
     expect(container.textContent?.trim() ?? '').toBe('');
   });
 
-  it('renders a single compact task with subagent info', () => {
+  it('renders multiple compact task rows', () => {
     const { container } = render(
       <TaskPanel
         visible
@@ -32,29 +32,29 @@ describe('TaskPanel', () => {
         tasks={[
           {
             id: 'task-1',
-            subject: 'Search info',
+            subject: 'Sort industry news',
             status: 'pending',
             priority: 'high',
-            owner: 'agent:abcd1234efgh5678',
-            blockedBy: [],
-            blocks: [],
-            progress: 0,
-            isBlocked: false,
-            canBeClaimed: false,
-            createdAt: 1,
-            updatedAt: 1,
-          },
-          {
-            id: 'task-2',
-            subject: 'Collect sources',
-            status: 'pending',
-            priority: 'normal',
             owner: null,
             blockedBy: [],
             blocks: [],
             progress: 0,
             isBlocked: false,
             canBeClaimed: true,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          {
+            id: 'task-2',
+            subject: 'Sort competitor updates',
+            status: 'pending',
+            priority: 'normal',
+            owner: 'agent:abcd1234efgh5678',
+            blockedBy: [],
+            blocks: [],
+            progress: 0,
+            isBlocked: false,
+            canBeClaimed: false,
             createdAt: 2,
             updatedAt: 2,
           },
@@ -64,14 +64,11 @@ describe('TaskPanel', () => {
 
     const text = container.textContent?.replace(/\s+/g, '').trim() ?? '';
 
-    expect(text).toContain('>Searchinfo');
-    expect(text).toContain('pending');
-    expect(text).toContain('subagentabcd1234');
-    expect(text).toContain('+1');
-    expect(text).not.toContain('Collectsources');
+    expect(text).toContain('○Sortindustrynews|ready');
+    expect(text).toContain('○Sortcompetitorupdates|pending|(subagentabcd1234)');
   });
 
-  it('renders progress for in-progress tasks', () => {
+  it('renders progress and completion markers', () => {
     const { container } = render(
       <TaskPanel
         visible
@@ -95,14 +92,27 @@ describe('TaskPanel', () => {
             createdAt: 1,
             updatedAt: 1,
           },
+          {
+            id: 'task-2',
+            subject: 'Ship release',
+            status: 'completed',
+            priority: 'high',
+            owner: null,
+            blockedBy: [],
+            blocks: [],
+            progress: 100,
+            isBlocked: false,
+            canBeClaimed: false,
+            createdAt: 2,
+            updatedAt: 2,
+          },
         ]}
       />
     );
 
     const text = container.textContent?.replace(/\s+/g, '').trim() ?? '';
 
-    expect(text).toContain('ImplementUI');
-    expect(text).toContain('62%');
-    expect(text).toContain('subagentworker99');
+    expect(text).toContain('○ImplementUI|62%|(subagentworker99)');
+    expect(text).toContain('●Shiprelease|done');
   });
 });

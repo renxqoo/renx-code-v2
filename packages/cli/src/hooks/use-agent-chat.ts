@@ -11,6 +11,8 @@ import type {
   AgentContextUsageEvent,
   AgentToolConfirmDecision,
   AgentToolConfirmEvent,
+  AgentToolResultEvent,
+  AgentToolUseEvent,
   AgentToolPermissionEvent,
   AgentToolPermissionGrant,
   AgentUserMessageEvent,
@@ -39,6 +41,10 @@ import {
 } from '../files/attachment-capabilities';
 import { buildPromptContent } from '../files/attachment-content';
 import { buildPromptDisplay } from '../files/prompt-display';
+
+type UseAgentChatOptions = {
+  onTaskMutation?: () => void;
+};
 
 type ToolConfirmSelection = 'approve' | 'deny';
 type ToolPermissionScope = AgentToolPermissionGrant['scope'];
@@ -143,7 +149,35 @@ export const resolveReplyStatus = (completionReason: string): 'done' | 'error' =
   return completionReason === 'error' ? 'error' : 'done';
 };
 
-export const useAgentChat = (): UseAgentChatResult => {
+const TASK_TOOL_NAMES = new Set(['task_create', 'task_update', 'task_stop']);
+
+const readToolUseName = (event: unknown): string | null => {
+  if (!event || typeof event !== 'object') {
+    return null;
+  }
+  const functionValue =
+    'function' in event && event.function && typeof event.function === 'object'
+      ? (event.function as { name?: unknown })
+      : null;
+  return typeof functionValue?.name === 'string' ? functionValue.name : null;
+};
+
+const readToolResultName = (event: unknown): string | null => {
+  if (!event || typeof event !== 'object') {
+    return null;
+  }
+  const toolCall =
+    'toolCall' in event && event.toolCall && typeof event.toolCall === 'object'
+      ? (event.toolCall as { function?: unknown })
+      : null;
+  const functionValue =
+    toolCall?.function && typeof toolCall.function === 'object'
+      ? (toolCall.function as { name?: unknown })
+      : null;
+  return typeof functionValue?.name === 'string' ? functionValue.name : null;
+};
+
+export const useAgentChat = (options: UseAgentChatOptions = {}): UseAgentChatResult => {
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<PromptFileSelection[]>([]);
@@ -182,6 +216,7 @@ export const useAgentChat = (): UseAgentChatResult => {
   const activeTurnIdRef = useRef<number | null>(null);
   const activeAbortControllerRef = useRef<AbortController | null>(null);
   const activeRunPromiseRef = useRef<Promise<void> | null>(null);
+  const taskMutationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingFollowUpTurnIdsRef = useRef<number[]>([]);
   const pendingToolConfirmRef = useRef<PendingToolConfirm | null>(null);
   const pendingToolConfirmResolverRef = useRef<PendingToolConfirmResolver | null>(null);
@@ -307,10 +342,27 @@ export const useAgentChat = (): UseAgentChatResult => {
         currentPromise.catch(() => {}); // 防止未处理的rejection
       }
       activeAbortControllerRef.current?.abort();
+      if (taskMutationTimeoutRef.current) {
+        clearTimeout(taskMutationTimeoutRef.current);
+        taskMutationTimeoutRef.current = null;
+      }
       pendingFollowUpTurnIdsRef.current = [];
       cancelAllPendingToolConfirms('Tool confirmation cancelled because the UI was closed.');
     };
   }, [cancelAllPendingToolConfirms]);
+
+  const scheduleTaskMutation = useCallback(() => {
+    if (!options.onTaskMutation) {
+      return;
+    }
+    if (taskMutationTimeoutRef.current) {
+      clearTimeout(taskMutationTimeoutRef.current);
+    }
+    taskMutationTimeoutRef.current = setTimeout(() => {
+      taskMutationTimeoutRef.current = null;
+      options.onTaskMutation?.();
+    }, 80);
+  }, [options]);
 
   const appendSegment = useCallback(
     (turnId: number, segmentId: string, type: ReplySegmentType, chunk: string, data?: unknown) => {
@@ -560,6 +612,18 @@ export const useAgentChat = (): UseAgentChatResult => {
       });
       const handlers = {
         ...baseHandlers,
+        onToolUse: (event: AgentToolUseEvent) => {
+          baseHandlers.onToolUse?.(event);
+          if (TASK_TOOL_NAMES.has(readToolUseName(event) ?? '')) {
+            scheduleTaskMutation();
+          }
+        },
+        onToolResult: (event: AgentToolResultEvent) => {
+          baseHandlers.onToolResult?.(event);
+          if (TASK_TOOL_NAMES.has(readToolResultName(event) ?? '')) {
+            scheduleTaskMutation();
+          }
+        },
         onToolConfirmRequest: (event: AgentToolConfirmEvent) => {
           if (!isCurrentRequest()) {
             return Promise.resolve({
@@ -753,6 +817,7 @@ export const useAgentChat = (): UseAgentChatResult => {
     addTurn,
     isThinking,
     runCommand,
+    scheduleTaskMutation,
     selectedFiles,
     startStreamingReplyForTurn,
   ]);

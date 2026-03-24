@@ -34,6 +34,19 @@ const shouldShowEventLog = () => {
   return value === '1' || value === 'true' || value === 'yes' || value === 'on';
 };
 
+const shouldSuppressToolResultInChat = (event: AgentToolResultEvent): boolean => {
+  if (!event.toolCall || typeof event.toolCall !== 'object') {
+    return false;
+  }
+  const toolFunction =
+    'function' in event.toolCall &&
+    event.toolCall.function &&
+    typeof event.toolCall.function === 'object'
+      ? (event.toolCall.function as { name?: unknown })
+      : null;
+  return typeof toolFunction?.name === 'string' && toolFunction.name.startsWith('task_');
+};
+
 export const buildAgentEventHandlers = ({
   getTurnId,
   isCurrentRequest,
@@ -164,6 +177,9 @@ export const buildAgentEventHandlers = ({
         return;
       }
       breakTextDeltaContinuation();
+      if (shouldSuppressToolResultInChat(event)) {
+        return;
+      }
       const toolCallId = readToolCallIdFromResult(event);
       const suppressOutput = Boolean(toolCallId && streamedToolCallIds.has(toolCallId));
       const segmentSuffix = toolCallId ?? `anonymous_${++anonymousToolResultCounter}`;

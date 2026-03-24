@@ -82,6 +82,37 @@ const createEmptyToolResultEvent = (): AgentToolResultEvent => ({
   },
 });
 
+const createTaskToolUseEvent = (): AgentToolUseEvent => ({
+  id: 'call_task_1',
+  function: {
+    name: 'task_update',
+    arguments: JSON.stringify({
+      taskId: 'task-1',
+      status: 'in_progress',
+    }),
+  },
+});
+
+const createTaskToolResultEvent = (): AgentToolResultEvent => ({
+  toolCall: {
+    id: 'call_task_1',
+    function: {
+      name: 'task_update',
+      arguments: JSON.stringify({
+        taskId: 'task-1',
+        status: 'in_progress',
+      }),
+    },
+  },
+  result: {
+    success: true,
+    data: {
+      taskId: 'task-1',
+      status: 'in_progress',
+    },
+  },
+});
+
 describe('buildAgentEventHandlers', () => {
   it('keeps ordered stream segments as thinking -> text -> thinking -> tool -> tool result', () => {
     const { handlers, readSegments, turnId } = buildHarness();
@@ -207,5 +238,18 @@ describe('buildAgentEventHandlers', () => {
       (segment) => segment.id === `${turnId}:tool-use:call_1`
     );
     expect(toolUseSegments.length).toBe(1);
+  });
+
+  it('keeps task tool-use visible while suppressing task tool-result in chat segments', () => {
+    const { handlers, readSegments, turnId } = buildHarness();
+
+    handlers.onToolUse?.(createTaskToolUseEvent());
+    handlers.onToolResult?.(createTaskToolResultEvent());
+
+    const segments = readSegments();
+    expect(segments.some((segment) => segment.id === `${turnId}:tool-use:call_task_1`)).toBe(true);
+    expect(segments.some((segment) => segment.id === `${turnId}:tool-result:call_task_1`)).toBe(
+      false
+    );
   });
 });

@@ -22,6 +22,12 @@ const panelAlignPaddingX =
 const clampProgress = (progress: number): number =>
   Math.max(0, Math.min(100, Math.round(progress)));
 
+const getTaskMarker = (task: AgentTaskSummary): string => {
+  return task.status === 'completed' ? '●' : '○';
+};
+
+const taskTextAttributes = TextAttributes.DIM;
+
 const getTaskStateLabel = (task: AgentTaskSummary): string => {
   if (task.isBlocked) {
     return 'blocked';
@@ -49,20 +55,10 @@ const formatOwnerLabel = (owner: string | null): string | null => {
 
   if (owner.startsWith('agent:')) {
     const agentId = owner.slice('agent:'.length);
-    if (!agentId) {
-      return 'subagent';
-    }
-    return `subagent ${agentId.slice(0, 8)}`;
+    return agentId ? `subagent ${agentId.slice(0, 8)}` : 'subagent';
   }
 
   return owner;
-};
-
-const formatOverflowLabel = (tasks: AgentTaskSummary[]): string | null => {
-  if (tasks.length <= 1) {
-    return null;
-  }
-  return `+${tasks.length - 1}`;
 };
 
 export const TaskPanel = ({
@@ -84,16 +80,12 @@ export const TaskPanel = ({
     return () => clearTimeout(timer);
   }, [loading, tasks.length, visible]);
 
-  const activeTask = useMemo(() => {
+  const safeSelectedIndex = useMemo(() => {
     if (tasks.length === 0) {
-      return null;
+      return 0;
     }
-    const safeIndex = Math.max(0, Math.min(selectedIndex, tasks.length - 1));
-    return tasks[safeIndex] ?? tasks[0] ?? null;
-  }, [selectedIndex, tasks]);
-
-  const ownerLabel = useMemo(() => formatOwnerLabel(activeTask?.owner ?? null), [activeTask]);
-  const overflowLabel = useMemo(() => formatOverflowLabel(tasks), [tasks]);
+    return Math.max(0, Math.min(selectedIndex, tasks.length - 1));
+  }, [selectedIndex, tasks.length]);
 
   if (!visible || (!loading && !error && tasks.length === 0)) {
     return null;
@@ -106,17 +98,17 @@ export const TaskPanel = ({
       flexShrink={0}
       marginBottom={0}
       paddingX={panelAlignPaddingX}
+      alignItems="center"
     >
-      <box width="100%" flexDirection="row" overflow="hidden" marginLeft={1} marginRight={1}>
-        <box width={1} backgroundColor={flash ? uiTheme.accent : uiTheme.divider} />
+      <box width="96%" flexDirection="row" overflow="hidden">
         <box
           width="100%"
-          flexDirection="row"
+          flexDirection="column"
           backgroundColor={uiTheme.surface}
+          border={['top', 'bottom', 'left', 'right']}
+          borderColor={flash ? uiTheme.accent : uiTheme.divider}
           paddingLeft={1}
           paddingRight={1}
-          paddingTop={1}
-          paddingBottom={1}
         >
           {loading ? (
             <text fg={uiTheme.muted}>Task refreshing...</text>
@@ -124,48 +116,53 @@ export const TaskPanel = ({
             <text fg="#ff8d8d" wrapMode="word">
               {error}
             </text>
-          ) : activeTask ? (
-            <box
-              flexDirection="row"
-              gap={1}
-              onMouseOver={() => onSelectIndex(Math.max(0, selectedIndex))}
-              onMouseUp={() => onSelectIndex(Math.max(0, selectedIndex))}
-            >
-              <text fg={uiTheme.accent} attributes={TextAttributes.BOLD}>
-                {'>'}
-              </text>
-              <text fg={uiTheme.text} attributes={TextAttributes.BOLD} wrapMode="none">
-                {activeTask.subject}
-              </text>
-              <text fg={uiTheme.subtle} wrapMode="none">
-                ·
-              </text>
-              <text fg={uiTheme.subtle} wrapMode="none">
-                {getTaskStateLabel(activeTask)}
-              </text>
-              {ownerLabel ? (
-                <>
-                  <text fg={uiTheme.subtle} wrapMode="none">
-                    ·
-                  </text>
-                  <text fg={uiTheme.muted} wrapMode="none">
-                    {ownerLabel}
-                  </text>
-                </>
-              ) : null}
-              {overflowLabel ? (
-                <>
-                  <text fg={uiTheme.subtle} wrapMode="none">
-                    ·
-                  </text>
-                  <text fg={uiTheme.subtle} wrapMode="none">
-                    {overflowLabel}
-                  </text>
-                </>
-              ) : null}
-            </box>
           ) : (
-            <text fg={uiTheme.muted}>No session tasks.</text>
+            <box flexDirection="column" gap={0}>
+              {tasks.map((task, index) => {
+                const ownerLabel = formatOwnerLabel(task.owner);
+                const isSelected = index === safeSelectedIndex;
+
+                return (
+                  <box
+                    key={task.id}
+                    flexDirection="row"
+                    gap={1}
+                    onMouseOver={() => onSelectIndex(index)}
+                    onMouseUp={() => onSelectIndex(index)}
+                  >
+                    <text
+                      fg={task.status === 'completed' ? uiTheme.accent : uiTheme.subtle}
+                      attributes={taskTextAttributes}
+                    >
+                      {getTaskMarker(task)}
+                    </text>
+                    <text
+                      fg={isSelected ? uiTheme.text : uiTheme.text}
+                      attributes={taskTextAttributes}
+                      wrapMode="none"
+                    >
+                      {task.subject}
+                    </text>
+                    <text fg={uiTheme.subtle} attributes={taskTextAttributes} wrapMode="none">
+                      |
+                    </text>
+                    <text fg={uiTheme.subtle} attributes={taskTextAttributes} wrapMode="none">
+                      {getTaskStateLabel(task)}
+                    </text>
+                    {ownerLabel ? (
+                      <>
+                        <text fg={uiTheme.subtle} attributes={taskTextAttributes} wrapMode="none">
+                          |
+                        </text>
+                        <text fg={uiTheme.subtle} attributes={taskTextAttributes} wrapMode="none">
+                          ({ownerLabel})
+                        </text>
+                      </>
+                    ) : null}
+                  </box>
+                );
+              })}
+            </box>
           )}
         </box>
       </box>

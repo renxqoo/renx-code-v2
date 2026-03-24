@@ -12,7 +12,7 @@ type UseTaskPanelResult = {
   open: () => void;
   close: () => void;
   toggle: () => void;
-  refresh: () => Promise<void>;
+  refresh: (options?: { silent?: boolean }) => Promise<void>;
   setSelectedIndex: (index: number) => void;
 };
 
@@ -30,13 +30,16 @@ export const useTaskPanel = (): UseTaskPanelResult => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const requestIdRef = useRef(0);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
     const nextNamespace = resolveCurrentNamespace();
     setNamespace(nextNamespace);
     requestIdRef.current += 1;
     const requestId = requestIdRef.current;
-    setLoading(true);
-    setError(null);
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const result = await getAgentTaskList({ namespace: nextNamespace });
       if (requestId !== requestIdRef.current) {
@@ -54,11 +57,13 @@ export const useTaskPanel = (): UseTaskPanelResult => {
       if (requestId !== requestIdRef.current) {
         return;
       }
-      setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
-      setTasks([]);
-      setSelectedIndex(0);
+      if (!silent) {
+        setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
+        setTasks([]);
+        setSelectedIndex(0);
+      }
     } finally {
-      if (requestId === requestIdRef.current) {
+      if (requestId === requestIdRef.current && !silent) {
         setLoading(false);
       }
     }

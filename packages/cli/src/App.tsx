@@ -46,6 +46,7 @@ const isFullAccessModeEnabled = (): boolean => {
 };
 
 export const App = () => {
+  const taskPanel = useTaskPanel();
   const {
     turns,
     inputValue,
@@ -66,13 +67,16 @@ export const App = () => {
     setToolConfirmScope,
     submitToolConfirmSelection,
     rejectPendingToolConfirm,
-  } = useAgentChat();
+  } = useAgentChat({
+    onTaskMutation: () => {
+      void taskPanel.refresh({ silent: true });
+    },
+  });
   const [slashMenuVisible, setSlashMenuVisible] = useState(false);
   const modelPicker = useModelPicker({
     onModelChanged: setModelLabelDisplay,
   });
   const filePicker = useFilePicker();
-  const taskPanel = useTaskPanel();
   const dimensions = useTerminalDimensions();
   const renderer = useRenderer();
   const [copyToastVisible, setCopyToastVisible] = useState(false);
