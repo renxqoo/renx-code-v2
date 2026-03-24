@@ -25,6 +25,7 @@ import {
   getAgentModelId,
   getAgentModelLabel,
   getAgentSession,
+  getAgentTaskList,
   initializeAgentSession,
   listAgentModels,
   listAgentSessions,
@@ -331,6 +332,88 @@ describe('runtime', () => {
 
   it('returns the active model label', async () => {
     await expect(getAgentModelLabel()).resolves.toBe('GLM-5');
+  });
+
+  it('lists tasks for the current session namespace from the task store', async () => {
+    const previousSessionId = process.env.AGENT_SESSION_ID;
+    const previousConversationId = process.env.AGENT_CONVERSATION_ID;
+    process.env.AGENT_SESSION_ID = 'session-task-panel';
+    process.env.AGENT_CONVERSATION_ID = 'session-task-panel';
+
+    try {
+      const getTaskStateStoreV2 = vi.fn(() => ({
+        normalizeNamespace: vi.fn((namespace?: string) => namespace?.trim() || 'default'),
+        getState: vi.fn().mockResolvedValue({
+          tasks: {
+            t2: {
+              id: 't2',
+              subject: 'Completed task',
+              description: 'done',
+              activeForm: 'Completing task',
+              status: 'completed',
+              priority: 'normal',
+              owner: null,
+              blockedBy: [],
+              blocks: [],
+              progress: 100,
+              checkpoints: [],
+              retryConfig: { maxRetries: 3, retryDelayMs: 1000, backoffMultiplier: 2, retryOn: [] },
+              retryCount: 0,
+              tags: [],
+              metadata: {},
+              history: [],
+              createdAt: 2,
+              updatedAt: 2,
+              version: 1,
+            },
+            t1: {
+              id: 't1',
+              subject: 'In progress task',
+              description: 'doing',
+              activeForm: 'Doing task',
+              status: 'in_progress',
+              priority: 'high',
+              owner: 'cli',
+              blockedBy: [],
+              blocks: [],
+              progress: 55,
+              checkpoints: [],
+              retryConfig: { maxRetries: 3, retryDelayMs: 1000, backoffMultiplier: 2, retryOn: [] },
+              retryCount: 0,
+              tags: [],
+              metadata: {},
+              history: [],
+              createdAt: 1,
+              updatedAt: 1,
+              version: 1,
+            },
+          },
+        }),
+      }));
+
+      const modules = buildMockModules({ getTaskStateStoreV2 });
+      mockGetSourceModules.mockResolvedValue(
+        modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+      );
+
+      const result = await getAgentTaskList();
+
+      expect(result.namespace).toBe('session-task-panel');
+      expect(result.total).toBe(2);
+      expect(result.tasks.map((task) => task.id)).toEqual(['t1', 't2']);
+      expect(getTaskStateStoreV2).toHaveBeenCalled();
+    } finally {
+      if (previousSessionId === undefined) {
+        delete process.env.AGENT_SESSION_ID;
+      } else {
+        process.env.AGENT_SESSION_ID = previousSessionId;
+      }
+      if (previousConversationId === undefined) {
+        delete process.env.AGENT_CONVERSATION_ID;
+      } else {
+        process.env.AGENT_CONVERSATION_ID = previousConversationId;
+      }
+    }
   });
 
   it('returns the active model id', async () => {

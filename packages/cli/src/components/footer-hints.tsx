@@ -7,6 +7,7 @@ type FooterHintsProps = {
   isThinking: boolean;
   contextUsagePercent: number | null;
   isFullAccessMode?: boolean;
+  taskPanelVisible?: boolean;
 };
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -16,6 +17,7 @@ export const FooterHints = ({
   isThinking,
   contextUsagePercent,
   isFullAccessMode = false,
+  taskPanelVisible = true,
 }: FooterHintsProps) => {
   const [frameIndex, setFrameIndex] = useState(0);
   const hintAlignPaddingX =
@@ -76,6 +78,9 @@ export const FooterHints = ({
             <strong>full access</strong>
           </text>
         ) : null}
+        <text fg={uiTheme.muted} attributes={TextAttributes.BOLD}>
+          <strong>ctrl+t</strong> {taskPanelVisible ? 'tasks off' : 'tasks on'}
+        </text>
         <text fg={uiTheme.muted} attributes={TextAttributes.BOLD}>
           <strong>context</strong> {contextUsageLabel}
         </text>

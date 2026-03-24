@@ -8,12 +8,14 @@ import { FilePickerDialog } from './components/file-picker-dialog';
 import { FooterHints } from './components/footer-hints';
 import { ModelPickerDialog } from './components/model-picker-dialog';
 import { Prompt } from './components/prompt';
+import { TaskPanel } from './components/task-panel';
 import { ToolConfirmDialog } from './components/tool-confirm-dialog';
 import { isMediaSelection } from './files/attachment-capabilities';
 import type { PromptFileSelection } from './files/types';
 import { useAgentChat } from './hooks/use-agent-chat';
 import { useFilePicker } from './hooks/use-file-picker';
 import { useModelPicker } from './hooks/use-model-picker';
+import { useTaskPanel } from './hooks/use-task-panel';
 import { requestExit } from './runtime/exit';
 import { copyTextToClipboard } from './runtime/clipboard';
 import { uiTheme } from './ui/theme';
@@ -70,6 +72,7 @@ export const App = () => {
     onModelChanged: setModelLabelDisplay,
   });
   const filePicker = useFilePicker();
+  const taskPanel = useTaskPanel();
   const dimensions = useTerminalDimensions();
   const renderer = useRenderer();
   const [copyToastVisible, setCopyToastVisible] = useState(false);
@@ -121,6 +124,12 @@ export const App = () => {
       }
     };
   }, [renderer]);
+
+  useEffect(() => {
+    if (!isThinking) {
+      void taskPanel.refresh();
+    }
+  }, [isThinking, taskPanel.refresh]);
 
   const submitWithCommands = useCallback(() => {
     const command = resolveSlashCommand(inputValue);
@@ -211,6 +220,12 @@ export const App = () => {
 
     if (key.ctrl && key.name === 'l') {
       resetConversation();
+      void taskPanel.refresh();
+      return;
+    }
+
+    if (key.ctrl && key.name === 't') {
+      taskPanel.toggle();
       return;
     }
 
@@ -238,6 +253,15 @@ export const App = () => {
       paddingRight={uiTheme.layout.appPaddingX}
     >
       <ConversationPanel turns={turns} isThinking={isThinking} />
+      <TaskPanel
+        visible={taskPanel.visible}
+        loading={taskPanel.loading}
+        error={taskPanel.error}
+        namespace={taskPanel.namespace}
+        tasks={taskPanel.tasks}
+        selectedIndex={taskPanel.selectedIndex}
+        onSelectIndex={taskPanel.setSelectedIndex}
+      />
       <Prompt
         isThinking={isThinking}
         disabled={modelPicker.visible || filePicker.visible || Boolean(pendingToolConfirm)}
@@ -254,6 +278,7 @@ export const App = () => {
         isThinking={isThinking}
         contextUsagePercent={contextUsagePercent}
         isFullAccessMode={fullAccessModeEnabled}
+        taskPanelVisible={taskPanel.visible}
       />
       <ToolConfirmDialog
         visible={Boolean(pendingToolConfirm)}

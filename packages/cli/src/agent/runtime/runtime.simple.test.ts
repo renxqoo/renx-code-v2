@@ -11,6 +11,7 @@ describe('runtime module exports', () => {
     expect(typeof runtimeModule.getAgentModelLabel).toBe('function');
     expect(typeof runtimeModule.getAgentModelId).toBe('function');
     expect(typeof runtimeModule.listAgentModels).toBe('function');
+    expect(typeof runtimeModule.getAgentTaskList).toBe('function');
     expect(typeof runtimeModule.switchAgentModel).toBe('function');
     expect(typeof runtimeModule.disposeAgentRuntime).toBe('function');
   });

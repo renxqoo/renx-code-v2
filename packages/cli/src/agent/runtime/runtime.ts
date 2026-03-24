@@ -14,6 +14,7 @@ import type {
   AgentUserMessageEvent,
   AgentUsageEvent,
 } from './types';
+import type { TaskPriority, TaskRecord, TaskStatus } from '@renx-code/core';
 import type { AgentModelOption, AgentModelSwitchResult } from './model-types';
 import { resolveToolConfirmDecision, resolveToolPermissionGrant } from './tool-confirmation';
 import {
@@ -68,6 +69,34 @@ export type SessionSummary = {
   lastRunStatus?: string;
   lastUserMessageText?: string;
   lastAssistantMessageText?: string;
+};
+
+export type AgentTaskSummary = {
+  id: string;
+  subject: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  owner: string | null;
+  blockedBy: string[];
+  blocks: string[];
+  progress: number;
+  isBlocked: boolean;
+  canBeClaimed: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type AgentTaskList = {
+  namespace: string;
+  total: number;
+  tasks: AgentTaskSummary[];
+};
+
+export type AgentTaskListOptions = {
+  namespace?: string;
+  statuses?: TaskStatus[];
+  owner?: string;
+  tag?: string;
 };
 
 export type NonInteractiveRunMode = 'run' | 'ask';
@@ -255,6 +284,51 @@ const setConversationId = (conversationId: string) => {
 
 const resolveDbPath = (modules: SourceModules): string => {
   return modules.resolveRenxDatabasePath(process.env);
+};
+
+const resolveTaskNamespace = (explicitNamespace?: string): string => {
+  const normalized = explicitNamespace?.trim();
+  if (normalized) {
+    return normalized;
+  }
+  return resolveConversationId();
+};
+
+const rankTaskSummary = (summary: AgentTaskSummary): number => {
+  if (summary.canBeClaimed && summary.priority === 'critical') return 0;
+  if (summary.status === 'in_progress') return 1;
+  if (summary.canBeClaimed && summary.priority === 'high') return 2;
+  if (summary.canBeClaimed && summary.priority === 'normal') return 3;
+  if (summary.canBeClaimed && summary.priority === 'low') return 4;
+  if (summary.isBlocked) return 5;
+  if (summary.status === 'completed') return 6;
+  if (summary.status === 'cancelled' || summary.status === 'failed') return 7;
+  return 8;
+};
+
+const toTaskSummary = (
+  task: TaskRecord,
+  allTasks: Record<string, TaskRecord>
+): AgentTaskSummary => {
+  const blockingCount = task.blockedBy.filter((taskId) => {
+    const blocker = allTasks[taskId];
+    return !blocker || blocker.status !== 'completed';
+  }).length;
+
+  return {
+    id: task.id,
+    subject: task.subject,
+    status: task.status,
+    priority: task.priority,
+    owner: task.owner,
+    blockedBy: [...task.blockedBy],
+    blocks: [...task.blocks],
+    progress: task.progress,
+    isBlocked: blockingCount > 0,
+    canBeClaimed: task.status === 'pending' && blockingCount === 0 && !task.owner,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt,
+  };
 };
 
 const buildCliLoggerEnv = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => ({
@@ -1133,6 +1207,57 @@ export const runAgentPromptNonInteractive = async (
   }
 
   return result;
+};
+
+export const getAgentTaskList = async (
+  options: AgentTaskListOptions = {}
+): Promise<AgentTaskList> => {
+  const modules = await getSourceModules();
+  await prepareRuntimeEnvironment(modules, resolveWorkspaceRoot());
+
+  const taskStore = modules.getTaskStateStoreV2({
+    baseDir: modules.resolveRenxTaskDir(process.env),
+  }) as {
+    normalizeNamespace: (namespaceInput?: string) => string;
+    getState: (namespaceInput?: string) => Promise<{
+      tasks: Record<string, TaskRecord>;
+    }>;
+  };
+
+  const namespace = resolveTaskNamespace(options.namespace);
+  const normalizedNamespace = taskStore.normalizeNamespace(namespace);
+  const state = await taskStore.getState(normalizedNamespace);
+  let tasks = Object.values(state.tasks);
+
+  if (options.statuses && options.statuses.length > 0) {
+    const statusSet = new Set(options.statuses);
+    tasks = tasks.filter((task) => statusSet.has(task.status));
+  }
+  if (options.owner) {
+    tasks = tasks.filter((task) => task.owner === options.owner);
+  }
+  if (options.tag) {
+    tasks = tasks.filter((task) => task.tags.some((tag) => tag.name === options.tag));
+  }
+
+  const summaries = tasks
+    .map((task) => toTaskSummary(task, state.tasks))
+    .sort((left, right) => {
+      const rankDelta = rankTaskSummary(left) - rankTaskSummary(right);
+      if (rankDelta !== 0) {
+        return rankDelta;
+      }
+      if (left.createdAt !== right.createdAt) {
+        return left.createdAt - right.createdAt;
+      }
+      return left.id.localeCompare(right.id);
+    });
+
+  return {
+    namespace: normalizedNamespace,
+    total: summaries.length,
+    tasks: summaries,
+  };
 };
 
 export const appendAgentPrompt = async (
