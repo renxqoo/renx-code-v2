@@ -1,4 +1,6 @@
-﻿export type AgentTextDeltaEvent = {
+﻿import type { MessageContent } from '../../types/message-content';
+
+export type AgentTextDeltaEvent = {
   text: string;
   isReasoning?: boolean;
 };
@@ -69,6 +71,7 @@ export type AgentToolUseEvent = {
 export type AgentToolResultEvent = {
   toolCall: unknown;
   result: unknown;
+  content?: MessageContent;
 };
 
 export type AgentLoopEvent = {

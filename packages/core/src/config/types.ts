@@ -22,6 +22,7 @@ export interface StorageConfig {
 export interface AgentConfig {
   maxSteps?: number;
   defaultModel?: string;
+  timeoutBudgetMs?: number;
   permissions?: AgentPermissionsConfig;
 }
 
@@ -87,6 +88,7 @@ export interface ResolvedConfig {
   agent: {
     maxSteps: number;
     defaultModel: string;
+    timeoutBudgetMs?: number;
     permissions: {
       fullAccess: boolean;
       approvalPolicy?: 'never' | 'on-request' | 'on-failure' | 'unless-trusted';

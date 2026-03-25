@@ -38,7 +38,7 @@ import { filterToolSchemas } from './tool-catalog';
 import { ToolCallBuffer } from './tool-call-buffer';
 import type { AttachmentModelCapabilities } from '../../files/attachment-capabilities';
 import { resolveAttachmentModelCapabilities } from '../../files/attachment-capabilities';
-import type { MessageContent } from '../../types/message-content';
+import type { InputContentPart, MessageContent } from '../../types/message-content';
 
 type RuntimeCore = {
   modelId: string;
@@ -534,7 +534,8 @@ const toToolStreamEvent = (
 
 const toToolResultEvent = (
   payload: Record<string, unknown>,
-  toolCallsById: Map<string, AgentToolUseEvent>
+  toolCallsById: Map<string, AgentToolUseEvent>,
+  capabilities: AttachmentModelCapabilities
 ): AgentToolResultEvent => {
   const toolCallId =
     readString(payload.tool_call_id) ?? readString(payload.toolCallId) ?? 'unknown';
@@ -552,6 +553,8 @@ const toToolResultEvent = (
       id: toolCallId,
       function: { name: 'tool', arguments: '{}' },
     } as AgentToolUseEvent);
+  const structured = asRecord(toolResult.structured);
+  const contentParts = buildReadFileImageToolResultContent(toolCall, structured, capabilities);
 
   return {
     toolCall,
@@ -562,11 +565,58 @@ const toToolResultEvent = (
         ...(summary !== undefined ? { summary } : {}),
         ...(output !== undefined ? { output } : {}),
         ...(toolResult.payload !== undefined ? { payload: toolResult.payload } : {}),
+        ...(toolResult.structured !== undefined ? { structured: toolResult.structured } : {}),
         ...(toolResult.metadata !== undefined ? { metadata: toolResult.metadata } : {}),
       },
       raw: payload,
     },
+    ...(contentParts ? { content: contentParts } : {}),
   };
+};
+
+const buildReadFileImageToolResultContent = (
+  toolCall: AgentToolUseEvent,
+  structured: Record<string, unknown>,
+  capabilities: AttachmentModelCapabilities
+): InputContentPart[] | undefined => {
+  const toolFunction =
+    toolCall && typeof toolCall === 'object' && 'function' in toolCall
+      ? (toolCall.function as { name?: unknown })
+      : undefined;
+  if (toolFunction?.name !== 'read_file') {
+    return undefined;
+  }
+
+  const media = asRecord(structured.media);
+  if (readString(media.kind) !== 'image') {
+    return undefined;
+  }
+
+  const path = readString(structured.path) ?? 'image file';
+  const textPart: InputContentPart = {
+    type: 'text',
+    text: `Read image: ${path}`,
+  };
+
+  if (!capabilities.image) {
+    return [textPart];
+  }
+
+  const dataUrl = readString(media.dataUrl);
+  if (!dataUrl) {
+    return [textPart];
+  }
+
+  return [
+    textPart,
+    {
+      type: 'image_url',
+      image_url: {
+        url: dataUrl,
+        detail: 'auto',
+      },
+    },
+  ];
 };
 
 const extractAssistantText = (result: AgentAppRunResultLike): string => {
@@ -851,6 +901,9 @@ export const runAgentPrompt = async (
   const toolCallBuffer = new ToolCallBuffer();
   let latestUsageEvent: AgentUsageEvent | undefined;
   let currentAction = 'llm';
+  const attachmentCapabilities = resolveAttachmentModelCapabilities(
+    runtime.modules.ProviderRegistry.getModelConfig(runtime.modelId)
+  );
 
   const onToolConfirm = (event: ToolConfirmEventLike): void => {
     const rawArgs = parseJsonObject(event.arguments);
@@ -1019,7 +1072,11 @@ export const runAgentPrompt = async (
               toolCallBuffer.ensureEmitted(toolCallId, (toolCall) => {
                 safeInvoke(() => handlers.onToolUse?.(toolCall));
               });
-              const toolResultEvent = toToolResultEvent(payload, toolCallsById);
+              const toolResultEvent = toToolResultEvent(
+                payload,
+                toolCallsById,
+                attachmentCapabilities
+              );
               safeInvoke(() => handlers.onToolResult?.(toolResultEvent));
               break;
             }

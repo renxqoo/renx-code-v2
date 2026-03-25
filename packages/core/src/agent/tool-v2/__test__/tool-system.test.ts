@@ -167,6 +167,35 @@ describe('tool-v2 enterprise system', () => {
     });
   });
 
+  it('exposes read_file image mode in the input schema and output schema', () => {
+    const specs = system.specs();
+    const readFile = specs.find((spec) => spec.name === 'read_file');
+
+    expect(readFile?.inputSchema).toMatchObject({
+      type: 'object',
+      properties: {
+        path: { type: 'string' },
+        startLine: { type: 'integer' },
+        limit: { type: 'integer' },
+        mode: {
+          type: 'string',
+          enum: ['text', 'image'],
+        },
+      },
+    });
+    expect(readFile?.outputSchema).toMatchObject({
+      type: 'object',
+      properties: {
+        path: { type: 'string' },
+        etag: { type: 'string' },
+        truncated: { type: 'boolean' },
+        media: {
+          type: 'object',
+        },
+      },
+    });
+  });
+
   it('buffers oversized write_file payloads and finalizes them with a follow-up call', async () => {
     const targetFile = path.join(workspaceDir, 'big.txt');
     const bufferDir = await fs.mkdtemp(path.join(os.tmpdir(), 'renx-tool-v2-buffer-'));
@@ -230,6 +259,32 @@ describe('tool-v2 enterprise system', () => {
     } finally {
       await fs.rm(bufferDir, { recursive: true, force: true });
     }
+  });
+
+  it('returns validation errors when read_file image mode is combined with line slicing', async () => {
+    const targetFile = path.join(workspaceDir, 'diagram.png');
+    await fs.writeFile(targetFile, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+
+    const result = await system.execute(
+      {
+        toolCallId: 'read-image-invalid',
+        toolName: 'read_file',
+        arguments: JSON.stringify({
+          path: targetFile,
+          mode: 'image',
+          startLine: 0,
+        }),
+      },
+      createContext(workspaceDir, sessionState)
+    );
+
+    expect(result.success).toBe(false);
+    if (result.success) {
+      return;
+    }
+    expect(result.error.errorCode).toBe('TOOL_V2_INVALID_ARGUMENTS');
+    expect(result.error.category).toBe('validation');
+    expect(result.output).toContain('mode=image does not support startLine or limit');
   });
 
   it('returns recoverable EDIT_CONFLICT metadata when file_edit cannot anchor an edit', async () => {

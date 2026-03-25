@@ -39,7 +39,6 @@ export const useFileMentionMenu = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [allOptions, setAllOptions] = useState<PromptFileSelection[]>([]);
-  const hasLoadedRef = useRef(false);
   const requestIdRef = useRef(0);
 
   const mention = useMemo(() => findTrailingFileMention(value), [value]);
@@ -52,11 +51,10 @@ export const useFileMentionMenu = ({
   }, [dismissedToken, mention]);
 
   useEffect(() => {
-    if (disabled || !mention || hasLoadedRef.current) {
+    if (disabled || !mention) {
       return;
     }
 
-    hasLoadedRef.current = true;
     setLoading(true);
     setError(null);
     requestIdRef.current += 1;

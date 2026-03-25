@@ -105,6 +105,31 @@ describe('buildToolConfirmDialogContent', () => {
     ]);
   });
 
+  it('shows read_file image mode arguments without exposing image payloads', () => {
+    const content = buildToolConfirmDialogContent({
+      kind: 'approval',
+      toolCallId: 'call_6',
+      toolName: 'read_file',
+      args: {
+        path: '/Users/wrr/work/ironclaw/assets/diagram.png',
+        mode: 'image',
+      },
+      rawArgs: {
+        path: '/Users/wrr/work/ironclaw/assets/diagram.png',
+        mode: 'image',
+      },
+    });
+
+    expect(content.summary).toBe('Read /Users/wrr/work/ironclaw/assets/diagram.png');
+    expect(content.argumentItems).toEqual([
+      {
+        label: 'Mode',
+        value: 'image',
+        multiline: false,
+      },
+    ]);
+  });
+
   it('formats permission requests with requested access details', () => {
     const content = buildToolConfirmDialogContent(
       {

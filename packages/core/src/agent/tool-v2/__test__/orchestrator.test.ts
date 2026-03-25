@@ -169,6 +169,54 @@ describe('tool-v2 orchestrator', () => {
     await fs.rm(outsideDir, { recursive: true, force: true });
   });
 
+  it('requests directory read permission before executing read_file image mode outside the workspace', async () => {
+    const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'renx-tool-v2-image-outside-'));
+    const targetFile = path.join(outsideDir, 'diagram.png');
+    await fs.writeFile(targetFile, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    const requests: ToolPermissionRequest[] = [];
+    const sessionState = new ToolSessionState();
+    const system = new EnterpriseToolSystem([new ReadFileToolV2()]);
+
+    const result = await system.execute(
+      {
+        toolCallId: 'read-image-outside',
+        toolName: 'read_file',
+        arguments: JSON.stringify({
+          path: targetFile,
+          mode: 'image',
+        }),
+      },
+      createContext(workspaceDir, sessionState, {
+        requestPermissions: async (request) => {
+          requests.push(request);
+          return {
+            granted: request.permissions,
+            scope: 'turn',
+          };
+        },
+      })
+    );
+
+    expect(result.success).toBe(true);
+    if (!result.success) {
+      return;
+    }
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.permissions).toMatchObject({
+      fileSystem: {
+        read: [outsideDir],
+      },
+    });
+    expect(result.structured).toMatchObject({
+      path: targetFile,
+      media: {
+        kind: 'image',
+      },
+    });
+
+    await fs.rm(outsideDir, { recursive: true, force: true });
+  });
+
   it('reuses a granted directory permission for multiple files in the same folder', async () => {
     const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'renx-tool-v2-shared-dir-'));
     const firstFile = path.join(outsideDir, 'one.txt');

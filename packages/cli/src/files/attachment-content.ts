@@ -91,6 +91,28 @@ const inferMimeType = (path: string) => {
   );
 };
 
+export const inferImageMimeType = (path: string): string | undefined => {
+  return IMAGE_MIME_BY_EXTENSION[extname(path).toLowerCase()];
+};
+
+export const buildImageDataUrl = (path: string, buffer: Uint8Array): string => {
+  const mimeType = inferImageMimeType(path);
+  if (!mimeType) {
+    throw new Error(`Unsupported image attachment type: ${path}`);
+  }
+  return `data:${mimeType};base64,${Buffer.from(buffer).toString('base64')}`;
+};
+
+export const buildImageUrlPart = (path: string, buffer: Uint8Array): InputContentPart => {
+  return {
+    type: 'image_url',
+    image_url: {
+      url: buildImageDataUrl(path, buffer),
+      detail: 'auto',
+    },
+  };
+};
+
 const isImageMimeType = (mimeType: string) => mimeType.startsWith('image/');
 const isAudioMimeType = (mimeType: string) => mimeType.startsWith('audio/');
 const isVideoMimeType = (mimeType: string) => mimeType.startsWith('video/');
@@ -144,15 +166,7 @@ const isTextLikeFile = (file: PromptFileSelection, buffer: Uint8Array) => {
 };
 
 const toImagePart = (file: PromptFileSelection, buffer: Uint8Array): InputContentPart => {
-  const mimeType = inferMimeType(file.relativePath);
-  const dataUrl = `data:${mimeType};base64,${Buffer.from(buffer).toString('base64')}`;
-  return {
-    type: 'image_url',
-    image_url: {
-      url: dataUrl,
-      detail: 'auto',
-    },
-  };
+  return buildImageUrlPart(file.relativePath, buffer);
 };
 
 const toTextPart = (file: PromptFileSelection, buffer: Uint8Array): InputContentPart => {

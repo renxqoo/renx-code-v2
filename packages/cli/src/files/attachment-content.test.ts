@@ -3,7 +3,12 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { buildPromptContent } from './attachment-content';
+import {
+  buildImageDataUrl,
+  buildImageUrlPart,
+  buildPromptContent,
+  inferImageMimeType,
+} from './attachment-content';
 
 const capabilities = {
   image: false,
@@ -46,6 +51,20 @@ describe('buildPromptContent', () => {
         text: 'Attached file: notes.txt\n\n```\nhello from notes\n```',
       },
     ]);
+  });
+
+  it('builds image data urls and image_url parts with shared helpers', () => {
+    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47]);
+
+    expect(inferImageMimeType('diagram.png')).toBe('image/png');
+    expect(buildImageDataUrl('diagram.png', bytes)).toBe('data:image/png;base64,iVBORw==');
+    expect(buildImageUrlPart('diagram.png', bytes)).toEqual({
+      type: 'image_url',
+      image_url: {
+        url: 'data:image/png;base64,iVBORw==',
+        detail: 'auto',
+      },
+    });
   });
 
   it('does not inline binary attachments as decoded gibberish', async () => {

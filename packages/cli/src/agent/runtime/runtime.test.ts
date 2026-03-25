@@ -22,6 +22,7 @@ vi.mock('./source-modules', () => ({
 import {
   appendAgentPrompt,
   disposeAgentRuntime,
+  getAgentModelAttachmentCapabilities,
   getAgentModelId,
   getAgentModelLabel,
   getAgentSession,
@@ -35,6 +36,7 @@ import {
 import * as sourceModules from './source-modules';
 import type { AgentEventHandlers } from './types';
 import type { ToolSchemaLike } from './source-modules';
+import type { MessageContent } from '../../types/message-content';
 
 const buildMockModules = (
   overrides?: Partial<Awaited<ReturnType<typeof sourceModules.getSourceModules>>>
@@ -948,6 +950,450 @@ describe('runtime', () => {
     );
   });
 
+  it('bridges read_file image structured results into multimodal tool-result content', async () => {
+    const handlers: AgentEventHandlers = {
+      onToolResult: vi.fn(),
+    };
+    const modules = buildMockModules({
+      ProviderRegistry: {
+        getModelIds: () => ['glm-5'],
+        getModelConfig: (_modelId: string) => ({
+          name: 'GLM-5',
+          envApiKey: 'TEST_API_KEY',
+          provider: 'zhipu',
+          model: 'glm-5',
+          modalities: {
+            image: true,
+          },
+        }),
+        createFromEnv: () => ({}),
+      },
+      AgentAppService: class FakeAppServiceWithImageToolResult {
+        async listContextMessages() {
+          return [];
+        }
+
+        async getRun() {
+          return null;
+        }
+
+        async runForeground(
+          _request: unknown,
+          callbacks?: {
+            onEvent?: (event: { eventType: string; data: unknown; createdAt: number }) => void;
+          }
+        ) {
+          await callbacks?.onEvent?.({
+            eventType: 'tool_call',
+            createdAt: Date.now(),
+            data: {
+              toolCalls: [
+                {
+                  id: 'call_read_image_1',
+                  type: 'function',
+                  function: {
+                    name: 'read_file',
+                    arguments: JSON.stringify({
+                      path: 'diagram.png',
+                      mode: 'image',
+                    }),
+                  },
+                },
+              ],
+            },
+          });
+
+          await callbacks?.onEvent?.({
+            eventType: 'tool_result',
+            createdAt: Date.now(),
+            data: {
+              tool_call_id: 'call_read_image_1',
+              content: 'Read image: /tmp/diagram.png',
+              metadata: {
+                toolResult: {
+                  success: true,
+                  summary: 'Read /tmp/diagram.png',
+                  structured: {
+                    path: '/tmp/diagram.png',
+                    etag: 'etag123',
+                    truncated: false,
+                    media: {
+                      kind: 'image',
+                      mimeType: 'image/png',
+                      dataUrl: 'data:image/png;base64,ZmFrZQ==',
+                    },
+                  },
+                  metadata: {
+                    path: '/tmp/diagram.png',
+                    truncated: false,
+                    mode: 'image',
+                  },
+                },
+              },
+            },
+          });
+
+          return {
+            executionId: 'exec_runtime',
+            conversationId: 'conv_runtime',
+            messages: [],
+            events: [],
+            finishReason: 'stop' as const,
+            steps: 1,
+            run: {
+              executionId: 'exec_runtime',
+              runId: 'exec_runtime',
+              conversationId: 'conv_runtime',
+              status: 'COMPLETED' as const,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              stepIndex: 1,
+            },
+          };
+        }
+
+        async appendUserInputToRun() {
+          return { accepted: true };
+        }
+      },
+    });
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    await runAgentPrompt('Test prompt', handlers);
+
+    expect(handlers.onToolResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: [
+          {
+            type: 'text',
+            text: 'Read image: /tmp/diagram.png',
+          },
+          {
+            type: 'image_url',
+            image_url: {
+              url: 'data:image/png;base64,ZmFrZQ==',
+              detail: 'auto',
+            },
+          },
+        ],
+        result: expect.objectContaining({
+          data: expect.objectContaining({
+            structured: expect.objectContaining({
+              path: '/tmp/diagram.png',
+              media: expect.objectContaining({
+                kind: 'image',
+                mimeType: 'image/png',
+              }),
+            }),
+          }),
+        }),
+      })
+    );
+  });
+
+  it('falls back to text-only tool-result content when the active model lacks image support', async () => {
+    const handlers: AgentEventHandlers = {
+      onToolResult: vi.fn(),
+    };
+    const modules = buildMockModules({
+      ProviderRegistry: {
+        getModelIds: () => ['text-only-model'],
+        getModelConfig: (_modelId: string) => ({
+          name: 'Text Only Model',
+          envApiKey: 'TEST_API_KEY',
+          provider: 'test',
+          model: 'text-only-model',
+        }),
+        createFromEnv: () => ({}),
+      },
+      AgentAppService: class FakeAppServiceWithImageToolResultNoImageCapability {
+        async listContextMessages() {
+          return [];
+        }
+
+        async getRun() {
+          return null;
+        }
+
+        async runForeground(
+          _request: unknown,
+          callbacks?: {
+            onEvent?: (event: { eventType: string; data: unknown; createdAt: number }) => void;
+          }
+        ) {
+          await callbacks?.onEvent?.({
+            eventType: 'tool_call',
+            createdAt: Date.now(),
+            data: {
+              toolCalls: [
+                {
+                  id: 'call_read_image_text_only_1',
+                  type: 'function',
+                  function: {
+                    name: 'read_file',
+                    arguments: JSON.stringify({
+                      path: 'diagram.png',
+                      mode: 'image',
+                    }),
+                  },
+                },
+              ],
+            },
+          });
+
+          await callbacks?.onEvent?.({
+            eventType: 'tool_result',
+            createdAt: Date.now(),
+            data: {
+              tool_call_id: 'call_read_image_text_only_1',
+              content: 'Read image: /tmp/diagram.png',
+              metadata: {
+                toolResult: {
+                  success: true,
+                  summary: 'Read /tmp/diagram.png',
+                  structured: {
+                    path: '/tmp/diagram.png',
+                    etag: 'etag123',
+                    truncated: false,
+                    media: {
+                      kind: 'image',
+                      mimeType: 'image/png',
+                      dataUrl: 'data:image/png;base64,ZmFrZQ==',
+                    },
+                  },
+                  metadata: {
+                    path: '/tmp/diagram.png',
+                    truncated: false,
+                    mode: 'image',
+                  },
+                },
+              },
+            },
+          });
+
+          return {
+            executionId: 'exec_runtime',
+            conversationId: 'conv_runtime',
+            messages: [],
+            events: [],
+            finishReason: 'stop' as const,
+            steps: 1,
+            run: {
+              executionId: 'exec_runtime',
+              runId: 'exec_runtime',
+              conversationId: 'conv_runtime',
+              status: 'COMPLETED' as const,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              stepIndex: 1,
+            },
+          };
+        }
+
+        async appendUserInputToRun() {
+          return { accepted: true };
+        }
+      },
+    });
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    await runAgentPrompt('Test prompt', handlers);
+
+    expect(handlers.onToolResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: [
+          {
+            type: 'text',
+            text: 'Read image: /tmp/diagram.png',
+          },
+        ],
+      })
+    );
+    expect(handlers.onToolResult).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.arrayContaining([
+          expect.objectContaining({
+            type: 'image_url',
+          }),
+        ]),
+      })
+    );
+  });
+
+  it('falls back to text-only tool-result content when read_file image results omit dataUrl', async () => {
+    const handlers: AgentEventHandlers = {
+      onToolResult: vi.fn(),
+    };
+    const modules = buildMockModules({
+      ProviderRegistry: {
+        getModelIds: () => ['glm-5'],
+        getModelConfig: (_modelId: string) => ({
+          name: 'GLM-5',
+          envApiKey: 'TEST_API_KEY',
+          provider: 'zhipu',
+          model: 'glm-5',
+          modalities: {
+            image: true,
+          },
+        }),
+        createFromEnv: () => ({}),
+      },
+      AgentAppService: class FakeAppServiceWithImageToolResultMissingDataUrl {
+        async listContextMessages() {
+          return [];
+        }
+
+        async getRun() {
+          return null;
+        }
+
+        async runForeground(
+          _request: unknown,
+          callbacks?: {
+            onEvent?: (event: { eventType: string; data: unknown; createdAt: number }) => void;
+          }
+        ) {
+          await callbacks?.onEvent?.({
+            eventType: 'tool_call',
+            createdAt: Date.now(),
+            data: {
+              toolCalls: [
+                {
+                  id: 'call_read_image_missing_data_url_1',
+                  type: 'function',
+                  function: {
+                    name: 'read_file',
+                    arguments: JSON.stringify({
+                      path: 'diagram.png',
+                      mode: 'image',
+                    }),
+                  },
+                },
+              ],
+            },
+          });
+
+          await callbacks?.onEvent?.({
+            eventType: 'tool_result',
+            createdAt: Date.now(),
+            data: {
+              tool_call_id: 'call_read_image_missing_data_url_1',
+              content: 'Read image: /tmp/diagram.png',
+              metadata: {
+                toolResult: {
+                  success: true,
+                  summary: 'Read /tmp/diagram.png',
+                  structured: {
+                    path: '/tmp/diagram.png',
+                    etag: 'etag123',
+                    truncated: false,
+                    media: {
+                      kind: 'image',
+                      mimeType: 'image/png',
+                    },
+                  },
+                  metadata: {
+                    path: '/tmp/diagram.png',
+                    truncated: false,
+                    mode: 'image',
+                  },
+                },
+              },
+            },
+          });
+
+          return {
+            executionId: 'exec_runtime',
+            conversationId: 'conv_runtime',
+            messages: [],
+            events: [],
+            finishReason: 'stop' as const,
+            steps: 1,
+            run: {
+              executionId: 'exec_runtime',
+              runId: 'exec_runtime',
+              conversationId: 'conv_runtime',
+              status: 'COMPLETED' as const,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              stepIndex: 1,
+            },
+          };
+        }
+
+        async appendUserInputToRun() {
+          return { accepted: true };
+        }
+      },
+    });
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    await runAgentPrompt('Test prompt', handlers);
+
+    expect(handlers.onToolResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: [
+          {
+            type: 'text',
+            text: 'Read image: /tmp/diagram.png',
+          },
+        ],
+        result: expect.objectContaining({
+          data: expect.objectContaining({
+            structured: expect.objectContaining({
+              path: '/tmp/diagram.png',
+              media: expect.objectContaining({
+                kind: 'image',
+                mimeType: 'image/png',
+              }),
+            }),
+          }),
+        }),
+      })
+    );
+    expect(handlers.onToolResult).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.arrayContaining([
+          expect.objectContaining({
+            type: 'image_url',
+          }),
+        ]),
+      })
+    );
+  });
+
+  it('reports image attachment capabilities from the active model config', async () => {
+    const modules = buildMockModules({
+      ProviderRegistry: {
+        getModelIds: () => ['glm-5'],
+        getModelConfig: () => ({
+          name: 'GLM-5',
+          envApiKey: 'TEST_API_KEY',
+          provider: 'zhipu',
+          model: 'glm-5',
+          modalities: {
+            image: true,
+          },
+        }),
+        createFromEnv: () => ({}),
+      },
+    });
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    await expect(getAgentModelAttachmentCapabilities()).resolves.toEqual({
+      image: true,
+      audio: false,
+      video: false,
+    });
+  });
   it('lists models with current selection', async () => {
     await expect(listAgentModels()).resolves.toEqual([
       {
@@ -1215,6 +1661,93 @@ describe('runtime', () => {
       userInput: 'Follow up prompt',
     });
     expect(appServiceClass.appendRequests?.[0]?.executionId).toMatch(/^exec_cli_/);
+
+    releaseRun();
+    await runPromise;
+  });
+
+  it('preserves multimodal follow-up input when appendAgentPrompt receives read_file image parts', async () => {
+    let releaseRun!: () => void;
+    const runGate = new Promise<void>((resolve) => {
+      releaseRun = resolve;
+    });
+    const modules = buildMockModules({
+      AgentAppService: class FakeAppServiceWithImageFollowUp {
+        static appendRequests: unknown[] = [];
+
+        async listContextMessages() {
+          return [];
+        }
+
+        async getRun() {
+          return null;
+        }
+
+        async runForeground(request: unknown) {
+          await runGate;
+          return {
+            executionId: (request as { executionId?: string }).executionId ?? 'exec_runtime',
+            conversationId: 'conv_runtime',
+            messages: [],
+            events: [],
+            finishReason: 'stop' as const,
+            steps: 1,
+            run: {
+              executionId: (request as { executionId?: string }).executionId ?? 'exec_runtime',
+              runId: (request as { executionId?: string }).executionId ?? 'exec_runtime',
+              conversationId: 'conv_runtime',
+              status: 'COMPLETED' as const,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              stepIndex: 1,
+            },
+          };
+        }
+
+        async appendUserInputToRun(request: unknown) {
+          FakeAppServiceWithImageFollowUp.appendRequests.push(request);
+          return { accepted: true };
+        }
+      },
+    });
+    const appServiceClass = modules.AgentAppService as {
+      appendRequests?: Array<{
+        executionId?: string;
+        conversationId?: string;
+        userInput?: unknown;
+      }>;
+    };
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    const runPromise = runAgentPrompt('Test prompt', {});
+    await Promise.resolve();
+
+    const imageParts: MessageContent = [
+      {
+        type: 'text',
+        text: 'Read image: diagram.png',
+      },
+      {
+        type: 'image_url',
+        image_url: {
+          url: 'data:image/png;base64,ZmFrZQ==',
+          detail: 'auto' as const,
+        },
+      },
+    ];
+
+    await expect(appendAgentPrompt(imageParts)).resolves.toEqual({
+      accepted: true,
+      reason: undefined,
+    });
+
+    expect(appServiceClass.appendRequests).toHaveLength(1);
+    expect(appServiceClass.appendRequests?.[0]).toMatchObject({
+      conversationId: 'session-01',
+      userInput: imageParts,
+    });
 
     releaseRun();
     await runPromise;

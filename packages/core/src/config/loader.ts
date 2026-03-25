@@ -23,6 +23,7 @@ const AGENT_DEFAULT_APPROVAL_POLICY_ENV = 'AGENT_DEFAULT_APPROVAL_POLICY';
 const AGENT_DEFAULT_TRUST_LEVEL_ENV = 'AGENT_DEFAULT_TRUST_LEVEL';
 const AGENT_DEFAULT_FILESYSTEM_MODE_ENV = 'AGENT_DEFAULT_FILESYSTEM_MODE';
 const AGENT_DEFAULT_NETWORK_MODE_ENV = 'AGENT_DEFAULT_NETWORK_MODE';
+const AGENT_TIMEOUT_BUDGET_MS_ENV = 'AGENT_TIMEOUT_BUDGET_MS';
 
 const DEFAULTS: RenxConfig = {
   log: {
@@ -307,6 +308,7 @@ function applyEnvOverrides(config: RenxConfig, env: NodeJS.ProcessEnv): RenxConf
 
   const defaultModel = env.AGENT_MODEL?.trim();
   const maxSteps = parsePositiveInt(env.AGENT_MAX_STEPS);
+  const timeoutBudgetMs = parsePositiveInt(env[AGENT_TIMEOUT_BUDGET_MS_ENV]);
   const fullAccess = parseBoolean(env[AGENT_FULL_ACCESS_ENV]);
   const approvalPolicy = parseApprovalPolicy(env[AGENT_DEFAULT_APPROVAL_POLICY_ENV]);
   const trustLevel = parseTrustLevel(env[AGENT_DEFAULT_TRUST_LEVEL_ENV]);
@@ -316,6 +318,7 @@ function applyEnvOverrides(config: RenxConfig, env: NodeJS.ProcessEnv): RenxConf
   if (
     defaultModel ||
     maxSteps !== null ||
+    timeoutBudgetMs !== null ||
     fullAccess !== null ||
     approvalPolicy ||
     trustLevel ||
@@ -328,6 +331,9 @@ function applyEnvOverrides(config: RenxConfig, env: NodeJS.ProcessEnv): RenxConf
     }
     if (maxSteps !== null) {
       result.agent.maxSteps = maxSteps;
+    }
+    if (timeoutBudgetMs !== null) {
+      result.agent.timeoutBudgetMs = timeoutBudgetMs;
     }
     if (fullAccess !== null || approvalPolicy || trustLevel || fileSystemMode || networkMode) {
       result.agent.permissions = { ...(result.agent.permissions ?? {}) };
@@ -391,6 +397,7 @@ function resolveConfig(
     agent: {
       maxSteps: merged.agent?.maxSteps ?? 10000,
       defaultModel: merged.agent?.defaultModel ?? 'minimax-2.5',
+      timeoutBudgetMs: merged.agent?.timeoutBudgetMs,
       permissions: {
         fullAccess: merged.agent?.permissions?.fullAccess ?? false,
         approvalPolicy: merged.agent?.permissions?.approvalPolicy,
