@@ -21,6 +21,9 @@ const resolveCurrentNamespace = (): string => {
   return value || 'default';
 };
 
+const isTerminalTask = (task: AgentTaskSummary): boolean =>
+  task.status === 'completed' || task.status === 'cancelled' || task.status === 'failed';
+
 export const useTaskPanel = (): UseTaskPanelResult => {
   const [visible, setVisible] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -45,13 +48,14 @@ export const useTaskPanel = (): UseTaskPanelResult => {
       if (requestId !== requestIdRef.current) {
         return;
       }
+      const visibleTasks = result.tasks.filter((task) => !isTerminalTask(task));
       setNamespace(result.namespace);
-      setTasks(result.tasks);
+      setTasks(visibleTasks);
       setSelectedIndex((current) => {
-        if (result.tasks.length === 0) {
+        if (visibleTasks.length === 0) {
           return 0;
         }
-        return Math.max(0, Math.min(current, result.tasks.length - 1));
+        return Math.max(0, Math.min(current, visibleTasks.length - 1));
       });
     } catch (refreshError) {
       if (requestId !== requestIdRef.current) {

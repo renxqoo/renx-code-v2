@@ -117,7 +117,7 @@ interface InternalAgentConfig {
 }
 
 const DEFAULT_MAX_RETRY_COUNT = 20;
-const DEFAULT_COMPACTION_TRIGGER_RATIO = 0.8;
+const DEFAULT_COMPACTION_TRIGGER_RATIO = 0.92;
 const DEFAULT_COMPACTION_KEEP_MESSAGES = 0;
 const DEFAULT_MAX_CONCURRENT_TOOL_CALLS = 1;
 const DEFAULT_LLM_TIMEOUT_RATIO = 0.7;
@@ -238,7 +238,7 @@ export class StatelessAgent extends EventEmitter {
         maxSteps,
         timeoutBudgetMs: timeoutBudget?.totalMs,
       })) ?? createNoopObservation<RunLifecycleFinishContext>();
-    return yield* runAgentLoop(
+    yield* runAgentLoop(
       this.createRunLoopRuntime(
         lifecycleHooks,
         toolSessionState,
@@ -258,6 +258,7 @@ export class StatelessAgent extends EventEmitter {
         runObservation,
       }
     );
+    return;
   }
 
   private async safeCallback<T>(

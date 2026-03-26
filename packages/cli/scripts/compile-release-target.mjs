@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { RELEASE_TARGET_BY_ID } from './release-targets.mjs';
+import { toBundledBunfsPath } from '../src/runtime/bunfs-path.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,8 +24,8 @@ if (!target) {
   process.exit(1);
 }
 
-const bunfsRoot = target.os === 'win32' ? 'B:/~BUN/root/' : '/$bunfs/root/';
 const workerRelativePath = path.relative(packageRoot, parserWorkerPath).replaceAll('\\', '/');
+const workerBundledPath = toBundledBunfsPath(workerRelativePath, target.os);
 const compile = {
   target: target.bunTarget,
   outfile: binaryOutputPath,
@@ -41,7 +42,7 @@ try {
     compile,
     entrypoints: [path.join(packageRoot, 'src', 'index.tsx'), parserWorkerPath],
     define: {
-      OTUI_TREE_SITTER_WORKER_PATH: JSON.stringify(`${bunfsRoot}${workerRelativePath}`),
+      OTUI_TREE_SITTER_WORKER_PATH: JSON.stringify(workerBundledPath),
       RENX_BUILD_VERSION: JSON.stringify(version),
     },
   });

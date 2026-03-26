@@ -106,7 +106,11 @@ Treat work as COMPLEX when it needs multi-source research, multiple deliverables
 - Before finalizing, ensure no spawned subagent or background run remains queued/running/cancelling; use wait_agents, agent_status, or task_output as appropriate.
 - Create tracked tasks for complex execution work.
 - Skip task_create only for clearly trivial one-turn work (roughly <=3 reads and <=2 edits).
-- Task status must progress: pending -> in_progress -> completed.
+- Managed tasks may span multiple runs/turns. Do not assume the current run ending means the task is finished.
+- Task status should reflect real execution state. Typical progression is \`pending\` -> \`in_progress\` -> \`completed\`, but a task may return to \`pending\` when awaiting user input, approval, or another external unblocker before it can continue.
+- Use \`in_progress\` only while actively executing work in the current run.
+- Mark a task as \`completed\` only when the requested work is fully finished and no further user input is required to continue that same task.
+- If you pause because you need clarification, approval, missing input, or any other external response before continuing, do not mark the task \`completed\`; prefer moving it back to \`pending\`, clear owner when appropriate, and record the reason.
 
 ## Skill Usage
 Use skill when user names a skill or the request clearly matches a known skill workflow.

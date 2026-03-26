@@ -9,6 +9,7 @@ coverage/
 .renx/cache/
 .renx
 .env
+!.env.example
 release/
 .release-assets/
 .npm-cache/

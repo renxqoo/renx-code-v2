@@ -6,7 +6,8 @@ export type CliCommandName =
   | 'ask'
   | 'session:list'
   | 'session:open'
-  | 'session:show';
+  | 'session:show'
+  | 'internal:tree-sitter-diagnose';
 
 export type ParsedCliCommand = {
   command: CliCommandName;
@@ -194,6 +195,22 @@ export const parseCliCommand = (argv: string[]): ParsedCliCommand => {
   if (!primary) {
     return {
       command: 'tui',
+      helpRequested,
+      json: outputMode === 'json',
+      outputMode,
+      autoApprove,
+      sessionId,
+      modelId,
+      cwd,
+      errors,
+    };
+  }
+
+  if (primary === '__tree-sitter-diagnose') {
+    // Internal-only command used by release smoke tests to verify the bundled
+    // tree-sitter worker path works after install and binary-cache materialization.
+    return {
+      command: 'internal:tree-sitter-diagnose',
       helpRequested,
       json: outputMode === 'json',
       outputMode,

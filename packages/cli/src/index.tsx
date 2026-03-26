@@ -2,10 +2,6 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createCliRenderer } from '@opentui/core';
-import { createRoot } from '@opentui/react';
-
-import { App } from './App';
 import {
   getAgentSession,
   initializeAgentSession,
@@ -29,6 +25,10 @@ import {
 } from './runtime/terminal-theme';
 import { applyMarkdownThemeMode } from './ui/opencode-markdown';
 import { applyUiThemeMode, uiTheme } from './ui/theme';
+
+const originalConsoleLog = console.log.bind(console);
+const originalConsoleWarn = console.warn.bind(console);
+const originalConsoleError = console.error.bind(console);
 
 declare const RENX_BUILD_VERSION: string | undefined;
 
@@ -63,6 +63,12 @@ const resolveCliVersion = (): string => {
 };
 
 const startTui = async () => {
+  const [{ createCliRenderer }, { createRoot }, { App }] = await Promise.all([
+    import('@opentui/core'),
+    import('@opentui/react'),
+    import('./App'),
+  ]);
+
   bindExitGuards();
   process.env.OPENTUI_FORCE_WCWIDTH ??= '1';
   const terminalColors = await probeTerminalColors();
@@ -142,6 +148,47 @@ if (parsed.errors.length > 0) {
   console.error('');
   console.error(buildHelpText());
   process.exit(2);
+}
+
+if (parsed.command === 'internal:tree-sitter-diagnose') {
+  // Keep JSON output machine-readable for release smoke by suppressing worker/runtime
+  // console noise emitted during parser initialization.
+  const passthrough = parsed.outputMode !== 'json';
+  if (!passthrough) {
+    console.log = () => undefined;
+    console.warn = () => undefined;
+    console.error = () => undefined;
+  }
+
+  try {
+    const { runTreeSitterDiagnostic } = await import('./runtime/tree-sitter-diagnostic');
+    const result = await runTreeSitterDiagnostic();
+    if (parsed.outputMode === 'json') {
+      originalConsoleLog(JSON.stringify(result, null, 2));
+    } else {
+      originalConsoleLog(
+        [
+          `ok=${result.ok}`,
+          `platform=${result.env.platform}`,
+          `arch=${result.env.arch}`,
+          `worker=${result.env.otuiWorkerPath ?? 'null'}`,
+          `preload=${result.preload}`,
+          `highlightCount=${result.highlight?.highlights?.length ?? 0}`,
+          result.preloadError ? `preloadError=${result.preloadError}` : null,
+          result.highlightError ? `highlightError=${result.highlightError}` : null,
+        ]
+          .filter(Boolean)
+          .join('\n')
+      );
+    }
+    process.exit(result.ok ? 0 : 1);
+  } finally {
+    if (!passthrough) {
+      console.log = originalConsoleLog;
+      console.warn = originalConsoleWarn;
+      console.error = originalConsoleError;
+    }
+  }
 }
 
 if (parsed.command === 'run' || parsed.command === 'ask') {

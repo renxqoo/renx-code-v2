@@ -23,6 +23,76 @@ const TARGETS = {
   'win32:x64': { target: 'x86_64-pc-windows-msvc', platformKey: 'windows-x86_64' },
 };
 
+const SPINNER_FRAMES = ['|', '/', '-', '\\'];
+
+function createLoadingIndicator(label) {
+  const stream = process.stderr;
+  const interactive = Boolean(stream.isTTY) && process.env.CI !== 'true';
+  let timer = null;
+  let frameIndex = 0;
+  let active = false;
+
+  const render = () => {
+    const frame = SPINNER_FRAMES[frameIndex % SPINNER_FRAMES.length];
+    frameIndex += 1;
+    stream.write(`\r[renx] ${frame} ${label}`);
+  };
+
+  return {
+    start() {
+      if (active) {
+        return;
+      }
+      active = true;
+
+      if (!interactive) {
+        console.log(`[renx] ${label}...`);
+        return;
+      }
+
+      render();
+      timer = setInterval(render, 120);
+      timer.unref?.();
+    },
+    succeed(message) {
+      if (!active) {
+        return;
+      }
+      active = false;
+
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+
+      if (!interactive) {
+        console.log(`[renx] ${message}`);
+        return;
+      }
+
+      stream.write(`\r[renx] OK ${message}\n`);
+    },
+    fail(message) {
+      if (!active) {
+        return;
+      }
+      active = false;
+
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+
+      if (!interactive) {
+        console.warn(`[renx] ${message}`);
+        return;
+      }
+
+      stream.write(`\r[renx] !! ${message}\n`);
+    },
+  };
+}
+
 async function main() {
   if (process.env.RENX_SKIP_RIPGREP_INSTALL === '1') {
     console.log('[renx] skipping bundled ripgrep install (RENX_SKIP_RIPGREP_INSTALL=1)');
@@ -59,9 +129,11 @@ async function main() {
   }
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'renx-ripgrep-'));
+  const loading = createLoadingIndicator(`installing bundled ripgrep for ${targetInfo.target}`);
+  let completed = false;
   try {
+    loading.start();
     const archivePath = path.join(tempDir, path.basename(new URL(url).pathname));
-    console.log(`[renx] downloading ripgrep for ${targetInfo.target}`);
     await downloadFile(url, archivePath);
     await verifyArchive(archivePath, platformInfo);
 
@@ -74,8 +146,12 @@ async function main() {
     if (process.platform !== 'win32') {
       await fs.chmod(binaryPath, 0o755);
     }
-    console.log(`[renx] installed bundled ripgrep to ${binaryPath}`);
+    completed = true;
+    loading.succeed(`installed bundled ripgrep to ${binaryPath}`);
   } finally {
+    if (!completed) {
+      loading.fail(`bundled ripgrep install interrupted for ${targetInfo.target}`);
+    }
     await fs.rm(tempDir, { recursive: true, force: true });
   }
 }

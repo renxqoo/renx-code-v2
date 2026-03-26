@@ -5,6 +5,8 @@ import {
 } from '../../files/attachment-capabilities';
 import { uiTheme } from '../../ui/theme';
 
+const USER_MESSAGE_RAIL_COLOR = uiTheme.divider;
+
 type PromptCardProps = {
   prompt: string;
   files?: string[];
@@ -29,7 +31,7 @@ export const PromptCard = ({
     <box flexDirection="row" marginTop={isFirst ? 0 : 1} marginBottom={1}>
       <box
         border={['left']}
-        borderColor={uiTheme.accent}
+        borderColor={USER_MESSAGE_RAIL_COLOR}
         customBorderChars={{
           topLeft: '',
           topRight: '',

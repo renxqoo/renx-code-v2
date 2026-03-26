@@ -6,6 +6,33 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+function resolveBundledOpenTuiWorkerEnv(baseEnv = process.env, binaryPackageRoot) {
+  if (baseEnv.OTUI_TREE_SITTER_WORKER_PATH) {
+    return {
+      OTUI_TREE_SITTER_WORKER_PATH: baseEnv.OTUI_TREE_SITTER_WORKER_PATH,
+    };
+  }
+
+  if (!binaryPackageRoot) {
+    return {};
+  }
+
+  const wrapperPath = path.join(
+    binaryPackageRoot,
+    'bin',
+    'otui-worker-bundle',
+    'parser.worker.wrapper.mjs'
+  );
+
+  if (!fs.existsSync(wrapperPath)) {
+    return {};
+  }
+
+  return {
+    OTUI_TREE_SITTER_WORKER_PATH: wrapperPath,
+  };
+}
+
 const packageRoot = path.resolve(__dirname, '..');
 const binaryName = process.platform === 'win32' ? 'renx.exe' : 'renx';
 const packageJson = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
@@ -140,6 +167,22 @@ function copyBundledRipgrep(sourceBinaryPackageRoot, targetBinaryPackageRoot) {
   fs.cpSync(sourceLayout.dir, targetLayout.dir, { recursive: true, force: true });
 }
 
+function copyBundledOpenTuiWorker(sourceBinaryPackageRoot, targetBinaryPackageRoot) {
+  if (!sourceBinaryPackageRoot || !targetBinaryPackageRoot) {
+    return;
+  }
+
+  const sourceDir = path.join(sourceBinaryPackageRoot, 'bin', 'otui-worker-bundle');
+  const targetDir = path.join(targetBinaryPackageRoot, 'bin', 'otui-worker-bundle');
+
+  if (!fs.existsSync(sourceDir)) {
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(targetDir), { recursive: true });
+  fs.cpSync(sourceDir, targetDir, { recursive: true, force: true });
+}
+
 function resolveBunExecutable() {
   if (process.env.RENX_BUN_PATH) {
     return process.env.RENX_BUN_PATH;
@@ -230,6 +273,7 @@ function materializeBinaryCandidate(entry) {
     fs.chmodSync(tempBinaryPath, 0o755);
   }
   copyBundledRipgrep(entry.binaryPackageRoot, tempRoot);
+  copyBundledOpenTuiWorker(entry.binaryPackageRoot, tempRoot);
 
   try {
     fs.mkdirSync(cacheBase, { recursive: true });
@@ -261,23 +305,42 @@ function resolveInstalledPlatformPackageCandidate() {
     return null;
   }
 
+  const candidateRoots = new Set();
+
   try {
     const packageJsonPath = require.resolve(`${platformPackage.packageName}/package.json`, {
       paths: [packageRoot],
     });
-    const binaryPackageRoot = path.dirname(packageJsonPath);
+    candidateRoots.add(path.dirname(packageJsonPath));
+  } catch {
+    // Ignore and fall back to direct node_modules probing below.
+  }
+
+  const packageSegments = platformPackage.packageName.split('/');
+  let currentDir = packageRoot;
+  while (true) {
+    candidateRoots.add(path.join(currentDir, 'node_modules', ...packageSegments));
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) {
+      break;
+    }
+    currentDir = parentDir;
+  }
+
+  for (const binaryPackageRoot of candidateRoots) {
     const candidate = path.join(binaryPackageRoot, 'bin', platformPackage.binaryName);
     if (!fs.existsSync(candidate)) {
-      return null;
+      continue;
     }
+
     return {
       candidate,
       binaryPackageRoot,
       packageName: platformPackage.packageName,
     };
-  } catch {
-    return null;
   }
+
+  return null;
 }
 
 function resolveLocalReleaseCandidate() {
@@ -329,6 +392,7 @@ for (const entry of binaryCandidates) {
     run(runnableEntry.candidate, cliArgs, {
       ...process.env,
       RENX_VERSION: process.env.RENX_VERSION || packageJson.version || '0.0.0',
+      ...resolveBundledOpenTuiWorkerEnv(process.env, runnableEntry.binaryPackageRoot),
       ...getBundledRipgrepEnv(
         process.env,
         runnableEntry.binaryPackageRoot,

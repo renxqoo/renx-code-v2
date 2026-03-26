@@ -142,7 +142,7 @@ export type RunLoopRuntime = {
 export async function* runAgentLoop(
   runtime: RunLoopRuntime,
   state: RunLoopState
-): AsyncGenerator<StreamEvent, void, unknown> {
+): AsyncGenerator<StreamEvent, { outcome: AgentRunOutcome; errorCode?: string }, unknown> {
   // The run loop is the only place that decides whether an error is terminal,
   // retryable, timeout-related or user-aborted. Lower layers report precise
   // failures; they do not choose control-flow policy.
@@ -262,4 +262,8 @@ export async function* runAgentLoop(
     });
     state.executionScope.release();
   }
+  return {
+    outcome: runOutcome,
+    errorCode: runErrorCode,
+  };
 }

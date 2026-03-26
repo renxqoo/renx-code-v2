@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { render } from '@testing-library/react';
 
 import type { AssistantReply as AssistantReplyType } from '../../types/chat';
+import { AssistantReply } from './assistant-reply';
 import { buildUsageItems, getCompletionErrorMessage } from './assistant-reply';
 
 const createReply = (overrides: Partial<AssistantReplyType> = {}): AssistantReplyType => ({
@@ -13,6 +15,22 @@ const createReply = (overrides: Partial<AssistantReplyType> = {}): AssistantRepl
 });
 
 describe('assistant-reply helpers', () => {
+  it('renders completion errors inside a card with a red left rail', () => {
+    const reply = createReply({
+      status: 'error',
+      completionReason: 'error',
+      completionMessage: 'Server returned 500: upstream provider timeout',
+    });
+
+    const { container } = render(<AssistantReply reply={reply} />);
+    const rootBox = container.querySelector('box');
+    const errorCardRow = rootBox?.children[0] as HTMLElement | undefined;
+    const railBox = errorCardRow?.firstElementChild as HTMLElement | null;
+
+    expect(railBox).toBeTruthy();
+    expect(railBox?.getAttribute('bordercolor')).toBe('#dc2626');
+  });
+
   it('extracts completion error messages for error replies', () => {
     const reply = createReply({
       status: 'error',

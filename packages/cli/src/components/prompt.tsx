@@ -2,6 +2,7 @@ import type { KeyEvent, PasteEvent, TextareaRenderable } from '@opentui/core';
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { FileMentionMenu } from './file-mention-menu';
+import { shouldSyncPromptTextarea } from './prompt-sync';
 import { SlashCommandMenu } from './slash-command-menu';
 import type { SlashCommandDefinition } from '../commands/slash-commands';
 import {
@@ -40,6 +41,7 @@ const PromptComponent = ({
   onSubmit,
 }: PromptProps) => {
   const textareaRef = useRef<TextareaRenderable | null>(null);
+  const lastUserValueRef = useRef<string | null>(null);
   const mediaFiles = useMemo(
     () =>
       selectedFiles.filter(
@@ -78,10 +80,19 @@ const PromptComponent = ({
       return;
     }
 
-    if (textarea.plainText !== value) {
-      textarea.setText(value);
-      textarea.cursorOffset = value.length;
+    if (
+      !shouldSyncPromptTextarea({
+        textareaValue: textarea.plainText,
+        nextValue: value,
+        lastUserValue: textarea.focused ? lastUserValueRef.current : null,
+      })
+    ) {
+      return;
     }
+
+    lastUserValueRef.current = null;
+    textarea.setText(value);
+    textarea.cursorOffset = value.length;
   }, [value]);
 
   useEffect(() => {
@@ -91,11 +102,15 @@ const PromptComponent = ({
     }
 
     if (inputLocked) {
-      textarea.blur();
+      if (textarea.focused) {
+        textarea.blur();
+      }
       return;
     }
 
-    textarea.focus();
+    if (!textarea.focused) {
+      textarea.focus();
+    }
   }, [inputLocked]);
 
   const submit = useCallback(() => {
@@ -106,7 +121,9 @@ const PromptComponent = ({
   }, [inputLocked, onSubmit]);
 
   const handleContentChange = useCallback(() => {
-    onValueChange(textareaRef.current?.plainText ?? '');
+    const nextValue = textareaRef.current?.plainText ?? '';
+    lastUserValueRef.current = nextValue;
+    onValueChange(nextValue);
   }, [onValueChange]);
 
   const handleKeyDown = useCallback(

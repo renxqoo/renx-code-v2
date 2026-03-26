@@ -1,9 +1,19 @@
 import * as path from 'node:path';
 import type { ResolvedShell, ShellCommandWorks, ShellPathExists } from './shell-runtime';
 
-const POWERSHELL_PROBE_ARGS = ['-NoProfile', '-Command', '$PSVersionTable.PSVersion.Major'];
+const POWERSHELL_PROBE_ARGS = [
+  '-NoProfile',
+  '-NonInteractive',
+  '-Command',
+  '$PSVersionTable.PSVersion.Major',
+];
 const POWERSHELL_UTF8_OUTPUT_PREFIX =
   '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [Console]::OutputEncoding;';
+const POWERSHELL_QUIET_PREFERENCES_PREFIX = [
+  "$ProgressPreference='SilentlyContinue'",
+  "$InformationPreference='SilentlyContinue'",
+  "$ErrorActionPreference='Stop'",
+].join('\n');
 
 export function resolvePreferredWindowsShell(
   env: NodeJS.ProcessEnv,
@@ -53,7 +63,12 @@ export function createWindowsForegroundShellInvocation(
     const script = buildPowerShellExitPreservingScript(command);
     return {
       shellPath: shell.shellPath,
-      shellArgs: ['-NoProfile', '-EncodedCommand', encodePowerShellScript(script)],
+      shellArgs: [
+        '-NoProfile',
+        '-NonInteractive',
+        '-EncodedCommand',
+        encodePowerShellScript(script),
+      ],
     };
   }
 
@@ -77,7 +92,12 @@ export function createWindowsBackgroundShellInvocation(
     ].join('\n');
     return {
       shellPath: shell.shellPath,
-      shellArgs: ['-NoProfile', '-EncodedCommand', encodePowerShellScript(script)],
+      shellArgs: [
+        '-NoProfile',
+        '-NonInteractive',
+        '-EncodedCommand',
+        encodePowerShellScript(script),
+      ],
     };
   }
 
@@ -113,9 +133,19 @@ function escapePowerShellSingleQuotedString(value: string): string {
 
 function prefixPowerShellScriptWithUtf8(script: string): string {
   const trimmed = script.trimStart();
-  if (trimmed.startsWith(POWERSHELL_UTF8_OUTPUT_PREFIX)) {
+  const prefixes: string[] = [];
+
+  if (!trimmed.startsWith(POWERSHELL_UTF8_OUTPUT_PREFIX)) {
+    prefixes.push(POWERSHELL_UTF8_OUTPUT_PREFIX);
+  }
+
+  if (!trimmed.includes("$ProgressPreference='SilentlyContinue'")) {
+    prefixes.push(POWERSHELL_QUIET_PREFERENCES_PREFIX);
+  }
+
+  if (prefixes.length === 0) {
     return script;
   }
 
-  return `${POWERSHELL_UTF8_OUTPUT_PREFIX}\n${script}`;
+  return `${prefixes.join('\n')}\n${script}`;
 }

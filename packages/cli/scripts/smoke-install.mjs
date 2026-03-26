@@ -171,6 +171,22 @@ async function main() {
       throw new Error('Installed renx command did not print usage help.');
     }
 
+    const diagnosticResult = run(commandPath, ['__tree-sitter-diagnose', '--output', 'json'], {
+      cwd: tempRoot,
+      env: commandEnv,
+    });
+    // Assert the installed release binary can initialize markdown tree-sitter
+    // through the launcher/materialized binary-cache path.
+    const diagnostic = JSON.parse(diagnosticResult.stdout);
+    if (!diagnostic?.ok) {
+      throw new Error(
+        `Installed renx tree-sitter diagnostic failed: ${JSON.stringify(diagnostic, null, 2)}`
+      );
+    }
+    if (!Array.isArray(diagnostic?.highlight?.highlights) || diagnostic.highlight.highlights.length === 0) {
+      throw new Error('Installed renx tree-sitter diagnostic returned no markdown highlights.');
+    }
+
     const cachedBinary = await findCachedBinary(binaryCacheDir);
     if (!cachedBinary) {
       throw new Error(`Expected cached binary under ${binaryCacheDir}, but none was created.`);
@@ -185,6 +201,7 @@ async function main() {
     console.log(`Smoke install succeeded for ${currentTarget.packageName}`);
     console.log(`Installed command: ${commandPath}`);
     console.log(`Cached binary: ${cachedBinary}`);
+    console.log(`Tree-sitter highlight count: ${diagnostic.highlight.highlights.length}`);
   } finally {
     if (process.env.RENX_SMOKE_KEEP_TEMP !== '1') {
       rmSync(tempRoot, { recursive: true, force: true });

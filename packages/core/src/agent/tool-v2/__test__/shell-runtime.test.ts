@@ -22,6 +22,10 @@ import {
   createForegroundProcessLifecycleController,
   resolvePreferredShell,
 } from '../runtimes/shell-runtime';
+import {
+  createWindowsBackgroundShellInvocation,
+  createWindowsForegroundShellInvocation,
+} from '../runtimes/shell-runtime-windows';
 import { truncateShellOutput } from '../runtimes/shell-output';
 import { createRuleBasedShellCommandPolicy } from '../shell-policy';
 import { SHELL_POLICY_PROFILES } from '../shell-profiles';
@@ -97,6 +101,39 @@ describe('shell runtime adapters', () => {
       shellPath: '/bin/zsh',
       flavor: 'posix',
     });
+  });
+
+  it('wraps Windows PowerShell invocations with non-interactive quiet preferences', () => {
+    const shell = {
+      shellPath: 'pwsh',
+      flavor: 'powershell' as const,
+    };
+
+    const foreground = createWindowsForegroundShellInvocation(shell, 'Get-Content -Raw sample.txt');
+    const background = createWindowsBackgroundShellInvocation(
+      shell,
+      'Get-Content -Raw sample.txt',
+      'C:\\temp\\status.txt'
+    );
+
+    expect(foreground.shellPath).toBe('pwsh');
+    expect(foreground.shellArgs[0]).toBe('-NoProfile');
+    expect(foreground.shellArgs[1]).toBe('-NonInteractive');
+    expect(foreground.shellArgs[2]).toBe('-EncodedCommand');
+
+    expect(background.shellArgs[0]).toBe('-NoProfile');
+    expect(background.shellArgs[1]).toBe('-NonInteractive');
+    expect(background.shellArgs[2]).toBe('-EncodedCommand');
+
+    const foregroundScript = Buffer.from(foreground.shellArgs[3]!, 'base64').toString('utf16le');
+    expect(foregroundScript).toContain("$ProgressPreference='SilentlyContinue'");
+    expect(foregroundScript).toContain("$InformationPreference='SilentlyContinue'");
+    expect(foregroundScript).toContain("$ErrorActionPreference='Stop'");
+
+    const backgroundScript = Buffer.from(background.shellArgs[3]!, 'base64').toString('utf16le');
+    expect(backgroundScript).toContain("$ProgressPreference='SilentlyContinue'");
+    expect(backgroundScript).toContain("$InformationPreference='SilentlyContinue'");
+    expect(backgroundScript).toContain("$ErrorActionPreference='Stop'");
   });
 
   it('truncates shell previews with preserved head and tail context', () => {

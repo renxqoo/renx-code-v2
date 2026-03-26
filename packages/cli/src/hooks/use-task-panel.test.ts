@@ -112,4 +112,35 @@ describe('useTaskPanel', () => {
     });
     expect(result.current.tasks).toEqual([]);
   });
+
+  it('drops terminal-only tasks so completed work does not keep the panel visible', async () => {
+    mockGetAgentTaskList.mockResolvedValueOnce({
+      namespace: 'conv-task-panel',
+      total: 1,
+      tasks: [
+        {
+          id: 'task-done',
+          subject: 'Finished task',
+          status: 'completed',
+          priority: 'normal',
+          owner: null,
+          blockedBy: [],
+          blocks: [],
+          progress: 100,
+          isBlocked: false,
+          canBeClaimed: false,
+          createdAt: 3,
+          updatedAt: 3,
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useTaskPanel());
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(result.current.tasks).toEqual([]);
+  });
 });

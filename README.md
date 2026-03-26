@@ -103,6 +103,7 @@ renx session open --id my-session
 - Windows 下 PowerShell 不支持 `&&`
   - 建议直接执行 `pnpm run ci:check`
   - 或使用 PowerShell 串行语法（`; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }`）
+  - 如需更稳定的终端与文件系统体验，优先在 WSL 中运行；但 PowerShell 仍是受支持方案
 
 - shell 运行产生缓存输出
   - 可能出现在临时目录或工作目录下 `.renx-cache/`

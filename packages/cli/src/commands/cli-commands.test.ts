@@ -41,6 +41,15 @@ describe('cli-commands', () => {
     });
   });
 
+  it('parses internal tree-sitter diagnose command', () => {
+    expect(parseCliCommand(['__tree-sitter-diagnose', '--output', 'json'])).toMatchObject({
+      command: 'internal:tree-sitter-diagnose',
+      outputMode: 'json',
+      json: true,
+      errors: [],
+    });
+  });
+
   it('reports invalid output mode', () => {
     const result = parseCliCommand(['run', 'hello', '--output', 'yaml']);
     expect(result.errors[0]).toContain('Invalid value for --output');

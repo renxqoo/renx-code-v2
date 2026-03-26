@@ -25,6 +25,7 @@ const packageJsonPath = path.join(packageRoot, 'package.json');
 const readmePath = path.join(packageRoot, 'README.md');
 const wrapperPath = path.join(packageRoot, 'bin', 'renx.cjs');
 const ripgrepManifestPath = path.join(packageRoot, 'bin', 'rg');
+const platformPreinstallScriptPath = path.join(packageRoot, 'scripts', 'platform-preinstall.mjs');
 const ripgrepInstallScriptPath = path.join(packageRoot, 'scripts', 'install-ripgrep.mjs');
 const entryPath = path.join(packageRoot, 'src', 'index.tsx');
 
@@ -56,7 +57,14 @@ const ensureRequiredInputs = () => {
   mkdirSync(bunInstallCacheDir, { recursive: true });
   process.env.BUN_INSTALL_CACHE_DIR = bunInstallCacheDir;
 
-  const requiredPaths = [readmePath, wrapperPath, ripgrepManifestPath, ripgrepInstallScriptPath, entryPath];
+  const requiredPaths = [
+    readmePath,
+    wrapperPath,
+    ripgrepManifestPath,
+    platformPreinstallScriptPath,
+    ripgrepInstallScriptPath,
+    entryPath,
+  ];
   for (const candidate of requiredPaths) {
     if (!existsSync(candidate)) {
       throw new Error(`Required release input is missing: ${candidate}`);
@@ -184,12 +192,14 @@ const prepareMainPackage = () => {
 };
 
 const compileTargetScriptPath = path.join(packageRoot, 'scripts', 'compile-release-target.mjs');
+const buildOtuiWorkerBundleScriptPath = path.join(packageRoot, 'scripts', 'build-otui-worker-bundle-for-release.mjs');
 
 const preparePlatformPackage = async (target, parserWorkerPath) => {
   const targetRoot = path.join(platformsRoot, target.id);
   const binaryOutputPath = path.join(targetRoot, 'bin', target.binaryName);
 
   mkdirSync(path.join(targetRoot, 'bin'), { recursive: true });
+  mkdirSync(path.join(targetRoot, 'bin', 'otui-worker-bundle'), { recursive: true });
   mkdirSync(path.join(targetRoot, 'scripts'), { recursive: true });
 
   run(
@@ -202,8 +212,19 @@ const preparePlatformPackage = async (target, parserWorkerPath) => {
     }
   );
 
+  run(
+    'bun',
+    [buildOtuiWorkerBundleScriptPath, target.id, path.join(targetRoot, 'bin', 'otui-worker-bundle')],
+    packageRoot,
+    {
+      ...process.env,
+      BUN_INSTALL_CACHE_DIR: bunInstallCacheDir,
+    }
+  );
+
   cpSync(readmePath, path.join(targetRoot, 'README.md'));
   cpSync(ripgrepManifestPath, path.join(targetRoot, 'bin', 'rg'));
+  cpSync(platformPreinstallScriptPath, path.join(targetRoot, 'scripts', 'platform-preinstall.mjs'));
   cpSync(ripgrepInstallScriptPath, path.join(targetRoot, 'scripts', 'install-ripgrep.mjs'));
 
   if (target.os !== 'win32') {
@@ -223,6 +244,7 @@ const preparePlatformPackage = async (target, parserWorkerPath) => {
     },
     files: ['bin', 'scripts', 'README.md'],
     scripts: {
+      preinstall: 'node ./scripts/platform-preinstall.mjs',
       postinstall: 'node ./scripts/install-ripgrep.mjs',
     },
     engines: packageJson.engines,

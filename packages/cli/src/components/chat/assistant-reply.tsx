@@ -6,6 +6,9 @@ import { AssistantSegment } from './assistant-segment';
 import { AssistantToolGroup } from './assistant-tool-group';
 import { buildReplyRenderItems } from './segment-groups';
 
+const ERROR_RAIL_COLOR = '#dc2626';
+const ERROR_TEXT_COLOR = '#c2410c';
+
 type AssistantReplyProps = {
   reply: AssistantReplyType;
 };
@@ -111,10 +114,13 @@ export const AssistantReply = ({ reply }: AssistantReplyProps) => {
         )
       )}
       {completionErrorMessage ? (
-        <box backgroundColor={uiTheme.surface} paddingX={2} paddingY={1}>
-          <text fg="#c2410c" attributes={uiTheme.typography.body} wrapMode="word">
-            {completionErrorMessage}
-          </text>
+        <box flexDirection="row">
+          <box border={['left']} borderColor={ERROR_RAIL_COLOR} />
+          <box backgroundColor={uiTheme.surface} paddingX={2} paddingY={1} flexGrow={1}>
+            <text fg={ERROR_TEXT_COLOR} attributes={uiTheme.typography.body} wrapMode="word">
+              {completionErrorMessage}
+            </text>
+          </box>
         </box>
       ) : null}
       <box flexDirection="row" gap={1} paddingLeft={3}>
