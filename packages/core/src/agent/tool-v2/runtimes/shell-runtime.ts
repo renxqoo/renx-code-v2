@@ -133,6 +133,7 @@ export type ShellCommandWorks = (candidate: string, args: string[]) => boolean;
 export interface LocalProcessShellRuntimeOptions {
   readonly backgroundBaseDir?: string;
   readonly foregroundBaseDir?: string;
+  readonly homeDir?: string;
   readonly now?: () => number;
   readonly maxBackgroundOutputBytes?: number;
   readonly maxForegroundPreviewChars?: number;
@@ -152,6 +153,7 @@ type ForegroundShellChildProcess = ChildProcessByStdio<null, Readable, Readable>
 export class LocalProcessShellRuntime implements ShellRuntime {
   private readonly backgroundBaseDir: string;
   private readonly foregroundBaseDir?: string;
+  private readonly homeDir: string;
   private readonly now: () => number;
   private readonly maxBackgroundOutputBytes: number;
   private readonly maxForegroundPreviewChars: number;
@@ -166,6 +168,7 @@ export class LocalProcessShellRuntime implements ShellRuntime {
     this.foregroundBaseDir = options.foregroundBaseDir
       ? path.resolve(options.foregroundBaseDir)
       : undefined;
+    this.homeDir = path.resolve(options.homeDir || os.homedir());
     this.now = options.now || Date.now;
     this.maxBackgroundOutputBytes = options.maxBackgroundOutputBytes ?? 30000;
     this.maxForegroundPreviewChars = options.maxForegroundPreviewChars ?? 16000;
@@ -214,7 +217,7 @@ export class LocalProcessShellRuntime implements ShellRuntime {
       request.command
     );
     const foregroundBaseDir =
-      this.foregroundBaseDir || path.join(path.resolve(request.cwd), '.renx', 'cache', 'shell');
+      this.foregroundBaseDir || path.join(this.homeDir, '.renx', 'tool-v2', 'shell', 'foreground');
     const capture = new DeferredShellOutputCapture({
       baseDir: foregroundBaseDir,
       command: request.command,

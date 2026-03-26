@@ -29,14 +29,17 @@ import { EnterpriseToolSystem } from '../tool-system';
 
 describe('shell runtime adapters', () => {
   let workspaceDir: string;
+  let homeDir: string;
 
   beforeEach(async () => {
     workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'renx-tool-v2-runtime-'));
+    homeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'renx-tool-v2-home-'));
     await fs.writeFile(path.join(workspaceDir, 'sample.txt'), 'alpha\nbeta\n', 'utf8');
   });
 
   afterEach(async () => {
     await fs.rm(workspaceDir, { recursive: true, force: true });
+    await fs.rm(homeDir, { recursive: true, force: true });
   });
 
   it('prefers pwsh on Windows when available', () => {
@@ -331,6 +334,7 @@ describe('shell runtime adapters', () => {
   it('does not persist a foreground artifact for short successful output', async () => {
     const runtime: LocalProcessShellRuntime = new LocalProcessShellRuntimeImpl({
       maxForegroundPreviewChars: 256,
+      homeDir,
     });
     const system = new EnterpriseToolSystem([
       new LocalShellToolV2({
@@ -352,7 +356,7 @@ describe('shell runtime adapters', () => {
       }),
     ]);
 
-    const cacheDir = path.join(workspaceDir, '.renx', 'cache', 'shell');
+    const cacheDir = path.join(homeDir, '.renx', 'tool-v2', 'shell', 'foreground');
     const result = await system.execute(
       {
         toolCallId: 'local-process-short-success',
@@ -380,9 +384,10 @@ describe('shell runtime adapters', () => {
     await expect(fs.access(cacheDir)).rejects.toThrow();
   });
 
-  it('writes full foreground output to a project-local cache directory and returns truncated preview paths', async () => {
+  it('writes full foreground output to a user-scoped cache directory and returns truncated preview paths', async () => {
     const runtime: LocalProcessShellRuntime = new LocalProcessShellRuntimeImpl({
       maxForegroundPreviewChars: 256,
+      homeDir,
     });
     const system = new EnterpriseToolSystem([
       new LocalShellToolV2({
@@ -434,7 +439,7 @@ describe('shell runtime adapters', () => {
     };
     expect(structured.outputTruncated).toBe(true);
     expect(structured.outputArtifact.combinedPath).toContain(
-      path.join(workspaceDir, '.renx', 'cache', 'shell')
+      path.join(homeDir, '.renx', 'tool-v2', 'shell', 'foreground')
     );
 
     const combined = await fs.readFile(structured.outputArtifact.combinedPath, 'utf8');
@@ -452,6 +457,7 @@ describe('shell runtime adapters', () => {
   it('persists a foreground artifact for short failed output', async () => {
     const runtime: LocalProcessShellRuntime = new LocalProcessShellRuntimeImpl({
       maxForegroundPreviewChars: 256,
+      homeDir,
     });
     const system = new EnterpriseToolSystem([
       new LocalShellToolV2({

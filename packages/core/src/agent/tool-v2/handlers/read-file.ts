@@ -13,9 +13,9 @@ const READ_FILE_TOOL_V2_DESCRIPTION = `Read a file from the local filesystem.
 
 Usage:
 - path is required and may be absolute or workspace-relative.
-- startLine is optional and 0-based.
-- limit is optional and defaults to 1000 lines.
-- mode is optional and defaults to text; use image mode for supported image files.
+- startLine is optional and 0-based for text mode.
+- limit is optional and defaults to 1000 lines for text mode.
+- mode is optional and defaults to text; use image mode for supported image files. In image mode, startLine and limit are ignored.
 - Results are returned with line numbers prefixed as L1, L2, ...
 - Use this tool before file_edit when you need the latest file contents.`;
 
@@ -35,14 +35,14 @@ const schema = z
       .int()
       .min(0)
       .optional()
-      .describe('0-based line number to start reading from'),
+      .describe('0-based line number to start reading from for text mode'),
     limit: z
       .number()
       .int()
       .min(1)
       .max(4000)
       .optional()
-      .describe('Maximum number of lines to return'),
+      .describe('Maximum number of lines to return for text mode'),
     mode: z
       .enum(['text', 'image'])
       .optional()
@@ -106,12 +106,6 @@ export class ReadFileToolV2 extends StructuredToolHandler<typeof schema> {
     );
 
     if (args.mode === 'image') {
-      if (args.startLine !== undefined || args.limit !== undefined) {
-        throw new ToolV2ArgumentsError(
-          'read_file',
-          'mode=image does not support startLine or limit'
-        );
-      }
       return executeImageMode(resolvedPath);
     }
 

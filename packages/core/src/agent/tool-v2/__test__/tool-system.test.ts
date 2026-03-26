@@ -261,7 +261,7 @@ describe('tool-v2 enterprise system', () => {
     }
   });
 
-  it('returns validation errors when read_file image mode is combined with line slicing', async () => {
+  it('ignores line slicing arguments when read_file image mode is requested', async () => {
     const targetFile = path.join(workspaceDir, 'diagram.png');
     await fs.writeFile(targetFile, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
 
@@ -278,13 +278,19 @@ describe('tool-v2 enterprise system', () => {
       createContext(workspaceDir, sessionState)
     );
 
-    expect(result.success).toBe(false);
-    if (result.success) {
+    expect(result.success).toBe(true);
+    if (!result.success) {
       return;
     }
-    expect(result.error.errorCode).toBe('TOOL_V2_INVALID_ARGUMENTS');
-    expect(result.error.category).toBe('validation');
-    expect(result.output).toContain('mode=image does not support startLine or limit');
+    expect(result.output).toContain(`Read image: ${targetFile}`);
+    expect(result.structured).toMatchObject({
+      path: targetFile,
+      truncated: false,
+      media: {
+        kind: 'image',
+        mimeType: 'image/png',
+      },
+    });
   });
 
   it('returns recoverable EDIT_CONFLICT metadata when file_edit cannot anchor an edit', async () => {

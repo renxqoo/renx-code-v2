@@ -20,6 +20,7 @@ import { LLMAuthError, LLMBadRequestError, LLMRetryableError } from '../../../pr
 import { AgentError } from '../error';
 import * as compactionModule from '../compaction';
 import { InMemoryToolExecutionLedger } from '../tool-execution-ledger';
+import { resolveWriteBufferBaseDir } from '../../storage/file-storage-config';
 
 type ChunkDelta = NonNullable<NonNullable<Chunk['choices']>[number]>['delta'];
 
@@ -1957,7 +1958,7 @@ describe('StatelessAgent', () => {
     expect(payload.buffer?.bufferId).toBe('wf_call_1');
     expect(payload.nextAction).toBe('finalize');
 
-    const writeBufferCacheDir = path.resolve(process.cwd(), '.renx', 'write-file');
+    const writeBufferCacheDir = resolveWriteBufferBaseDir();
     const cacheEntries = await fs.readdir(writeBufferCacheDir).catch(() => []);
     await Promise.all(
       cacheEntries

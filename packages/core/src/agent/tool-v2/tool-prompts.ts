@@ -41,15 +41,15 @@ Assume this tool is able to read all files on the machine. If the user provides 
 
 Usage:
 - The path parameter must be an absolute path, not a relative path
-- By default, it reads up to 1000 lines starting from the beginning of the file
-- You can optionally specify a startLine (0-based) and limit (number of lines to read) for line-based slicing
-- startLine: The line number to start reading from (0-based, defaults to 0)
-- limit: The number of lines to read (defaults to 1000)
+- By default, it reads up to 1000 lines starting from the beginning of a text file
+- You can optionally specify a startLine (0-based) and limit (number of lines to read) for text-file line-based slicing
+- startLine: The line number to start reading from for text reads (0-based, defaults to 0)
+- limit: The number of lines to read for text reads (defaults to 1000)
 - Any lines longer than 2000 characters will be truncated
 - Results are returned with line numbers
 - You have the capability to call multiple tools in a single response. It is often better to speculatively read multiple files as a batch that are potentially useful.
 - If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents.
-- You can read image files using this tool.
+- You can read image files using this tool; in image mode, startLine and limit are ignored.
 `;
 
 export const FILE_EDIT_TOOL_DESCRIPTION = `Apply one or more old/new text replacements to a single file and return a unified diff.
