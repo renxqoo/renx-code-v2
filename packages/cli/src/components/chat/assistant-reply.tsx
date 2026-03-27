@@ -115,7 +115,23 @@ export const AssistantReply = ({ reply }: AssistantReplyProps) => {
       )}
       {completionErrorMessage ? (
         <box flexDirection="row">
-          <box border={['left']} borderColor={ERROR_RAIL_COLOR} />
+          <box
+            border={['left']}
+            borderColor={ERROR_RAIL_COLOR}
+            customBorderChars={{
+              topLeft: '',
+              topRight: '',
+              bottomRight: '',
+              horizontal: ' ',
+              bottomT: '',
+              topT: '',
+              cross: '',
+              leftT: '',
+              rightT: '',
+              vertical: '┃',
+              bottomLeft: '╹',
+            }}
+          />
           <box backgroundColor={uiTheme.surface} paddingX={2} paddingY={1} flexGrow={1}>
             <text fg={ERROR_TEXT_COLOR} attributes={uiTheme.typography.body} wrapMode="word">
               {completionErrorMessage}

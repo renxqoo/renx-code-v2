@@ -19,14 +19,14 @@ const FILETYPE_BY_EXTENSION: Record<string, string> = {
   java: 'java',
   js: 'javascript',
   json: 'json',
-  jsx: 'tsx',
+  jsx: 'javascript',
   md: 'markdown',
   mjs: 'javascript',
   py: 'python',
   sh: 'bash',
   sql: 'sql',
   ts: 'typescript',
-  tsx: 'tsx',
+  tsx: 'typescript',
   txt: 'text',
   xml: 'xml',
   yaml: 'yaml',
@@ -44,10 +44,10 @@ const normalizeHint = (value?: string): string | undefined => {
   if (normalized === 'sh' || normalized === 'shell' || normalized === 'zsh') {
     return 'bash';
   }
-  if (normalized === 'js') {
+  if (normalized === 'js' || normalized === 'jsx' || normalized === 'cjs' || normalized === 'mjs') {
     return 'javascript';
   }
-  if (normalized === 'ts') {
+  if (normalized === 'ts' || normalized === 'tsx') {
     return 'typescript';
   }
   return normalized;
@@ -235,7 +235,7 @@ export const CodeBlock = ({
   const filetype = inferCodeFiletype(normalized, languageHint);
   const isDiff = filetype === 'diff';
   const collapsed = buildCollapsedContent(normalized, collapsedLines);
-  const isTruncated = !isDiff && collapsible && collapsed.hiddenLines > 0;
+  const isTruncated = collapsible && collapsed.hiddenLines > 0;
   const renderedContent = isTruncated && !expanded ? collapsed.content : normalized;
   const shouldRenderDiff = isDiff;
   const codeFiletype = isDiff ? 'diff' : filetype;

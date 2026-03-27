@@ -469,6 +469,37 @@ describe('runtime', () => {
     await expect(getAgentModelLabel()).resolves.toBe('GPT-5.3-my');
   });
 
+  it('falls back to another configured model when the preferred model is missing its api key', async () => {
+    delete process.env.TEST_API_KEY;
+    process.env.OTHER_API_KEY = 'other-key';
+    process.env.AGENT_MODEL = 'glm-5';
+
+    try {
+      const modules = buildMockModules({
+        ProviderRegistry: {
+          getModelIds: () => ['glm-5', 'claude-3.5-sonnet'],
+          getModelConfig: (modelId: string) => ({
+            name: modelId === 'glm-5' ? 'GLM-5' : 'Claude 3.5 Sonnet',
+            envApiKey: modelId === 'glm-5' ? 'TEST_API_KEY' : 'OTHER_API_KEY',
+            provider: modelId === 'glm-5' ? 'zhipu' : 'anthropic',
+            model: modelId,
+          }),
+          createFromEnv: (modelId: string) => ({ modelId }),
+        },
+      });
+      mockGetSourceModules.mockResolvedValue(
+        modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+      );
+
+      await expect(getAgentModelId()).resolves.toBe('claude-3.5-sonnet');
+      await expect(getAgentModelLabel()).resolves.toBe('Claude 3.5 Sonnet');
+      await expect(runAgentPrompt('Test prompt', {})).resolves.toMatchObject({
+        modelLabel: 'Claude 3.5 Sonnet',
+      });
+    } finally {
+      delete process.env.OTHER_API_KEY;
+    }
+  });
   it('passes only the new executor baseline options into enterprise composition', async () => {
     const modules = buildMockModules();
     const createEnterpriseAgentAppService = modules.createEnterpriseAgentAppService as ReturnType<

@@ -262,12 +262,44 @@ const resolveModelId = (modules: SourceModules, requested?: string): string => {
   return fallback;
 };
 
-const requireModelApiKey = (modules: SourceModules, modelId: string) => {
-  const modelConfig = modules.ProviderRegistry.getModelConfig(modelId);
-  if (!process.env[modelConfig.envApiKey]) {
-    throw new Error(`Missing env ${modelConfig.envApiKey} for model ${modelId}.`);
+const listModelResolutionCandidates = (modules: SourceModules, requested?: string): string[] => {
+  const ids = modules.ProviderRegistry.getModelIds();
+  if (ids.length === 0) {
+    throw new Error('No models are registered in ProviderRegistry.');
   }
-  return modelConfig;
+
+  const preferred = resolveModelId(modules, requested);
+  return [preferred, ...ids.filter((id) => id !== preferred)];
+};
+
+const resolveConfiguredModel = (
+  modules: SourceModules,
+  requested?: string
+): {
+  modelId: string;
+  modelConfig: ReturnType<SourceModules['ProviderRegistry']['getModelConfig']>;
+} => {
+  const candidates = listModelResolutionCandidates(modules, requested);
+  for (const modelId of candidates) {
+    const modelConfig = modules.ProviderRegistry.getModelConfig(modelId);
+    if (process.env[modelConfig.envApiKey]) {
+      return { modelId, modelConfig };
+    }
+  }
+
+  // No model with API key found, return first candidate model (allow empty key startup)
+  const fallbackModelId = candidates[0];
+  const fallbackConfig = modules.ProviderRegistry.getModelConfig(fallbackModelId);
+
+  // Output warning but do not block startup
+  console.warn(
+    `Warning: No API keys found for any model, starting with model ${fallbackModelId} (no API key).`
+  );
+  console.warn(
+    `Please set environment variable ${fallbackConfig.envApiKey} or create a .env file to enable AI functionality.`
+  );
+
+  return { modelId: fallbackModelId, modelConfig: fallbackConfig };
 };
 const resolveConversationId = () => {
   const fromEnv = process.env.AGENT_CONVERSATION_ID?.trim() || process.env.AGENT_SESSION_ID?.trim();
@@ -677,8 +709,7 @@ const createRuntime = async (): Promise<RuntimeCore> => {
   const conversationId = resolveConversationId();
   setConversationId(conversationId);
 
-  const modelId = resolveModelId(modules, getPreferredModelId());
-  const modelConfig = requireModelApiKey(modules, modelId);
+  const { modelId, modelConfig } = resolveConfiguredModel(modules, getPreferredModelId());
   const maxSteps = parsePositiveInt(process.env.AGENT_MAX_STEPS, DEFAULT_MAX_STEPS);
   const coreLogger = modules.createLoggerFromEnv(buildCliLoggerEnv(process.env), workspaceRoot);
   const agentLogger = modules.createAgentLoggerAdapter(asRecord(coreLogger), {
@@ -1371,7 +1402,7 @@ export const getAgentModelId = async (): Promise<string> => {
   }
   const modules = await getSourceModules();
   await prepareRuntimeEnvironment(modules, resolveWorkspaceRoot());
-  return resolveModelId(modules, getPreferredModelId());
+  return resolveConfiguredModel(modules, getPreferredModelId()).modelId;
 };
 
 export const listAgentModels = async (): Promise<AgentModelOption[]> => {
@@ -1411,7 +1442,11 @@ export const switchAgentModel = async (modelId: string): Promise<AgentModelSwitc
 
   const config = modules.ProviderRegistry.getModelConfig(modelId);
   if (!process.env[config.envApiKey]) {
-    throw new Error(`Missing env ${config.envApiKey} for model ${modelId}.`);
+    // Output warning but allow switching (requests will fail with empty key)
+    console.warn(
+      `Warning: Model ${modelId} is missing API key (${config.envApiKey}), AI features may be unavailable.`
+    );
+    console.warn('Please set the key in environment variables or create a .env file.');
   }
 
   sessionModelIdOverride = modelId;

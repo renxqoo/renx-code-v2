@@ -374,25 +374,79 @@ describe('AssistantToolGroup', () => {
     expect(headerRailBox?.tagName.toLowerCase()).toBe('box');
   });
 
-  it('renders local shell headers as a prompt-style command line', () => {
-    const command = 'grep -n "DEFAULT_MAX_STEPS\\|10000" src/agent/runtime/runtime.ts';
+  it('truncates long tool invocation text in the header to keep it on one line', () => {
+    const command =
+      'python scripts/really-long-command.py --project packages/cli --input src/components/chat/assistant-tool-group.tsx --output /tmp/very/long/path/result.json --flag-one --flag-two --flag-three';
     const group: ToolSegmentGroup = {
-      toolCallId: 'call_local_shell',
+      toolCallId: 'call_local_shell_long_header',
       streams: [],
-      use: createToolUseSegment('local_shell', { command }, 'call_local_shell'),
+      use: createToolUseSegment('local_shell', { command }, 'call_local_shell_long_header'),
       result: createToolResultSegment(
         'local_shell',
         {
           summary: 'Command completed successfully with no output.',
         },
-        { callId: 'call_local_shell' }
+        { callId: 'call_local_shell_long_header' }
       ),
     };
 
     const { container } = render(<AssistantToolGroup group={group} />);
     const headerText = container.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
-    expect(headerText).toContain(`$ ${command} (completed)`);
-    expect(headerText).not.toContain('local_shell');
+    expect(headerText).toContain('$ python scripts/really-long-command.py');
+    expect(headerText).toContain('…');
+    expect(headerText).toContain('(completed)');
+    expect(headerText).not.toContain('--flag-three');
+  });
+
+  it('summarizes file_edit diff results without repeating match and replacement blocks', () => {
+    const diff = [
+      'diff --git a/src/example.tsx b/src/example.tsx',
+      '--- a/src/example.tsx',
+      '+++ b/src/example.tsx',
+      '@@ -1,2 +1,20 @@',
+      '-const before = true;',
+      '+const after = true;',
+      ...Array.from({ length: 18 }, (_, index) => `+const line${index + 1} = ${index + 1};`),
+    ].join('\n');
+
+    const group: ToolSegmentGroup = {
+      toolCallId: 'call_file_edit_compact_diff',
+      streams: [],
+      use: createToolUseSegment(
+        'file_edit',
+        {
+          path: 'src/example.tsx',
+          dryRun: false,
+          edits: [
+            {
+              oldText: 'const before = true;\nconst keep = 1;',
+              newText: 'const after = true;\nconst keep = 1;\nconst extra = 2;',
+            },
+          ],
+        },
+        'call_file_edit_compact_diff'
+      ),
+      result: createToolResultSegment(
+        'file_edit',
+        {
+          summary: 'Applied 1 edit to src/example.tsx.',
+          output: diff,
+        },
+        { callId: 'call_file_edit_compact_diff' }
+      ),
+    };
+
+    const { container } = render(<AssistantToolGroup group={group} />);
+    toggleToolDetails(container);
+
+    const text = container.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    expect(text).toContain('Applied 1 edit to src/example.tsx.');
+    expect(text).toContain('diff');
+    expect(text).toContain('hidden');
+    expect(text).not.toContain('match');
+    expect(text).not.toContain('replace with');
+    expect(container.querySelector('diff')).not.toBeNull();
   });
 });

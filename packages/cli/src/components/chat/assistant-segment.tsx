@@ -65,12 +65,21 @@ const ThinkingSegment = ({ content, streaming }: { content: string; streaming: b
   );
 };
 
-const CodeSegment = ({ content }: { content: string }) => {
+const CodeSegment = ({ content, languageHint }: { content: string; languageHint?: string }) => {
   return (
     <box>
-      <CodeBlock content={content} />
+      <CodeBlock content={content} languageHint={languageHint} />
     </box>
   );
+};
+
+const readSegmentLanguageHint = (data: unknown): string | undefined => {
+  if (!data || typeof data !== 'object' || !('languageHint' in data)) {
+    return undefined;
+  }
+
+  const languageHint = (data as { languageHint?: unknown }).languageHint;
+  return typeof languageHint === 'string' ? languageHint : undefined;
 };
 
 const TextSegment = ({ content, streaming }: { content: string; streaming: boolean }) => {
@@ -99,7 +108,9 @@ export const AssistantSegment = ({ segment, streaming }: AssistantSegmentProps) 
   }
 
   if (segment.type === 'code') {
-    return <CodeSegment content={segment.content} />;
+    return (
+      <CodeSegment content={segment.content} languageHint={readSegmentLanguageHint(segment.data)} />
+    );
   }
 
   // if (segment.type === 'note') {

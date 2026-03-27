@@ -69,7 +69,7 @@ describe('CodeBlock', () => {
     expect(looksLikeDiff(diff)).toBe(true);
     expect(extractDiffPath(diff)).toBe('src/App.tsx');
     expect(inferCodeFiletype(diff)).toBe('diff');
-    expect(inferFiletypeFromPath('src/App.tsx')).toBe('tsx');
+    expect(inferFiletypeFromPath('src/App.tsx')).toBe('typescript');
   });
 
   it('infers json and bash snippets without explicit metadata', () => {
@@ -90,7 +90,7 @@ describe('CodeBlock', () => {
     expect(diffNode?.props?.showLineNumbers).toBe(true);
   });
 
-  it('renders full diff content without truncation even when collapsible is enabled', () => {
+  it('collapses diff content when collapsible is enabled', () => {
     const content = [
       'diff --git a/src/a.ts b/src/a.ts',
       '--- a/src/a.ts',
@@ -110,15 +110,15 @@ describe('CodeBlock', () => {
 
     const diffNode = findElementByType(tree, 'diff');
     const codeNode = findElementByType(tree, 'code');
-    const hiddenText = findElementByType(tree, 'text');
+    const treeText = JSON.stringify(tree);
 
     expect(diffNode).not.toBeNull();
-    expect(diffNode?.props?.diff).toBe(content);
+    expect(diffNode?.props?.diff).not.toBe(content);
     expect(codeNode).toBeNull();
-    expect(hiddenText?.props?.children).not.toContain('hidden');
+    expect(treeText).toContain('hidden');
   });
 
-  it('renders diff component when a long diff is marked expanded', () => {
+  it('renders full diff component when a long diff is marked expanded', () => {
     const content = [
       'diff --git a/src/a.ts b/src/a.ts',
       '--- a/src/a.ts',
@@ -137,19 +137,34 @@ describe('CodeBlock', () => {
     });
 
     expect(findElementByType(tree, 'diff')).not.toBeNull();
+    expect(findElementByType(tree, 'diff')?.props?.diff).toBe(content);
   });
 
-  it('renders regular snippets with the OpenTUI code component', () => {
+  it('maps js/ts/jsx/tsx hints and file extensions to OpenTUI parser names', () => {
+    expect(inferCodeFiletype('const answer = 42;', 'js')).toBe('javascript');
+    expect(inferCodeFiletype('const answer: number = 42;', 'ts')).toBe('typescript');
+    expect(inferCodeFiletype('export const App = () => <div />;', 'jsx')).toBe('javascript');
+    expect(inferCodeFiletype('export const App = () => <div />;', 'tsx')).toBe('typescript');
+
+    expect(inferFiletypeFromPath('src/app.js')).toBe('javascript');
+    expect(inferFiletypeFromPath('src/app.ts')).toBe('typescript');
+    expect(inferFiletypeFromPath('src/app.jsx')).toBe('javascript');
+    expect(inferFiletypeFromPath('src/app.tsx')).toBe('typescript');
+  });
+
+  it('renders tsx snippets with the OpenTUI typescript parser filetype', () => {
     const tree = CodeBlock({
-      label: 'arguments',
-      content: '{\n  "timeout": 1000\n}',
-      languageHint: 'json',
+      label: 'code',
+      content: 'export const App = () => <div>Hello</div>;',
+      languageHint: 'tsx',
     });
 
+    const headerText = findElementByType(tree, 'text');
     const codeNode = findElementByType(tree, 'code');
 
+    expect(headerText?.props?.children).toContain('code');
     expect(codeNode).not.toBeNull();
-    expect(codeNode?.props?.filetype).toBe('json');
+    expect(codeNode?.props?.filetype).toBe('typescript');
   });
 
   it('collapses long output to 16 lines by default when enabled', () => {

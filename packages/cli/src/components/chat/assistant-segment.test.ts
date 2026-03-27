@@ -83,17 +83,37 @@ describe('AssistantSegment', () => {
     expect(markdownNode?.props?.streaming).toBe(true);
   });
 
-  it('renders code segments with the OpenTUI code renderable', () => {
-    const segment: ReplySegment = {
-      id: '1:code:1',
-      type: 'code',
-      content: '{\n  "ok": true\n}',
-    };
+  it('renders tsx, ts, and js code segments with OpenTUI parser filetypes', () => {
+    const tsxTree = AssistantSegment({
+      segment: {
+        id: '1:code:tsx',
+        type: 'code',
+        content: 'export const App = () => <div>Hello</div>;',
+        data: { languageHint: 'tsx' },
+      } as ReplySegment,
+      streaming: false,
+    });
+    const tsTree = AssistantSegment({
+      segment: {
+        id: '1:code:ts',
+        type: 'code',
+        content: 'const answer: number = 42;',
+        data: { languageHint: 'ts' },
+      } as ReplySegment,
+      streaming: false,
+    });
+    const jsTree = AssistantSegment({
+      segment: {
+        id: '1:code:js',
+        type: 'code',
+        content: 'const answer = 42;',
+        data: { languageHint: 'js' },
+      } as ReplySegment,
+      streaming: false,
+    });
 
-    const tree = AssistantSegment({ segment, streaming: false });
-    const codeNode = findElementByType(tree, 'code');
-
-    expect(codeNode).not.toBeNull();
-    expect(codeNode?.props?.filetype).toBe('json');
+    expect(findElementByType(tsxTree, 'code')?.props?.filetype).toBe('typescript');
+    expect(findElementByType(tsTree, 'code')?.props?.filetype).toBe('typescript');
+    expect(findElementByType(jsTree, 'code')?.props?.filetype).toBe('javascript');
   });
 });

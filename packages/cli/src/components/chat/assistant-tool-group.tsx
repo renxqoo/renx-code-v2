@@ -634,7 +634,7 @@ const buildFileEditPresentation = (
   }
 
   const changeSections = buildFileEditChangeSections(args);
-  if (changeSections.length > 0) {
+  if (changeSections.length > 0 && !isDiff) {
     sections.push(...changeSections);
   }
 
@@ -646,6 +646,7 @@ const buildFileEditPresentation = (
       renderKind: isDiff ? 'code' : 'text',
       languageHint: isDiff ? 'diff' : undefined,
       showLabel: !isDiff,
+      collapsible: isDiff,
     });
   }
 
@@ -1263,7 +1264,7 @@ export const AssistantToolGroup = ({ group }: AssistantToolGroupProps) => {
       compactDetail(commandText, 64) ??
       compactDetail(invocationDetails, 64));
   const titleText = useCommandAsTitle
-    ? `$ ${commandText}`
+    ? `$ ${truncate(commandText ?? '', 96)}`
     : (specialPresentation?.toolLabel ?? formatToolName(toolName));
   const defaultSections: ToolSection[] = [];
   if (commandText && !titleDetail && !useCommandAsTitle) {
@@ -1321,7 +1322,7 @@ export const AssistantToolGroup = ({ group }: AssistantToolGroupProps) => {
                 <text
                   fg={uiTheme.text}
                   attributes={uiTheme.typography.note}
-                  wrapMode="word"
+                  wrapMode={'truncate-end' as any}
                   onMouseUp={
                     showBodyToggle ? () => setBodyExpanded((previous) => !previous) : undefined
                   }
@@ -1350,8 +1351,12 @@ export const AssistantToolGroup = ({ group }: AssistantToolGroupProps) => {
         </box>
       </box>
       {hasBody && bodyExpanded ? (
-        <box flexDirection="row" marginTop={2} paddingLeft={2}>
-          <box border={['left']} borderColor={uiTheme.divider} />
+        <box flexDirection="row" marginTop={1} paddingLeft={2}>
+          <box
+            border={['left']}
+            borderColor={uiTheme.divider}
+            customBorderChars={MESSAGE_RAIL_BORDER_CHARS}
+          />
           <box
             flexGrow={1}
             backgroundColor={uiTheme.panel}
