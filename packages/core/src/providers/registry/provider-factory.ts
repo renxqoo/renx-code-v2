@@ -12,6 +12,8 @@ import type { BaseAPIAdapter } from '../adapters/base';
 import { getResolvedModelDefinitions } from './model-config';
 import { KimiAdapter } from '../adapters/kimi';
 import { ResponsesAdapter } from '../adapters/responses';
+import { GLMAdapter } from '../adapters/glm';
+import { MiniMaxAdapter } from '../adapters/minimax';
 
 /**
  * Provider 工厂类
@@ -107,6 +109,20 @@ export class ProviderFactory {
 
     if (modelConfig.provider === 'kimi') {
       return new KimiAdapter({
+        defaultModel: modelConfig.model,
+        endpointPath: modelConfig.endpointPath || '/chat/completions',
+      });
+    }
+
+    if (modelConfig.provider === 'glm') {
+      return new GLMAdapter({
+        defaultModel: modelConfig.model,
+        endpointPath: modelConfig.endpointPath || '/chat/completions',
+      });
+    }
+
+    if (modelConfig.provider === 'minimax') {
+      return new MiniMaxAdapter({
         defaultModel: modelConfig.model,
         endpointPath: modelConfig.endpointPath || '/chat/completions',
       });

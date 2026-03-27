@@ -27,6 +27,7 @@ export type BuiltinModelId =
   | 'glm-5'
   | 'qwen3.5-plus'
   | 'qwen-kimi-k2.5'
+  | 'glm-5.1'
   | 'qwen-glm-5'
   | 'qwen3.5-max'
   | 'qwen-minimax-2.5'

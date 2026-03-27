@@ -87,8 +87,8 @@ describe('AssistantToolGroup', () => {
     const { container: promptContainer } = render(<PromptCard prompt="hello" isFirst={true} />);
     const rootBox = container.querySelector('box');
     const headerPaddingBox = rootBox?.children[0] as HTMLElement | undefined;
-    const headerSurfaceBox = headerPaddingBox?.firstElementChild as HTMLElement | null;
-    const headerRailBox = headerSurfaceBox?.firstElementChild as HTMLElement | null;
+    const headerRowBox = headerPaddingBox?.firstElementChild as HTMLElement | null;
+    const headerRailBox = headerRowBox?.firstElementChild as HTMLElement | null;
     const headerContentBox = headerRailBox?.nextElementSibling as HTMLElement | null;
 
     const promptRootBox = promptContainer.querySelector('box');
@@ -99,7 +99,7 @@ describe('AssistantToolGroup', () => {
       promptRootBox?.getAttribute('paddingleft')
     );
 
-    expect(headerSurfaceBox?.getAttribute('backgroundcolor')).toBe(
+    expect(headerContentBox?.getAttribute('backgroundcolor')).toBe(
       promptContentBox?.getAttribute('backgroundcolor')
     );
     expect(headerRailBox?.getAttribute('customborderchars')).toBe(
@@ -173,8 +173,9 @@ describe('AssistantToolGroup', () => {
 
     const rootBox = container.querySelector('box');
     const bodyRow = rootBox?.children[1] as HTMLElement | undefined;
+    const bodyContentBox = bodyRow?.children[1] as HTMLElement | undefined;
 
-    expect(bodyRow?.getAttribute('paddingleft')).toBe('2');
+    expect(bodyContentBox?.getAttribute('paddingleft')).toBe('2');
   });
 
   it('uses a red rail for error tool headers', () => {

@@ -144,7 +144,19 @@ const cloneTheme = (theme: UiTheme): UiTheme => ({
   layout: { ...theme.layout },
   typography: { ...theme.typography },
 });
-
+export const MESSAGE_RAIL_BORDER_CHARS = {
+  topLeft: '',
+  topRight: '',
+  bottomRight: '',
+  horizontal: ' ',
+  bottomT: '',
+  topT: '',
+  cross: '',
+  leftT: '',
+  rightT: '',
+  vertical: '┃',
+  bottomLeft: '╹',
+};
 export let uiTheme: UiTheme = cloneTheme(createTheme('dark', process.platform));
 
 export const applyUiThemeMode = (mode: UiThemeMode) => {

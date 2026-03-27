@@ -289,7 +289,7 @@ function formatPretty(record: LogRecord, colorize: boolean): string {
       .slice(0, 5)
       .map(([k, v]) => {
         const str = typeof v === 'object' ? safeStringify(v) : String(v);
-        const truncated = str.length > 30 ? str.slice(0, 30) + '...' : str;
+        const truncated = str.length > 300 ? str.slice(0, 300) + '...' : str;
         return `${k}=${truncated}`;
       });
     parts.push(color(`(${pairs.join(', ')})`, Colors.dim));
