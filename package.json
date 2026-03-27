@@ -10,8 +10,8 @@
     "lint:fix": "pnpm exec eslint . --ext .ts,.tsx --fix",
     "format": "pnpm exec prettier --write \"**/*.{ts,tsx,json,md,yml,yaml,cjs}\"",
     "format:check": "pnpm exec prettier --check \"**/*.{ts,tsx,json,md,yml,yaml,cjs}\"",
-    "test": "pnpm --filter @renx-code/core test && pnpm --filter @renxqoo/renx-code test:run",
-    "test:coverage": "pnpm --filter @renx-code/core test:coverage && pnpm --filter @renxqoo/renx-code test:run",
+    "test": "pnpm --filter @renx-code/core test && pnpm --filter @renx-code/server test && pnpm --filter @renxqoo/renx-code test:run",
+    "test:coverage": "pnpm --filter @renx-code/core test:coverage && pnpm --filter @renx-code/server test:coverage && pnpm --filter @renxqoo/renx-code test:run",
     "check": "pnpm typecheck && pnpm lint && pnpm test",
     "ci:check": "pnpm format:check && pnpm typecheck && pnpm lint && pnpm test",
     "prepare": "husky install"
