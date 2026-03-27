@@ -3,7 +3,7 @@ import type { Token } from 'marked';
 
 import type { ReplySegment } from '../../types/chat';
 import { opencodeMarkdownSyntax, opencodeSubtleMarkdownSyntax } from '../../ui/opencode-markdown';
-import { uiTheme } from '../../ui/theme';
+import { MESSAGE_RAIL_BORDER_CHARS, uiTheme } from '../../ui/theme';
 import { CodeBlock } from './code-block';
 
 type AssistantSegmentProps = {
@@ -50,7 +50,11 @@ const ThinkingSegment = ({ content, streaming }: { content: string; streaming: b
 
   return (
     <box flexDirection="row">
-      <box width={1} backgroundColor={uiTheme.divider} />
+      <box
+        border={['left']}
+        borderColor={uiTheme.divider}
+        customBorderChars={MESSAGE_RAIL_BORDER_CHARS}
+      />
       <box flexGrow={1} paddingLeft={2}>
         <markdown
           streaming={streaming}

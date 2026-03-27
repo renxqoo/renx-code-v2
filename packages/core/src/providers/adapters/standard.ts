@@ -30,7 +30,7 @@ export class StandardAdapter extends BaseAPIAdapter {
   constructor(options: { endpointPath?: string; defaultModel?: string } = {}) {
     super();
     this.endpointPath = options.endpointPath ?? '/chat/completions';
-    this.defaultModel = options.defaultModel ?? 'gpt-4o';
+    this.defaultModel = options.defaultModel ?? '';
   }
 
   transformRequest(options?: LLMRequest): Record<string, unknown> {

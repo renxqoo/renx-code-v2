@@ -1,26 +1,13 @@
 import { useEffect, useState } from 'react';
 
 import { opencodeMarkdownSyntax } from '../../ui/opencode-markdown';
-import { uiTheme } from '../../ui/theme';
+import { MESSAGE_RAIL_BORDER_CHARS, uiTheme } from '../../ui/theme';
 import { getToolDisplayIcon, getToolDisplayName } from '../tool-display-config';
 import { resolveToolResultFallbackText } from './assistant-tool-result';
 import { CodeBlock, inferFiletypeFromPath, looksLikeDiff } from './code-block';
 import { parseToolSegmentMeta, type ToolSegmentGroup } from './segment-groups';
 
 const ERROR_RAIL_COLOR = '#dc2626';
-const MESSAGE_RAIL_BORDER_CHARS = {
-  topLeft: '',
-  topRight: '',
-  bottomRight: '',
-  horizontal: ' ',
-  bottomT: '',
-  topT: '',
-  cross: '',
-  leftT: '',
-  rightT: '',
-  vertical: '┃',
-  bottomLeft: '╹',
-};
 
 type AssistantToolGroupProps = {
   group: ToolSegmentGroup;
@@ -1310,13 +1297,20 @@ export const AssistantToolGroup = ({ group }: AssistantToolGroupProps) => {
   return (
     <box flexDirection="column">
       <box>
-        <box backgroundColor={uiTheme.userPromptBg} flexDirection="row">
+        <box flexDirection="row">
           <box
             border={['left']}
             borderColor={headerRailColor}
             customBorderChars={MESSAGE_RAIL_BORDER_CHARS}
           />
-          <box flexGrow={1} paddingLeft={2} paddingRight={1} paddingTop={1} paddingBottom={1}>
+          <box
+            flexGrow={1}
+            paddingLeft={2}
+            paddingRight={1}
+            paddingTop={1}
+            paddingBottom={1}
+            backgroundColor={uiTheme.userPromptBg}
+          >
             <box flexDirection="row">
               <box flexGrow={1}>
                 <text
@@ -1351,7 +1345,7 @@ export const AssistantToolGroup = ({ group }: AssistantToolGroupProps) => {
         </box>
       </box>
       {hasBody && bodyExpanded ? (
-        <box flexDirection="row" marginTop={1} paddingLeft={2}>
+        <box flexDirection="row" marginTop={1}>
           <box
             border={['left']}
             borderColor={uiTheme.divider}
