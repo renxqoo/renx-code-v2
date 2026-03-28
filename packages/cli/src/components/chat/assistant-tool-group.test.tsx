@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
 
 import { uiTheme } from '../../ui/theme';
 import type { ReplySegment } from '../../types/chat';
@@ -400,7 +400,60 @@ describe('AssistantToolGroup', () => {
     expect(headerText).not.toContain('--flag-three');
   });
 
-  it('summarizes file_edit diff results without repeating match and replacement blocks', () => {
+  it('falls back to generic tool rendering for spawn_agent and task tools', () => {
+    const spawnGroup: ToolSegmentGroup = {
+      toolCallId: 'call_spawn_generic',
+      streams: [],
+      use: createToolUseSegment(
+        'spawn_agent',
+        { role: 'Explore', description: 'Analyze UI Rendering', linkedTaskId: 'task_101' },
+        'call_spawn_generic'
+      ),
+      result: createToolResultSegment(
+        'spawn_agent',
+        {
+          summary: 'Spawned subagent.',
+          output: '{"agentId":"subexec_1","status":"running"}',
+        },
+        { callId: 'call_spawn_generic' }
+      ),
+    };
+
+    const taskListGroup: ToolSegmentGroup = {
+      toolCallId: 'call_task_list_generic',
+      streams: [],
+      use: createToolUseSegment(
+        'task_list',
+        { namespace: 'session_01', statuses: ['pending', 'in_progress'] },
+        'call_task_list_generic'
+      ),
+      result: createToolResultSegment(
+        'task_list',
+        {
+          summary: '2 tasks found.',
+          output: '{"tasks":[{"id":"task_1"},{"id":"task_2"}]}'
+        },
+        { callId: 'call_task_list_generic' }
+      ),
+    };
+
+    const { container: spawnContainer } = render(<AssistantToolGroup group={spawnGroup} />);
+    const { container: taskContainer } = render(<AssistantToolGroup group={taskListGroup} />);
+
+    const spawnText = spawnContainer.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+    const taskText = taskContainer.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    expect(spawnText).toContain('spawn agent');
+    expect(spawnText).toContain('(completed)');
+    expect(spawnText).toContain('"role":"Explore"');
+    expect(spawnText).not.toContain('Analyze UI Rendering · Explore');
+    expect(taskText).toContain('task list');
+    expect(taskText).toContain('(completed)');
+    expect(taskText).toContain('"namespace":"session_01"');
+    expect(taskText).not.toContain('2 tasks in');
+  });
+
+  it('shows file_edit diff results in full without nested expand hints', () => {
     const diff = [
       'diff --git a/src/example.tsx b/src/example.tsx',
       '--- a/src/example.tsx',
@@ -445,7 +498,8 @@ describe('AssistantToolGroup', () => {
 
     expect(text).toContain('Applied 1 edit to src/example.tsx.');
     expect(text).toContain('diff');
-    expect(text).toContain('hidden');
+    expect(text).not.toContain('hidden');
+    expect(text).not.toContain('click to expand');
     expect(text).not.toContain('match');
     expect(text).not.toContain('replace with');
     expect(container.querySelector('diff')).not.toBeNull();

@@ -34,6 +34,30 @@ const shouldShowEventLog = () => {
   return value === '1' || value === 'true' || value === 'yes' || value === 'on';
 };
 
+const shouldSuppressToolUseInChat = (event: AgentToolUseEvent): boolean => {
+  if (!event || typeof event !== 'object') {
+    return false;
+  }
+  const eventRecord = event as {
+    function?: unknown;
+    toolName?: unknown;
+    name?: unknown;
+  };
+  const toolFunction =
+    eventRecord.function && typeof eventRecord.function === 'object'
+      ? (eventRecord.function as { name?: unknown })
+      : null;
+  const toolName =
+    typeof toolFunction?.name === 'string'
+      ? toolFunction.name
+      : typeof eventRecord.toolName === 'string'
+        ? eventRecord.toolName
+        : typeof eventRecord.name === 'string'
+          ? eventRecord.name
+          : undefined;
+  return typeof toolName === 'string' && toolName.startsWith('task_');
+};
+
 const shouldSuppressToolResultInChat = (event: AgentToolResultEvent): boolean => {
   if (!event.toolCall || typeof event.toolCall !== 'object') {
     return false;
@@ -97,8 +121,53 @@ export const buildAgentEventHandlers = ({
     if (!event || typeof event !== 'object') {
       return undefined;
     }
-    const maybeId = (event as { id?: unknown }).id;
+    const record = event as { id?: unknown; toolCallId?: unknown };
+    const maybeId = typeof record.id === 'string' ? record.id : record.toolCallId;
     return typeof maybeId === 'string' ? maybeId : undefined;
+  };
+
+  const normalizeToolUseEvent = (event: AgentToolUseEvent): AgentToolUseEvent => {
+    if (!event || typeof event !== 'object') {
+      return event;
+    }
+    const record = event as {
+      id?: unknown;
+      toolCallId?: unknown;
+      toolName?: unknown;
+      name?: unknown;
+      args?: unknown;
+      rawArgs?: unknown;
+      function?: unknown;
+    };
+    if (record.function && typeof record.function === 'object') {
+      return event;
+    }
+
+    const id =
+      typeof record.id === 'string'
+        ? record.id
+        : typeof record.toolCallId === 'string'
+          ? record.toolCallId
+          : undefined;
+    const name =
+      typeof record.toolName === 'string'
+        ? record.toolName
+        : typeof record.name === 'string'
+          ? record.name
+          : undefined;
+    if (!id || !name) {
+      return event;
+    }
+
+    const args = record.args ?? record.rawArgs ?? {};
+    return {
+      ...event,
+      id,
+      function: {
+        name,
+        arguments: JSON.stringify(args),
+      },
+    };
   };
 
   const logEvent = (text: string) => {
@@ -130,7 +199,13 @@ export const buildAgentEventHandlers = ({
       const mapped = formatToolStreamEvent(event);
       if (mapped.codeChunk && mapped.segmentKey) {
         const turnId = getTurnId();
-        appendSegment(turnId, `${turnId}:tool:${mapped.segmentKey}`, 'code', mapped.codeChunk);
+        appendSegment(
+          turnId,
+          `${turnId}:tool:${mapped.segmentKey}`,
+          'code',
+          mapped.codeChunk,
+          event.data
+        );
       }
       if (
         (event.type === 'stdout' || event.type === 'stderr') &&
@@ -154,7 +229,11 @@ export const buildAgentEventHandlers = ({
         return;
       }
       breakTextDeltaContinuation();
-      const toolCallId = readToolCallIdFromUse(event);
+      const normalizedEvent = normalizeToolUseEvent(event);
+      if (shouldSuppressToolUseInChat(normalizedEvent)) {
+        return;
+      }
+      const toolCallId = readToolCallIdFromUse(normalizedEvent);
       if (toolCallId && renderedToolUseIds.has(toolCallId)) {
         return;
       }
@@ -167,10 +246,10 @@ export const buildAgentEventHandlers = ({
         turnId,
         `${turnId}:tool-use:${segmentSuffix}`,
         'code',
-        `${formatToolUseEventCode(event)}\n`,
-        event
+        `${formatToolUseEventCode(normalizedEvent)}\n`,
+        normalizedEvent
       );
-      logEvent(formatToolUseEvent(event));
+      logEvent(formatToolUseEvent(normalizedEvent));
     },
     onToolResult: (event) => {
       if (!isCurrentRequest()) {

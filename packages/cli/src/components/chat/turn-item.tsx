@@ -1,4 +1,5 @@
 ﻿import type { ChatTurn } from '../../types/chat';
+import type { SubagentRunViewModel } from '../../types/subagent-run';
 import { uiTheme } from '../../ui/theme';
 import { AssistantReply } from './assistant-reply';
 import { PromptCard } from './prompt-card';
@@ -7,6 +8,7 @@ type TurnItemProps = {
   turn: ChatTurn;
   index: number;
   isPending?: boolean;
+  activeRuns?: SubagentRunViewModel[];
 };
 
 const PendingReply = () => {
@@ -23,7 +25,7 @@ const PendingReply = () => {
   );
 };
 
-export const TurnItem = ({ turn, index, isPending = false }: TurnItemProps) => {
+export const TurnItem = ({ turn, index, isPending = false, activeRuns }: TurnItemProps) => {
   return (
     <box flexDirection="column">
       <PromptCard
@@ -32,7 +34,7 @@ export const TurnItem = ({ turn, index, isPending = false }: TurnItemProps) => {
         createdAtMs={turn.createdAtMs}
         isFirst={index === 0}
       />
-      {turn.reply ? <AssistantReply reply={turn.reply} /> : null}
+      {turn.reply ? <AssistantReply reply={turn.reply} activeRuns={activeRuns} /> : null}
       {isPending && !turn.reply ? <PendingReply /> : null}
     </box>
   );

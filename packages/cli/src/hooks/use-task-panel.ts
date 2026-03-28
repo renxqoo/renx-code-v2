@@ -1,19 +1,38 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
-import { getAgentTaskList, type AgentTaskSummary } from '../agent/runtime/runtime';
+import type { SubagentRunViewModel } from '../types/subagent-run';
+
+export type RunsSummaryItem = {
+  key: string;
+  title: string;
+  status: string;
+  progress?: number;
+  role?: string;
+  subtitle?: string;
+  latest?: string;
+  updatedAt: number;
+  isRecent: boolean;
+  runId: string;
+};
+
+type UseTaskPanelParams = {
+  runs: SubagentRunViewModel[];
+};
 
 type UseTaskPanelResult = {
   visible: boolean;
   loading: boolean;
   error: string | null;
   namespace: string;
-  tasks: AgentTaskSummary[];
+  tasks: RunsSummaryItem[];
   selectedIndex: number;
+  selectedRun: SubagentRunViewModel | null;
   open: () => void;
   close: () => void;
   toggle: () => void;
   refresh: (options?: { silent?: boolean }) => Promise<void>;
   setSelectedIndex: (index: number) => void;
+  moveSelection: (delta: number) => void;
 };
 
 const resolveCurrentNamespace = (): string => {
@@ -21,103 +40,68 @@ const resolveCurrentNamespace = (): string => {
   return value || 'default';
 };
 
-const isTerminalTask = (task: AgentTaskSummary): boolean =>
-  task.status === 'completed' || task.status === 'cancelled' || task.status === 'failed';
+const toSummaryItem = (run: SubagentRunViewModel): RunsSummaryItem => ({
+  key: run.runId,
+  runId: run.runId,
+  title: run.title,
+  status: run.status,
+  progress: run.progress,
+  role: run.role,
+  subtitle: run.linkedTaskId ? `task ${run.linkedTaskId}` : undefined,
+  latest: run.latestStatusLine ?? run.outputPreview,
+  updatedAt: run.updatedAt,
+  isRecent: run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled' || run.status === 'timed_out',
+});
 
-export const useTaskPanel = (): UseTaskPanelResult => {
+export const useTaskPanel = ({ runs }: UseTaskPanelParams): UseTaskPanelResult => {
   const [visible, setVisible] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [namespace, setNamespace] = useState(resolveCurrentNamespace());
-  const [tasks, setTasks] = useState<AgentTaskSummary[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const requestIdRef = useRef(0);
+  const namespace = resolveCurrentNamespace();
 
-  const refresh = useCallback(async (options?: { silent?: boolean }) => {
-    const silent = options?.silent === true;
-    const nextNamespace = resolveCurrentNamespace();
-    setNamespace(nextNamespace);
-    requestIdRef.current += 1;
-    const requestId = requestIdRef.current;
-    if (!silent) {
-      setLoading(true);
-      setError(null);
+  const tasks = useMemo(() => {
+    return runs.map(toSummaryItem).sort((left, right) => right.updatedAt - left.updatedAt);
+  }, [runs]);
+
+  const boundedSelectedIndex = tasks.length === 0 ? 0 : Math.max(0, Math.min(selectedIndex, tasks.length - 1));
+  const selectedRun = useMemo(() => {
+    const selected = tasks[boundedSelectedIndex];
+    if (!selected) {
+      return null;
     }
-    try {
-      const result = await getAgentTaskList({ namespace: nextNamespace });
-      if (requestId !== requestIdRef.current) {
-        return;
-      }
-      const visibleTasks = result.tasks.filter((task) => !isTerminalTask(task));
-      setNamespace(result.namespace);
-      setTasks(visibleTasks);
+    return runs.find((run) => run.runId === selected.runId) ?? null;
+  }, [boundedSelectedIndex, runs, tasks]);
+
+  const open = useCallback(() => setVisible(true), []);
+  const close = useCallback(() => setVisible(false), []);
+  const toggle = useCallback(() => setVisible((current) => !current), []);
+  const refresh = useCallback(async () => {
+    return;
+  }, []);
+  const moveSelection = useCallback(
+    (delta: number) => {
       setSelectedIndex((current) => {
-        if (visibleTasks.length === 0) {
+        if (tasks.length === 0) {
           return 0;
         }
-        return Math.max(0, Math.min(current, visibleTasks.length - 1));
+        return Math.max(0, Math.min(current + delta, tasks.length - 1));
       });
-    } catch (refreshError) {
-      if (requestId !== requestIdRef.current) {
-        return;
-      }
-      if (!silent) {
-        setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
-        setTasks([]);
-        setSelectedIndex(0);
-      }
-    } finally {
-      if (requestId === requestIdRef.current && !silent) {
-        setLoading(false);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  const taskCount = tasks.length;
-  useEffect(() => {
-    if (selectedIndex < taskCount) {
-      return;
-    }
-    setSelectedIndex(taskCount > 0 ? taskCount - 1 : 0);
-  }, [selectedIndex, taskCount]);
-
-  const open = useCallback(() => {
-    setVisible(true);
-    void refresh();
-  }, [refresh]);
-
-  const close = useCallback(() => {
-    setVisible(false);
-  }, []);
-
-  const toggle = useCallback(() => {
-    setVisible((current) => {
-      const next = !current;
-      if (next) {
-        void refresh();
-      }
-      return next;
-    });
-  }, [refresh]);
-
-  return useMemo(
-    () => ({
-      visible,
-      loading,
-      error,
-      namespace,
-      tasks,
-      selectedIndex,
-      open,
-      close,
-      toggle,
-      refresh,
-      setSelectedIndex,
-    }),
-    [close, error, loading, namespace, open, refresh, selectedIndex, tasks, toggle, visible]
+    },
+    [tasks.length]
   );
+
+  return {
+    visible,
+    loading: false,
+    error: null,
+    namespace,
+    tasks,
+    selectedIndex: boundedSelectedIndex,
+    selectedRun,
+    open,
+    close,
+    toggle,
+    refresh,
+    setSelectedIndex,
+    moveSelection,
+  };
 };

@@ -55,6 +55,9 @@ type AgentCliEvent = {
   eventType: string;
   data: unknown;
   createdAt: number;
+  executionId?: string;
+  conversationId?: string;
+  seq?: number;
 };
 type AgentRunContextUsage = {
   stepIndex: number;

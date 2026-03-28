@@ -1,4 +1,5 @@
 import type { NonInteractiveRunMode } from '../agent/runtime/runtime';
+import { normalizeOpenCodeThemeName, type OpenCodeThemeName } from '../ui/theme-name';
 
 export type CliCommandName =
   | 'tui'
@@ -19,6 +20,7 @@ export type ParsedCliCommand = {
   sessionId?: string;
   modelId?: string;
   cwd?: string;
+  themeName?: OpenCodeThemeName;
   errors: string[];
 };
 
@@ -35,6 +37,7 @@ const SESSION_ID_FLAGS = new Set([
 ]);
 const MODEL_FLAGS = new Set(['--model']);
 const CWD_FLAGS = new Set(['--cwd']);
+const THEME_FLAGS = new Set(['--theme']);
 const ID_FLAGS = new Set(['--id']);
 
 const readFlagValue = (argv: string[], index: number): string | null => {
@@ -88,6 +91,7 @@ Options:
   --session-id <id>     Reuse an existing session
   --model <model>       Override model
   --cwd <path>          Set working directory
+  --theme <name>        UI theme: default | konayuki
   --output <mode>       Output mode: text | json
   --json                Alias for --output json
   -y, --yes             Auto-approve non-interactive tool prompts
@@ -103,6 +107,7 @@ export const parseCliCommand = (argv: string[]): ParsedCliCommand => {
   let sessionId: string | undefined;
   let modelId: string | undefined;
   let cwd: string | undefined;
+  let themeName: OpenCodeThemeName | undefined;
   let explicitId: string | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -175,6 +180,23 @@ export const parseCliCommand = (argv: string[]): ParsedCliCommand => {
       }
       continue;
     }
+    if (THEME_FLAGS.has(normalized)) {
+      const value = readFlagValue(argv, index);
+      if (!value) {
+        errors.push(`Missing value for ${normalized}.`);
+      } else {
+        const normalizedTheme = normalizeOpenCodeThemeName(value);
+        if (!normalizedTheme) {
+          errors.push(`Invalid value for ${normalized}. Expected "default" or "konayuki".`);
+        } else {
+          themeName = normalizedTheme;
+        }
+      }
+      if (!token.includes('=')) {
+        index += 1;
+      }
+      continue;
+    }
     if (ID_FLAGS.has(normalized)) {
       const value = readFlagValue(argv, index);
       if (!value) {
@@ -202,6 +224,7 @@ export const parseCliCommand = (argv: string[]): ParsedCliCommand => {
       sessionId,
       modelId,
       cwd,
+      themeName,
       errors,
     };
   }
@@ -218,6 +241,7 @@ export const parseCliCommand = (argv: string[]): ParsedCliCommand => {
       sessionId,
       modelId,
       cwd,
+      themeName,
       errors,
     };
   }
@@ -236,6 +260,7 @@ export const parseCliCommand = (argv: string[]): ParsedCliCommand => {
       sessionId,
       modelId,
       cwd,
+      themeName,
       prompt,
       errors,
     };
@@ -253,6 +278,7 @@ export const parseCliCommand = (argv: string[]): ParsedCliCommand => {
         sessionId,
         modelId,
         cwd,
+        themeName,
         errors,
       };
     }
@@ -270,6 +296,7 @@ export const parseCliCommand = (argv: string[]): ParsedCliCommand => {
         sessionId: explicitId,
         modelId,
         cwd,
+        themeName,
         errors,
       };
     }
@@ -287,6 +314,7 @@ export const parseCliCommand = (argv: string[]): ParsedCliCommand => {
         sessionId: explicitId,
         modelId,
         cwd,
+        themeName,
         errors,
       };
     }
@@ -303,6 +331,7 @@ export const parseCliCommand = (argv: string[]): ParsedCliCommand => {
       sessionId,
       modelId,
       cwd,
+      themeName,
       errors,
     };
   }
@@ -317,6 +346,7 @@ export const parseCliCommand = (argv: string[]): ParsedCliCommand => {
     sessionId,
     modelId,
     cwd,
+    themeName,
     errors,
   };
 };

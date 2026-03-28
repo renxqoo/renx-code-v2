@@ -113,7 +113,29 @@ const createTaskToolResultEvent = (): AgentToolResultEvent => ({
   },
 });
 
+const createFlatToolUseEvent = (): AgentToolUseEvent => ({
+  toolCallId: 'call_spawn_flat',
+  toolName: 'spawn_agent',
+  args: {
+    role: 'Explore',
+    description: 'Analyze UI Rendering',
+  },
+});
+
 describe('buildAgentEventHandlers', () => {
+  it('formats flat tool-use events with toolCallId and toolName', () => {
+    const { handlers, readSegments, turnId } = buildHarness();
+
+    handlers.onToolUse?.(createFlatToolUseEvent());
+
+    const toolUse = readSegments().find(
+      (segment) => segment.id === `${turnId}:tool-use:call_spawn_flat`
+    );
+
+    expect(toolUse?.content).toContain('# Tool: spawn_agent (call_spawn_flat)');
+    expect(toolUse?.content).toContain('Analyze UI Rendering');
+  });
+
   it('keeps ordered stream segments as thinking -> text -> thinking -> tool -> tool result', () => {
     const { handlers, readSegments, turnId } = buildHarness();
 
@@ -227,6 +249,66 @@ describe('buildAgentEventHandlers', () => {
     expect(toolResult?.data).toEqual(toolResultEvent);
   });
 
+  it('stores execution attribution on tool-use and tool-result segments when present', () => {
+    const { handlers, readSegments, turnId } = buildHarness();
+
+    const toolUseEvent = {
+      ...createToolUseEvent(),
+      executionId: 'subexec_a',
+    };
+    const toolResultEvent = {
+      ...createToolResultEvent(),
+      toolCall: {
+        ...(createToolResultEvent().toolCall as Record<string, unknown>),
+        executionId: 'subexec_a',
+      },
+    };
+
+    handlers.onToolUse?.(toolUseEvent);
+    handlers.onToolResult?.(toolResultEvent);
+
+    const toolUse = readSegments().find((segment) => segment.id === `${turnId}:tool-use:call_1`);
+    const toolResult = readSegments().find(
+      (segment) => segment.id === `${turnId}:tool-result:call_1`
+    );
+
+    expect(toolUse?.data).toEqual(toolUseEvent);
+    expect(toolResult?.data).toEqual(toolResultEvent);
+    expect((toolUse?.data as { executionId?: string } | undefined)?.executionId).toBe('subexec_a');
+    expect(
+      ((toolResult?.data as { toolCall?: { executionId?: string } } | undefined)?.toolCall
+        ?.executionId)
+    ).toBe('subexec_a');
+  });
+
+  it('stores structured tool-stream data on stream segments when present', () => {
+    const { handlers, readSegments, turnId } = buildHarness();
+
+    const streamEvent: AgentToolStreamEvent = {
+      toolCallId: 'call_stream_attr_1',
+      toolName: 'read_file',
+      type: 'stdout',
+      sequence: 1,
+      timestamp: Date.now(),
+      content: 'reading child file',
+      data: {
+        executionId: 'exec_child_stream_1',
+        conversationId: 'subconv_stream_1',
+      },
+    };
+
+    handlers.onToolStream?.(streamEvent);
+
+    const streamSegment = readSegments().find(
+      (segment) => segment.id === `${turnId}:tool:call_stream_attr_1:stdout`
+    );
+
+    expect(streamSegment?.data).toEqual(streamEvent.data);
+    expect((streamSegment?.data as { executionId?: string } | undefined)?.executionId).toBe(
+      'exec_child_stream_1'
+    );
+  });
+
   it('deduplicates repeated tool-use events for the same toolCallId', () => {
     const { handlers, readSegments, turnId } = buildHarness();
 
@@ -240,14 +322,14 @@ describe('buildAgentEventHandlers', () => {
     expect(toolUseSegments.length).toBe(1);
   });
 
-  it('keeps task tool-use visible while suppressing task tool-result in chat segments', () => {
+  it('suppresses both task tool-use and task tool-result in chat segments', () => {
     const { handlers, readSegments, turnId } = buildHarness();
 
     handlers.onToolUse?.(createTaskToolUseEvent());
     handlers.onToolResult?.(createTaskToolResultEvent());
 
     const segments = readSegments();
-    expect(segments.some((segment) => segment.id === `${turnId}:tool-use:call_task_1`)).toBe(true);
+    expect(segments.some((segment) => segment.id === `${turnId}:tool-use:call_task_1`)).toBe(false);
     expect(segments.some((segment) => segment.id === `${turnId}:tool-result:call_task_1`)).toBe(
       false
     );

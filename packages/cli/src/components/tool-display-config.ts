@@ -93,7 +93,7 @@ export function getToolDisplayIcon(toolName: string): string {
     }
   }
 
-  return '⚙';
+  return '◉';
 }
 
 export function getToolHiddenArgumentKeys(toolName: string): string[] {

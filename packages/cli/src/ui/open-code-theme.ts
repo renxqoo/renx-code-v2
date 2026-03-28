@@ -1,5 +1,7 @@
 import { RGBA } from '@opentui/core';
 
+import { DEFAULT_OPEN_CODE_THEME_NAME, type OpenCodeThemeName } from './theme-name';
+
 export type OpenCodeThemeMode = 'dark' | 'light';
 export type MarkdownThemePlatform = NodeJS.Platform;
 
@@ -59,7 +61,7 @@ export type OpenCodeTheme = {
 
 const color = (hex: string) => RGBA.fromHex(hex);
 
-const OPEN_CODE_DARK_THEME: OpenCodeTheme = {
+const DEFAULT_DARK_THEME: OpenCodeTheme = {
   primary: color('#8e51ff'),
   secondary: color('#27272a'),
   accent: color('#8e51ff'),
@@ -113,7 +115,7 @@ const OPEN_CODE_DARK_THEME: OpenCodeTheme = {
   thinkingOpacity: 0.74,
 };
 
-const OPEN_CODE_LIGHT_THEME: OpenCodeTheme = {
+const DEFAULT_LIGHT_THEME: OpenCodeTheme = {
   primary: color('#7f22fe'),
   secondary: color('#f4f4f5'),
   accent: color('#7f22fe'),
@@ -167,10 +169,146 @@ const OPEN_CODE_LIGHT_THEME: OpenCodeTheme = {
   thinkingOpacity: 0.9,
 };
 
-export const resolveOpenCodeTheme = (
+const KONAYUKI_DARK_THEME: OpenCodeTheme = {
+  primary: color('#7aa2f7'),
+  secondary: color('#2a2f45'),
+  accent: color('#7aa2f7'),
+  error: color('#fb7185'),
+  warning: color('#fbbf24'),
+  success: color('#34d399'),
+  info: color('#60a5fa'),
+  text: color('#e5e9f0'),
+  textMuted: color('#9aa5ce'),
+  background: color('#1a1b26'),
+  backgroundPanel: color('#24283b'),
+  backgroundElement: color('#24283b'),
+  border: color('#2a2f45'),
+  borderActive: color('#7aa2f7'),
+  borderSubtle: color('#2a2f45'),
+  diffAdded: color('#7aa2f7'),
+  diffRemoved: color('#f7768e'),
+  diffContext: color('#9aa5ce'),
+  diffHunkHeader: color('#93b4ff'),
+  diffHighlightAdded: color('#7dcfff'),
+  diffHighlightRemoved: color('#fb7185'),
+  diffAddedBg: color('#7aa2f714'),
+  diffRemovedBg: color('#fb718524'),
+  diffContextBg: color('#24283b'),
+  diffLineNumber: color('#9aa5ce'),
+  diffAddedLineNumberBg: color('#7aa2f74d'),
+  diffRemovedLineNumberBg: color('#fb71853d'),
+  markdownText: color('#e5e9f0'),
+  markdownHeading: color('#7aa2f7'),
+  markdownLink: color('#7aa2f7'),
+  markdownLinkText: color('#93b4ff'),
+  markdownCode: color('#e5e9f0'),
+  markdownBlockQuote: color('#9aa5ce'),
+  markdownEmph: color('#a9b1d6'),
+  markdownStrong: color('#e5e9f0'),
+  markdownHorizontalRule: color('#2a2f45'),
+  markdownListItem: color('#7aa2f7'),
+  markdownListEnumeration: color('#93b4ff'),
+  markdownImage: color('#7aa2f7'),
+  markdownImageText: color('#93b4ff'),
+  markdownCodeBlock: color('#e5e9f0'),
+  syntaxComment: color('#526270'),
+  syntaxKeyword: color('#bb9af7'),
+  syntaxFunction: color('#7dcfff'),
+  syntaxVariable: color('#c0f0f5'),
+  syntaxString: color('#9ece6a'),
+  syntaxNumber: color('#ff9e64'),
+  syntaxType: color('#7aa2f7'),
+  syntaxOperator: color('#c0f0f5'),
+  syntaxPunctuation: color('#e5e9f0'),
+  thinkingOpacity: 0.78,
+};
+
+const KONAYUKI_LIGHT_THEME: OpenCodeTheme = {
+  primary: color('#4a90e2'),
+  secondary: color('#f3efe8'),
+  accent: color('#4a90e2'),
+  error: color('#dc2626'),
+  warning: color('#d97706'),
+  success: color('#16a34a'),
+  info: color('#2563eb'),
+  text: color('#2c3e50'),
+  textMuted: color('#7f8c8d'),
+  background: color('#fffdf8'),
+  backgroundPanel: color('#f7f4ef'),
+  backgroundElement: color('#f7f4ef'),
+  border: color('#e9e3d8'),
+  borderActive: color('#4a90e2'),
+  borderSubtle: color('#e9e3d8'),
+  diffAdded: color('#4a90e2'),
+  diffRemoved: color('#dc2626'),
+  diffContext: color('#7f8c8d'),
+  diffHunkHeader: color('#3a7bc8'),
+  diffHighlightAdded: color('#2563eb'),
+  diffHighlightRemoved: color('#b42318'),
+  diffAddedBg: color('#4a90e214'),
+  diffRemovedBg: color('#dc26261a'),
+  diffContextBg: color('#f3efe8'),
+  diffLineNumber: color('#7f8c8d'),
+  diffAddedLineNumberBg: color('#4a90e24d'),
+  diffRemovedLineNumberBg: color('#dc26263d'),
+  markdownText: color('#2c3e50'),
+  markdownHeading: color('#4a90e2'),
+  markdownLink: color('#4a90e2'),
+  markdownLinkText: color('#3a7bc8'),
+  markdownCode: color('#3b2f2a'),
+  markdownBlockQuote: color('#7f8c8d'),
+  markdownEmph: color('#7f8c8d'),
+  markdownStrong: color('#2c3e50'),
+  markdownHorizontalRule: color('#e9e3d8'),
+  markdownListItem: color('#4a90e2'),
+  markdownListEnumeration: color('#3a7bc8'),
+  markdownImage: color('#4a90e2'),
+  markdownImageText: color('#3a7bc8'),
+  markdownCodeBlock: color('#3b2f2a'),
+  syntaxComment: color('#9a7b66'),
+  syntaxKeyword: color('#8f3f2a'),
+  syntaxFunction: color('#9a3412'),
+  syntaxVariable: color('#3b2f2a'),
+  syntaxString: color('#4d7c0f'),
+  syntaxNumber: color('#b45309'),
+  syntaxType: color('#4a90e2'),
+  syntaxOperator: color('#3b2f2a'),
+  syntaxPunctuation: color('#2c3e50'),
+  thinkingOpacity: 0.88,
+};
+
+const THEME_MAP: Record<OpenCodeThemeName, Record<OpenCodeThemeMode, OpenCodeTheme>> = {
+  default: {
+    dark: DEFAULT_DARK_THEME,
+    light: DEFAULT_LIGHT_THEME,
+  },
+  konayuki: {
+    dark: KONAYUKI_DARK_THEME,
+    light: KONAYUKI_LIGHT_THEME,
+  },
+};
+
+export function resolveOpenCodeTheme(
   mode: OpenCodeThemeMode,
   platform: MarkdownThemePlatform
-): OpenCodeTheme => {
+): OpenCodeTheme;
+export function resolveOpenCodeTheme(
+  mode: OpenCodeThemeMode,
+  themeName: OpenCodeThemeName,
+  platform: MarkdownThemePlatform
+): OpenCodeTheme;
+export function resolveOpenCodeTheme(
+  mode: OpenCodeThemeMode,
+  themeNameOrPlatform: OpenCodeThemeName | MarkdownThemePlatform,
+  maybePlatform?: MarkdownThemePlatform
+): OpenCodeTheme {
+  const themeName =
+    maybePlatform === undefined
+      ? DEFAULT_OPEN_CODE_THEME_NAME
+      : (themeNameOrPlatform as OpenCodeThemeName);
+  const platform =
+    maybePlatform === undefined ? (themeNameOrPlatform as MarkdownThemePlatform) : maybePlatform;
+
   void platform;
-  return mode === 'light' ? OPEN_CODE_LIGHT_THEME : OPEN_CODE_DARK_THEME;
-};
+  return THEME_MAP[themeName]?.[mode] ?? THEME_MAP.default[mode];
+}

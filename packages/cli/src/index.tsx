@@ -23,8 +23,13 @@ import {
   setTerminalWindowBackground,
   setTerminalWindowForeground,
 } from './runtime/terminal-theme';
-import { applyMarkdownThemeMode } from './ui/opencode-markdown';
-import { applyUiThemeMode, uiTheme } from './ui/theme';
+import { applyMarkdownTheme } from './ui/opencode-markdown';
+import {
+  DEFAULT_OPEN_CODE_THEME_NAME,
+  normalizeOpenCodeThemeName,
+  type OpenCodeThemeName,
+} from './ui/theme-name';
+import { applyUiTheme, uiTheme } from './ui/theme';
 
 const originalConsoleLog = console.log.bind(console);
 const originalConsoleWarn = console.warn.bind(console);
@@ -62,6 +67,9 @@ const resolveCliVersion = (): string => {
   return '0.0.0';
 };
 
+const resolveThemeName = (): OpenCodeThemeName =>
+  normalizeOpenCodeThemeName(process.env.RENX_THEME) ?? DEFAULT_OPEN_CODE_THEME_NAME;
+
 const startTui = async () => {
   const [{ createCliRenderer }, { createRoot }, { App }] = await Promise.all([
     import('@opentui/core'),
@@ -72,8 +80,9 @@ const startTui = async () => {
   bindExitGuards();
   process.env.OPENTUI_FORCE_WCWIDTH ??= '1';
   const terminalColors = await probeTerminalColors();
-  applyUiThemeMode(terminalColors.mode);
-  applyMarkdownThemeMode(terminalColors.mode, process.platform);
+  const themeName = resolveThemeName();
+  applyUiTheme(themeName, terminalColors.mode);
+  applyMarkdownTheme(terminalColors.mode, themeName, process.platform);
 
   if (
     terminalColors.rawBackgroundColor &&
@@ -137,6 +146,9 @@ if (parsed.sessionId) {
 }
 if (parsed.modelId) {
   process.env.AGENT_MODEL = parsed.modelId;
+}
+if (parsed.themeName) {
+  process.env.RENX_THEME = parsed.themeName;
 }
 
 if (parsed.helpRequested) {

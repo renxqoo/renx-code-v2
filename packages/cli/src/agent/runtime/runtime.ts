@@ -543,6 +543,26 @@ const toLoopEvent = (stepIndex: number): AgentLoopEvent => {
   };
 };
 
+const toAttributedToolCall = (
+  toolCall: AgentToolUseEvent,
+  envelope: CliEventEnvelopeLike
+): AgentToolUseEvent => {
+  const record = asRecord(toolCall);
+  const executionId = readString(record.executionId) ?? readString(envelope.executionId);
+  const conversationId =
+    readString(record.conversationId) ?? readString(envelope.conversationId);
+
+  if (!executionId && !conversationId) {
+    return toolCall;
+  }
+
+  return {
+    ...record,
+    ...(executionId ? { executionId } : {}),
+    ...(conversationId ? { conversationId } : {}),
+  };
+};
+
 const toToolStreamEvent = (
   envelope: CliEventEnvelopeLike,
   sequenceByToolCallId: Map<string, number>
@@ -553,6 +573,10 @@ const toToolStreamEvent = (
   const sequence = previousSequence + 1;
   sequenceByToolCallId.set(toolCallId, sequence);
 
+  const executionId = readString(payload.executionId) ?? readString(envelope.executionId);
+  const conversationId =
+    readString(payload.conversationId) ?? readString(envelope.conversationId);
+
   return {
     toolCallId,
     toolName: readString(payload.toolName) ?? 'tool',
@@ -560,14 +584,19 @@ const toToolStreamEvent = (
     sequence,
     timestamp: envelope.createdAt,
     content: readString(payload.chunk) ?? readString(payload.content),
-    data: payload,
+    data: {
+      ...payload,
+      ...(executionId ? { executionId } : {}),
+      ...(conversationId ? { conversationId } : {}),
+    },
   };
 };
 
 const toToolResultEvent = (
   payload: Record<string, unknown>,
   toolCallsById: Map<string, AgentToolUseEvent>,
-  capabilities: AttachmentModelCapabilities
+  capabilities: AttachmentModelCapabilities,
+  envelope?: CliEventEnvelopeLike
 ): AgentToolResultEvent => {
   const toolCallId =
     readString(payload.tool_call_id) ?? readString(payload.toolCallId) ?? 'unknown';
@@ -579,14 +608,23 @@ const toToolResultEvent = (
   const content = readString(payload.content);
   const output =
     explicitOutput !== undefined ? explicitOutput : content !== summary ? content : undefined;
-  const toolCall =
+  const toolCall = toAttributedToolCall(
     toolCallsById.get(toolCallId) ??
-    ({
-      id: toolCallId,
-      function: { name: 'tool', arguments: '{}' },
-    } as AgentToolUseEvent);
+      ({
+        id: toolCallId,
+        function: { name: 'tool', arguments: '{}' },
+      } as AgentToolUseEvent),
+    envelope ?? ({ createdAt: Date.now() } as CliEventEnvelopeLike)
+  );
   const structured = asRecord(toolResult.structured);
   const contentParts = buildReadFileImageToolResultContent(toolCall, structured, capabilities);
+
+  const resultExecutionId =
+    readString(payload.executionId) ??
+    readString(asRecord(toolResult.payload).executionId) ??
+    readString(envelope?.executionId);
+  const resultConversationId =
+    readString(payload.conversationId) ?? readString(envelope?.conversationId);
 
   return {
     toolCall,
@@ -599,6 +637,8 @@ const toToolResultEvent = (
         ...(toolResult.payload !== undefined ? { payload: toolResult.payload } : {}),
         ...(toolResult.structured !== undefined ? { structured: toolResult.structured } : {}),
         ...(toolResult.metadata !== undefined ? { metadata: toolResult.metadata } : {}),
+        ...(resultExecutionId ? { executionId: resultExecutionId } : {}),
+        ...(resultConversationId ? { conversationId: resultConversationId } : {}),
       },
       raw: payload,
     },
@@ -1069,7 +1109,10 @@ export const runAgentPrompt = async (
               const rawToolCalls = payload.toolCalls;
               if (Array.isArray(rawToolCalls) && rawToolCalls.length > 0) {
                 for (const item of rawToolCalls) {
-                  const toolCall = asRecord(item) as AgentToolUseEvent;
+                  const toolCall = toAttributedToolCall(
+                    asRecord(item) as AgentToolUseEvent,
+                    envelope
+                  );
                   const toolCallId = readString(asRecord(toolCall).id);
                   if (toolCallId) {
                     toolCallsById.set(toolCallId, toolCall);
@@ -1083,7 +1126,7 @@ export const runAgentPrompt = async (
                   );
                 }
               } else {
-                const toolCall = payload as AgentToolUseEvent;
+                const toolCall = toAttributedToolCall(payload as AgentToolUseEvent, envelope);
                 const toolCallId = readString(asRecord(toolCall).id);
                 if (toolCallId) {
                   toolCallsById.set(toolCallId, toolCall);
@@ -1106,7 +1149,8 @@ export const runAgentPrompt = async (
               const toolResultEvent = toToolResultEvent(
                 payload,
                 toolCallsById,
-                attachmentCapabilities
+                attachmentCapabilities,
+                envelope
               );
               safeInvoke(() => handlers.onToolResult?.(toolResultEvent));
               break;

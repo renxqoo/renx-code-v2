@@ -981,6 +981,216 @@ describe('runtime', () => {
     );
   });
 
+  it('forwards the active executionId onto tool-call and tool-result events', async () => {
+    const handlers: AgentEventHandlers = {
+      onToolUse: vi.fn(),
+      onToolResult: vi.fn(),
+    };
+    const modules = buildMockModules({
+      AgentAppService: class FakeAppServiceWithExecutionAttributedTools {
+        async listContextMessages() {
+          return [];
+        }
+
+        async getRun() {
+          return null;
+        }
+
+        async runForeground(
+          request: unknown,
+          callbacks?: {
+            onEvent?: (event: { eventType: string; data: unknown; createdAt: number }) => void;
+          }
+        ) {
+          const executionId = (request as { executionId?: string }).executionId ?? 'exec_runtime';
+
+          await callbacks?.onEvent?.({
+            eventType: 'tool_call',
+            createdAt: Date.now(),
+            data: {
+              toolCalls: [
+                {
+                  id: 'call_child_read_1',
+                  type: 'function',
+                  executionId,
+                  function: {
+                    name: 'read_file',
+                    arguments: JSON.stringify({ path: 'src/components/chat/assistant-tool-group.tsx' }),
+                  },
+                },
+              ],
+            },
+          });
+
+          await callbacks?.onEvent?.({
+            eventType: 'tool_result',
+            createdAt: Date.now(),
+            data: {
+              tool_call_id: 'call_child_read_1',
+              metadata: {
+                toolResult: {
+                  success: true,
+                  summary: 'Read file',
+                  output: 'assistant-tool-group contents',
+                },
+              },
+            },
+          });
+
+          return {
+            executionId,
+            conversationId: 'conv_runtime',
+            messages: [],
+            events: [],
+            finishReason: 'stop' as const,
+            steps: 1,
+            run: {
+              executionId,
+              runId: executionId,
+              conversationId: 'conv_runtime',
+              status: 'COMPLETED' as const,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              stepIndex: 1,
+            },
+          };
+        }
+
+        async appendUserInputToRun() {
+          return { accepted: true };
+        }
+      },
+    });
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    await runAgentPrompt('Test prompt', handlers);
+
+    expect(handlers.onToolUse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'call_child_read_1',
+        executionId: expect.stringMatching(/^exec_cli_/),
+      })
+    );
+    expect(handlers.onToolResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolCall: expect.objectContaining({
+          id: 'call_child_read_1',
+          executionId: expect.stringMatching(/^exec_cli_/),
+        }),
+      })
+    );
+  });
+
+  it('injects envelope executionId into tool events when payloads omit attribution', async () => {
+    const handlers: AgentEventHandlers = {
+      onToolUse: vi.fn(),
+      onToolResult: vi.fn(),
+    };
+    const modules = buildMockModules({
+      AgentAppService: class FakeAppServiceWithEnvelopeAttributedTools {
+        async listContextMessages() {
+          return [];
+        }
+
+        async getRun() {
+          return null;
+        }
+
+        async runForeground(
+          request: unknown,
+          callbacks?: {
+            onEvent?: (event: {
+              eventType: string;
+              data: unknown;
+              createdAt: number;
+              executionId?: string;
+            }) => void;
+          }
+        ) {
+          const executionId = (request as { executionId?: string }).executionId ?? 'exec_runtime';
+
+          await callbacks?.onEvent?.({
+            eventType: 'tool_call',
+            createdAt: Date.now(),
+            executionId,
+            data: {
+              toolCalls: [
+                {
+                  id: 'call_child_read_env_1',
+                  type: 'function',
+                  function: {
+                    name: 'read_file',
+                    arguments: JSON.stringify({ path: 'src/components/chat/assistant-tool-group.tsx' }),
+                  },
+                },
+              ],
+            },
+          });
+
+          await callbacks?.onEvent?.({
+            eventType: 'tool_result',
+            createdAt: Date.now(),
+            executionId,
+            data: {
+              tool_call_id: 'call_child_read_env_1',
+              metadata: {
+                toolResult: {
+                  success: true,
+                  summary: 'Read file',
+                  output: 'assistant-tool-group contents',
+                },
+              },
+            },
+          });
+
+          return {
+            executionId,
+            conversationId: 'conv_runtime',
+            messages: [],
+            events: [],
+            finishReason: 'stop' as const,
+            steps: 1,
+            run: {
+              executionId,
+              runId: executionId,
+              conversationId: 'conv_runtime',
+              status: 'COMPLETED' as const,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              stepIndex: 1,
+            },
+          };
+        }
+
+        async appendUserInputToRun() {
+          return { accepted: true };
+        }
+      },
+    });
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    await runAgentPrompt('Test prompt', handlers);
+
+    expect(handlers.onToolUse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'call_child_read_env_1',
+        executionId: expect.stringMatching(/^exec_cli_/),
+      })
+    );
+    expect(handlers.onToolResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toolCall: expect.objectContaining({
+          id: 'call_child_read_env_1',
+          executionId: expect.stringMatching(/^exec_cli_/),
+        }),
+      })
+    );
+  });
+
   it('bridges read_file image structured results into multimodal tool-result content', async () => {
     const handlers: AgentEventHandlers = {
       onToolResult: vi.fn(),
