@@ -14,7 +14,6 @@ const ERROR_TEXT_COLOR = '#c2410c';
 
 type AssistantReplyProps = {
   reply: AssistantReplyType;
-  activeRuns?: SubagentRunViewModel[];
 };
 
 export type AssistantReplyUsageItem = {
@@ -118,21 +117,18 @@ const buildInlineReplyItems = (
 };
 
 const mergeVisibleRuns = (
-  localRuns: ReturnType<typeof buildReplyRunProjection>['runs'],
-  activeRuns: SubagentRunViewModel[] | undefined
+  freshRuns: ReturnType<typeof buildReplyRunProjection>['runs'],
+  cachedRuns: SubagentRunViewModel[] | undefined
 ): ReturnType<typeof buildReplyRunProjection>['runs'] => {
-  if (!activeRuns || activeRuns.length === 0) {
-    return localRuns;
+  if (!cachedRuns || cachedRuns.length === 0) {
+    return freshRuns;
   }
 
   const merged = new Map<string, SubagentRunViewModel>();
-  for (const run of activeRuns) {
-    if (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled' || run.status === 'timed_out') {
-      continue;
-    }
+  for (const run of cachedRuns) {
     merged.set(run.runId, run);
   }
-  for (const run of localRuns) {
+  for (const run of freshRuns) {
     const existing = merged.get(run.runId);
     if (!existing || existing.updatedAt <= run.updatedAt) {
       merged.set(run.runId, run);
@@ -147,12 +143,12 @@ const mergeVisibleRuns = (
   });
 };
 
-export const AssistantReply = ({ reply, activeRuns }: AssistantReplyProps) => {
+export const AssistantReply = ({ reply }: AssistantReplyProps) => {
   const status = renderStatus(reply.status);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const runProjection = buildReplyRunProjection(reply.segments);
-  const runs = mergeVisibleRuns(reply.runProjections ?? runProjection.runs, activeRuns);
-  const hiddenToolCallIds = new Set(reply.hiddenToolCallIds ?? runProjection.hiddenToolCallIds);
+  const runs = mergeVisibleRuns(runProjection.runs, reply.runProjections);
+  const hiddenToolCallIds = new Set([...(reply.hiddenToolCallIds ?? []), ...runProjection.hiddenToolCallIds]);
   const items = buildReplyRenderItems(reply.segments);
   const visibleItems = items.filter((item) => {
     if (item.type !== 'tool') {

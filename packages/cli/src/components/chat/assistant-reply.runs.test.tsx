@@ -102,8 +102,12 @@ describe('AssistantReply subagent runs', () => {
   });
 
   it('hides raw spawn_agent tool cards while streaming before the tool result arrives', () => {
-  it('prefers run cards over wait_agents tool groups for active parallel subagents', () => {
     const reply = {
+      agentLabel: '',
+      modelLabel: 'glm-5',
+      durationSeconds: 1,
+      status: 'streaming' as const,
+      segments: [
         createToolUseSegment(
           'spawn_agent',
           { role: 'Explore', description: 'Analyze UI Rendering' },
@@ -182,7 +186,7 @@ describe('AssistantReply subagent runs', () => {
 
     expect(text).toContain('summary');
     expect(text).toContain('当前子agent展示本质上是工具结果化，不是运行实体化。');
-    expect(text).toContain('[A 产物]');
+    expect(text).not.toContain('[A 产物]');
   });
 
   it('merges live run projection hiding with stale reply caches while streaming', () => {
@@ -308,6 +312,7 @@ describe('AssistantReply subagent runs', () => {
     expect(text).toContain('parent-visible');
   });
 
+  it('prefers run cards over wait_agents tool groups for active parallel subagents', () => {
     const reply = {
       agentLabel: '',
       modelLabel: 'glm-5',

@@ -1,15 +1,13 @@
 import type { ChatTurn } from '../types/chat';
-import type { SubagentRunViewModel } from '../types/subagent-run';
 import { uiTheme } from '../ui/theme';
 import { TurnItem } from './chat/turn-item';
 
 type ConversationPanelProps = {
   turns: ChatTurn[];
   isThinking: boolean;
-  activeRuns?: SubagentRunViewModel[];
 };
 
-export const ConversationPanel = ({ turns, isThinking, activeRuns = [] }: ConversationPanelProps) => {
+export const ConversationPanel = ({ turns, isThinking }: ConversationPanelProps) => {
   const pendingTurnId = turns.at(-1)?.id;
 
   return (
@@ -31,23 +29,14 @@ export const ConversationPanel = ({ turns, isThinking, activeRuns = [] }: Conver
         paddingY={uiTheme.layout.conversationContentPaddingY}
         backgroundColor={uiTheme.bg}
       >
-        {turns.map((turn, index) => {
-          const isPendingTurn = isThinking && turn.id === pendingTurnId;
-          const activeRunsForTurn =
-            isPendingTurn && activeRuns.length > 0
-              ? activeRuns.filter((run) => run.status !== 'completed')
-              : undefined;
-
-          return (
-            <TurnItem
-              key={turn.id}
-              turn={turn}
-              index={index}
-              isPending={isPendingTurn}
-              activeRuns={activeRunsForTurn}
-            />
-          );
-        })}
+        {turns.map((turn, index) => (
+          <TurnItem
+            key={turn.id}
+            turn={turn}
+            index={index}
+            isPending={isThinking && turn.id === pendingTurnId}
+          />
+        ))}
       </box>
     </scrollbox>
   );

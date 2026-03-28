@@ -1,7 +1,6 @@
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { ConversationPanel } from '../conversation-panel';
 import { RunCard } from './run-card';
 
 const createRun = (overrides = {}) => ({
@@ -30,42 +29,6 @@ const createRun = (overrides = {}) => ({
   firstSeenIndex: 1,
   updatedAt: 2,
   ...overrides,
-});
-
-describe('ConversationPanel', () => {
-  it('renders global active runs in the conversation even when the current reply only has one local run', () => {
-    const turns = [
-      {
-        id: 1,
-        prompt: 'analyze repo',
-        createdAtMs: 1,
-        reply: {
-          agentLabel: '',
-          modelLabel: 'glm-5',
-          durationSeconds: 1,
-          status: 'streaming' as const,
-          segments: [],
-        },
-      },
-    ];
-
-    const activeRuns = [
-      createRun({ runId: 'subexec_a', title: 'Analyze Rendering', firstSeenIndex: 1, updatedAt: 1 }),
-      createRun({ runId: 'subexec_b', title: 'Analyze State Flow', firstSeenIndex: 1, updatedAt: 2 }),
-      createRun({ runId: 'subexec_c', title: 'Analyze Tool Routing', firstSeenIndex: 1, updatedAt: 3 }),
-      createRun({ runId: 'subexec_d', title: 'Analyze Tests', firstSeenIndex: 1, updatedAt: 4 }),
-    ];
-
-    const { container } = render(
-      <ConversationPanel turns={turns} isThinking={true} activeRuns={activeRuns} />
-    );
-    const text = container.textContent?.replace(/\s+/g, ' ').trim() ?? '';
-
-    expect(text).toContain('Analyze Rendering');
-    expect(text).toContain('Analyze State Flow');
-    expect(text).toContain('Analyze Tool Routing');
-    expect(text).toContain('Analyze Tests');
-  });
 });
 
 describe('RunCard', () => {

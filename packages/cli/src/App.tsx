@@ -70,8 +70,7 @@ export const App = () => {
     submitToolConfirmSelection,
     rejectPendingToolConfirm,
   } = useAgentChat();
-  const runs = buildConversationRunProjections(turns);
-  const taskPanel = useTaskPanel({ runs });
+  const taskPanel = useTaskPanel({ runs: buildConversationRunProjections(turns) });
   const [slashMenuVisible, setSlashMenuVisible] = useState(false);
   const modelPicker = useModelPicker({
     onModelChanged: setModelLabelDisplay,
@@ -295,7 +294,7 @@ export const App = () => {
       paddingLeft={uiTheme.layout.appPaddingX}
       paddingRight={uiTheme.layout.appPaddingX}
     >
-      <ConversationPanel turns={turns} isThinking={isThinking} activeRuns={runs} />
+      <ConversationPanel turns={turns} isThinking={isThinking} />
       <TaskPanel
         visible={taskPanel.visible}
         loading={taskPanel.loading}
