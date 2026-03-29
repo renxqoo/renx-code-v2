@@ -1,5 +1,3 @@
-import { normalizeOpenCodeThemeName } from '../ui/theme-name';
-
 type CliArgsResult = {
   ok: boolean;
   error?: string;
@@ -9,7 +7,6 @@ type CliArgsResult = {
 
 const CONVERSATION_ID_FLAGS = new Set(['--conversationId', '--conversation-id']);
 const SESSION_ID_FLAGS = new Set(['--sessionId', '--session-id']);
-const THEME_FLAGS = new Set(['--theme']);
 const VERSION_FLAGS = new Set(['-v', '--version']);
 const HELP_FLAGS = new Set(['-h', '--help']);
 
@@ -81,29 +78,6 @@ export const applyCliArgsToEnv = (
       if (!token.includes('=')) {
         index += 1;
       }
-      continue;
-    }
-
-    if (THEME_FLAGS.has(normalized)) {
-      const value = readFlagValue(argv, index);
-      if (!value) {
-        return {
-          ok: false,
-          error: `Missing value for ${normalized}. Example: renx --theme konayuki`,
-        };
-      }
-      const themeName = normalizeOpenCodeThemeName(value);
-      if (!themeName) {
-        return {
-          ok: false,
-          error: `Invalid value for ${normalized}. Expected one of: default, konayuki.`,
-        };
-      }
-      env.RENX_THEME = themeName;
-      if (!token.includes('=')) {
-        index += 1;
-      }
-      continue;
     }
   }
 

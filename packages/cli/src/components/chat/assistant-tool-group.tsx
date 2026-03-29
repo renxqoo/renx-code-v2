@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 
+import type { ReplySegment } from '../../types/chat';
 import { opencodeMarkdownSyntax } from '../../ui/opencode-markdown';
 import { MESSAGE_RAIL_BORDER_CHARS, uiTheme } from '../../ui/theme';
+import { readReplySourceMeta } from '../../utils/reply-source';
 import { getToolDisplayIcon, getToolDisplayName } from '../tool-display-config';
 import { resolveToolResultFallbackText } from './assistant-tool-result';
 import { CodeBlock, inferFiletypeFromPath, looksLikeDiff } from './code-block';
@@ -131,6 +133,29 @@ const parseToolUse = (content?: string, data?: unknown): ParsedToolUse | null =>
     details: details || undefined,
     args: parseJsonObject(details),
   };
+};
+
+const parseToolUseFromStreamSegments = (segments: ReplySegment[]): ParsedToolUse | null => {
+  for (const segment of segments) {
+    const data = readObject(segment.data);
+    const toolName = readString(data?.toolName);
+    const callId = readString(data?.toolCallId);
+    const rawArguments =
+      readString(data?.arguments) ?? readString(readObject(data?.data)?.arguments);
+    const args = parseToolArgumentsObject(rawArguments);
+    if (!toolName || !callId) {
+      continue;
+    }
+    return {
+      name: toolName,
+      callId,
+      command:
+        toolName === 'local_shell' && typeof args?.command === 'string' ? args.command : undefined,
+      details: rawArguments,
+      args,
+    };
+  }
+  return null;
 };
 
 const parseToolResultFromData = (value: unknown): ParsedToolResult | null => {
@@ -331,6 +356,14 @@ const isCollapsibleResultSection = (section: ToolSection): boolean => {
   }
 
   return COLLAPSIBLE_OUTPUT_LABELS.has(label);
+};
+
+const resolveStructuredResultObject = (
+  result: ParsedToolResult | null
+): Record<string, unknown> | null => {
+  return (
+    readObject(result?.payload) ?? readObject(result?.metadata) ?? parseJsonObject(result?.details)
+  );
 };
 
 const formatToolName = (toolName: string): string => {
@@ -625,7 +658,7 @@ const buildFileEditPresentation = (
       renderKind: isDiff ? 'code' : 'text',
       languageHint: isDiff ? 'diff' : undefined,
       showLabel: !isDiff,
-      collapsible: false,
+      collapsible: isDiff,
     });
   }
 
@@ -633,6 +666,48 @@ const buildFileEditPresentation = (
     toolLabel: formatToolName('file_edit'),
     headerDetail: headerDetail ?? undefined,
     sections,
+  };
+};
+
+const normalizeInlineWhitespace = (value: string): string => {
+  return value.trim().replace(/\s+/g, ' ');
+};
+
+const summarizeShellCommand = (
+  rawCommand?: string
+): {
+  title?: string;
+  showCommandSection: boolean;
+} => {
+  if (!rawCommand) {
+    return {
+      title: undefined,
+      showCommandSection: false,
+    };
+  }
+
+  const normalizedRaw = normalizeInlineWhitespace(rawCommand);
+  if (!normalizedRaw) {
+    return {
+      title: undefined,
+      showCommandSection: false,
+    };
+  }
+
+  const lines = rawCommand
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const executableLines = lines.filter((line) => !line.startsWith('#'));
+  const title =
+    executableLines.length > 0
+      ? executableLines.map((line) => normalizeInlineWhitespace(line)).join(' ')
+      : normalizedRaw;
+
+  return {
+    title,
+    showCommandSection: title !== normalizedRaw,
   };
 };
 
@@ -652,7 +727,21 @@ const buildLocalShellPresentation = (
     .join('')
     .trim();
   const metadata = readObject(result?.metadata) ?? readObject(result?.payload);
+  const rawCommand = readString(args?.command);
+  const commandSummary = summarizeShellCommand(rawCommand);
   const sections: ToolSection[] = [];
+
+  if (rawCommand && commandSummary.showCommandSection) {
+    sections.push({
+      label: 'command',
+      content: rawCommand,
+      tone: 'code',
+      renderKind: 'code',
+      languageHint: 'bash',
+      showLabel: true,
+      collapsible: true,
+    });
+  }
 
   if (stdout) {
     sections.push(inferShellStreamSection('stdout', stdout));
@@ -672,10 +761,12 @@ const buildLocalShellPresentation = (
     }
   }
 
-  const headerDetail = formatSummaryMeta([
+  const headerDetailParts = [
+    commandSummary.title ? `$ ${truncate(commandSummary.title, 64)}` : null,
     readString(args?.workdir),
     readNumber(metadata?.exitCode) !== undefined ? `exit ${readNumber(metadata?.exitCode)}` : null,
-  ]);
+  ].filter((value): value is string => Boolean(value));
+  const headerDetail = headerDetailParts.length > 0 ? headerDetailParts.join(' | ') : null;
 
   return {
     toolLabel: formatToolName('local_shell'),
@@ -703,11 +794,389 @@ const compactDetail = (value?: string, maxLength = 72): string | null => {
   return truncate(normalized, maxLength);
 };
 
+const formatStatusLabel = (status?: string): string | null => {
+  if (!status) {
+    return null;
+  }
+  return status.replace(/_/g, ' ');
+};
+
+const formatTaskStatusIcon = (status?: string): string => {
+  switch (status) {
+    case 'completed':
+      return '●';
+    case 'in_progress':
+    case 'running':
+      return '◐';
+    case 'pending':
+    case 'queued':
+      return '○';
+    case 'cancelled':
+      return '⊘';
+    case 'failed':
+    case 'timed_out':
+      return '×';
+    case 'paused':
+      return '⏸';
+    default:
+      return '•';
+  }
+};
+
 const formatSummaryMeta = (parts: Array<string | null | undefined>): string | null => {
   const filtered = parts
     .map((part) => part?.trim())
     .filter((part): part is string => Boolean(part));
   return filtered.length > 0 ? filtered.join(' · ') : null;
+};
+
+const summarizeTaskRecord = (
+  task: Record<string, unknown>,
+  options?: { canStart?: Record<string, unknown> | null }
+): string[] => {
+  const subject =
+    readString(task.subject) ?? readString(task.activeForm) ?? readString(task.id) ?? 'task';
+  const id = readString(task.id);
+  const status = readString(task.status);
+  const priority = readString(task.priority);
+  const progress = readNumber(task.effectiveProgress) ?? readNumber(task.progress);
+  const owner = readString(task.owner);
+  const blockers = readArray(task.blockers).length || readArray(task.blockedBy).length;
+  const blocks = readArray(task.blockedTasks).length || readArray(task.blocks).length;
+
+  const lines = [`${formatTaskStatusIcon(status)} ${truncate(subject)}`];
+  const meta = formatSummaryMeta([
+    id,
+    formatStatusLabel(status),
+    priority,
+    progress !== undefined ? `${Math.round(progress)}%` : null,
+    owner ? `owner ${owner}` : null,
+    blockers > 0 ? `${blockers} blocker${blockers === 1 ? '' : 's'}` : null,
+    blocks > 0 ? `blocks ${blocks}` : null,
+  ]);
+  if (meta) {
+    lines.push(meta);
+  }
+
+  const canStart = options?.canStart;
+  if (canStart && readBoolean(canStart.canStart) === false) {
+    const reason = readString(canStart.reason);
+    if (reason) {
+      lines.push(`blocked: ${truncate(reason, 96)}`);
+    }
+  }
+
+  return lines;
+};
+
+const summarizeAgentRun = (
+  run: Record<string, unknown>,
+  extras?: Record<string, unknown>
+): { lines: string[]; output?: string } => {
+  const agentId = readString(run.agentId);
+  const status = readString(run.status);
+  const role = readString(run.role) ?? readString(run.subagentType);
+  const description = readString(run.description);
+  const linkedTaskId = readString(run.linkedTaskId);
+  const progress = readNumber(run.progress);
+  const error = readString(run.error);
+  const output = readString(run.output);
+
+  const headline = description ?? agentId ?? 'agent run';
+  const lines = [`${formatTaskStatusIcon(status)} ${truncate(headline)}`];
+  const meta = formatSummaryMeta([
+    agentId,
+    formatStatusLabel(status),
+    role,
+    progress !== undefined ? `${Math.round(progress)}%` : null,
+    linkedTaskId ? `task ${linkedTaskId}` : null,
+    readBoolean(extras?.completed) === false ? 'still running' : null,
+    readBoolean(extras?.timeoutHit) === true ? 'timeout hit' : null,
+    readNumber(extras?.waitedMs) !== undefined
+      ? `${Math.round((readNumber(extras?.waitedMs) ?? 0) / 1000)}s waited`
+      : null,
+  ]);
+  if (meta) {
+    lines.push(meta);
+  }
+  if (error && !output) {
+    lines.push(`error: ${truncate(error, 96)}`);
+  }
+
+  return {
+    lines,
+    output: output?.trim() ? output : undefined,
+  };
+};
+
+const buildTaskHeaderDetail = (
+  toolName: string,
+  args: Record<string, unknown> | null
+): string | null => {
+  if (!args) {
+    return null;
+  }
+
+  if (toolName === 'spawn_agent') {
+    const prompt = readString(args.prompt);
+    const description = readString(args.description);
+    return formatSummaryMeta([
+      description ? truncate(description, 56) : prompt ? truncate(prompt, 56) : null,
+      readString(args.role),
+      readBoolean(args.runInBackground) ? 'background' : 'foreground',
+      readString(args.linkedTaskId) ? `task ${readString(args.linkedTaskId)}` : null,
+    ]);
+  }
+
+  if (toolName === 'agent_status') {
+    return formatSummaryMeta([`inspect ${readString(args.agentId) ?? 'agent run'}`]);
+  }
+
+  if (toolName === 'wait_agents') {
+    const agentCount = readArray(args.agentIds).length;
+    return formatSummaryMeta([
+      agentCount > 0 ? `wait ${agentCount} agent${agentCount === 1 ? '' : 's'}` : null,
+      readNumber(args.timeoutMs) !== undefined
+        ? `${Math.round((readNumber(args.timeoutMs) ?? 0) / 1000)}s timeout`
+        : null,
+    ]);
+  }
+
+  if (toolName === 'cancel_agent') {
+    return formatSummaryMeta([
+      `cancel ${readString(args.agentId) ?? 'agent run'}`,
+      readString(args.reason) ? truncate(readString(args.reason) ?? '', 56) : null,
+    ]);
+  }
+
+  if (toolName === 'task_create') {
+    const subject = readString(args.subject);
+    return formatSummaryMeta([
+      subject ? `create ${truncate(subject, 56)}` : null,
+      readString(args.namespace),
+      readString(args.priority),
+      readArray(args.checkpoints).length > 0
+        ? `${readArray(args.checkpoints).length} checkpoints`
+        : null,
+    ]);
+  }
+
+  if (toolName === 'task_get') {
+    return formatSummaryMeta([
+      `inspect ${readString(args.taskId) ?? 'task'}`,
+      readBoolean(args.includeHistory) ? 'include history' : null,
+    ]);
+  }
+
+  if (toolName === 'task_list') {
+    const statuses = readArray(args.statuses)
+      .map((value) => readString(value))
+      .filter(Boolean)
+      .join(', ');
+    return formatSummaryMeta([
+      `list${readString(args.namespace) ? ` in ${readString(args.namespace)}` : ''}`,
+      statuses ? `status ${statuses}` : null,
+      readString(args.owner) ? `owner ${readString(args.owner)}` : null,
+      readString(args.tag) ? `tag ${readString(args.tag)}` : null,
+    ]);
+  }
+
+  if (toolName === 'task_update') {
+    const changes: string[] = [`update ${readString(args.taskId) ?? 'task'}`];
+    if (readString(args.status))
+      changes.push(`status -> ${readString(args.status)?.replace(/_/g, ' ')}`);
+    if (readNumber(args.progress) !== undefined)
+      changes.push(`progress ${Math.round(readNumber(args.progress) ?? 0)}%`);
+    if (readString(args.owner)) changes.push(`owner ${readString(args.owner)}`);
+    if (readArray(args.addBlockedBy).length > 0)
+      changes.push(`+${readArray(args.addBlockedBy).length} blockers`);
+    if (readArray(args.removeBlockedBy).length > 0)
+      changes.push(`-${readArray(args.removeBlockedBy).length} blockers`);
+    return changes.join(' · ');
+  }
+
+  if (toolName === 'task_stop') {
+    return formatSummaryMeta([
+      `stop ${readString(args.taskId) ?? readString(args.agentId) ?? 'agent run'}`,
+      readBoolean(args.cancelLinkedTask) !== false ? 'cancel linked tasks' : null,
+    ]);
+  }
+
+  if (toolName === 'task_output') {
+    return formatSummaryMeta([
+      `watch ${readString(args.taskId) ?? readString(args.agentId) ?? 'agent run'}`,
+      readBoolean(args.block) === false ? 'non-blocking poll' : 'wait for completion',
+    ]);
+  }
+
+  return null;
+};
+
+const buildTaskResultSections = (
+  toolName: string,
+  result: ParsedToolResult | null
+): ToolSection[] => {
+  const resultDetails = result?.details?.trim();
+  const summary = result?.summary?.trim();
+  if (!resultDetails && !summary && !result?.payload && !result?.metadata) {
+    return [];
+  }
+
+  if (result?.status === 'error') {
+    return [
+      {
+        label: 'result',
+        content: result?.error?.trim() || resultDetails || summary || 'task failed',
+        tone: 'body',
+      },
+    ];
+  }
+
+  const payload = resolveStructuredResultObject(result);
+  if (!payload) {
+    return [
+      {
+        label: 'result',
+        content: resultDetails || summary || '',
+        tone: 'body',
+      },
+    ];
+  }
+
+  const subagentRecord =
+    readString(payload.agentId) && readString(payload.status)
+      ? payload
+      : readObject(payload.agentRun);
+  if (toolName === 'spawn_agent' || toolName === 'agent_status' || toolName === 'cancel_agent') {
+    if (!subagentRecord) {
+      return [
+        {
+          label: 'result',
+          content: resultDetails || summary || '',
+          tone: 'body',
+        },
+      ];
+    }
+    const subagentSummary = summarizeAgentRun(subagentRecord, payload);
+    const sections: ToolSection[] = [
+      {
+        label: 'result',
+        content: subagentSummary.lines.join('\n'),
+        tone: 'body',
+      },
+    ];
+    if (subagentSummary.output) {
+      sections.push({
+        label: 'output',
+        content: subagentSummary.output,
+        tone: 'body',
+      });
+    }
+    return sections;
+  }
+
+  if (toolName === 'wait_agents') {
+    const records = Array.isArray(result?.payload)
+      ? result.payload
+      : Array.isArray(payload.records)
+        ? payload.records
+        : [];
+    const lines = records
+      .map((item) => readObject(item))
+      .filter((item): item is Record<string, unknown> => Boolean(item))
+      .slice(0, 5)
+      .flatMap((record) => summarizeAgentRun(record).lines);
+    if (lines.length > 0) {
+      return [{ label: 'result', content: lines.join('\n'), tone: 'body' }];
+    }
+  }
+
+  if (toolName === 'task_list') {
+    const namespace = readString(payload.namespace) ?? 'default';
+    const tasks = readArray(payload.tasks)
+      .map((item) => readObject(item))
+      .filter((item): item is Record<string, unknown> => Boolean(item));
+    const total = readNumber(payload.total) ?? tasks.length;
+    const lines = [`${total} task${total === 1 ? '' : 's'} in ${namespace}`];
+    tasks.slice(0, 5).forEach((task) => {
+      const summary = summarizeTaskRecord(task);
+      if (summary[0]) {
+        lines.push(summary[0]);
+      }
+      if (summary[1]) {
+        lines.push(`  ${summary[1]}`);
+      }
+    });
+    if (tasks.length > 5) {
+      lines.push(`+${tasks.length - 5} more`);
+    }
+    return [{ label: 'result', content: lines.join('\n'), tone: 'body' }];
+  }
+
+  if (toolName === 'task_stop') {
+    const run = readObject(payload.agentRun);
+    const cancelledTaskIds = readArray(payload.cancelledTaskIds)
+      .map((item) => readString(item))
+      .filter(Boolean);
+    const sections: ToolSection[] = [];
+    if (run) {
+      sections.push({
+        label: 'result',
+        content: summarizeAgentRun(run).lines.join('\n'),
+        tone: 'body',
+      });
+    }
+    if (cancelledTaskIds.length > 0) {
+      sections.push({
+        label: 'cancelled',
+        content: cancelledTaskIds.join(', '),
+        tone: 'body',
+      });
+    }
+    return sections;
+  }
+
+  if (toolName === 'task_output') {
+    const run = readObject(payload.agentRun);
+    if (run) {
+      const summary = summarizeAgentRun(run, payload);
+      const sections: ToolSection[] = [
+        {
+          label: 'result',
+          content: summary.lines.join('\n'),
+          tone: 'body',
+        },
+      ];
+      if (summary.output) {
+        sections.push({
+          label: 'output',
+          content: summary.output,
+          tone: 'body',
+        });
+      }
+      return sections;
+    }
+  }
+
+  const task = readObject(payload.task);
+  if (task) {
+    const canStart = readObject(payload.canStart) ?? readObject(task.canStart);
+    return [
+      {
+        label: 'result',
+        content: summarizeTaskRecord(task, { canStart }).join('\n'),
+        tone: 'body',
+      },
+    ];
+  }
+
+  return [
+    {
+      label: 'result',
+      content: resultDetails || summary || '',
+      tone: 'body',
+    },
+  ];
 };
 
 const buildSearchHeaderDetail = (
@@ -812,6 +1281,22 @@ const buildSpecialToolPresentation = (
     return buildLocalShellPresentation(group, args, parsedResult);
   }
 
+  if (
+    toolName === 'spawn_agent' ||
+    toolName === 'agent_status' ||
+    toolName === 'wait_agents' ||
+    toolName === 'cancel_agent' ||
+    toolName.startsWith('task_')
+  ) {
+    const sections = buildTaskResultSections(toolName, parsedResult);
+
+    return {
+      toolLabel: formatToolName(toolName),
+      headerDetail: buildTaskHeaderDetail(toolName, args) ?? undefined,
+      sections,
+    };
+  }
+
   if (toolName === 'grep' || toolName === 'glob') {
     const sections = buildSearchResultSections(parsedResult);
 
@@ -827,10 +1312,14 @@ const buildSpecialToolPresentation = (
 
 export const AssistantToolGroup = ({ group }: AssistantToolGroupProps) => {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
-  const parsedUse = parseToolUse(group.use?.content, group.use?.data);
+  const parsedUse =
+    parseToolUse(group.use?.content, group.use?.data) ??
+    parseToolUseFromStreamSegments(group.streams);
   const parsedResult = parseToolResult(group.result?.content, group.result?.data);
   const toolName = parsedUse?.name ?? parsedResult?.name ?? 'tool';
   const commandText = parsedUse?.command;
+  const shellCommandSummary =
+    toolName === 'local_shell' ? summarizeShellCommand(commandText) : null;
   const invocationDetails = parsedUse?.details;
   const icon = resolveToolIcon(toolName);
   const outputText = mergeOutputLines(group, parsedResult);
@@ -842,15 +1331,14 @@ export const AssistantToolGroup = ({ group }: AssistantToolGroupProps) => {
     parsedUse,
     parsedResult
   );
-  const useCommandAsTitle = toolName === 'local_shell' && Boolean(commandText);
-  const titleDetail = useCommandAsTitle
-    ? undefined
-    : (specialPresentation?.headerDetail ??
-      compactDetail(commandText, 64) ??
-      compactDetail(invocationDetails, 64));
-  const titleText = useCommandAsTitle
-    ? `$ ${truncate(commandText ?? '', 86)}`
-    : (specialPresentation?.toolLabel ?? formatToolName(toolName));
+  const useCommandAsTitle = false;
+  const titleDetail =
+    specialPresentation?.headerDetail ??
+    (toolName === 'local_shell' && shellCommandSummary?.title
+      ? compactDetail(`$ ${shellCommandSummary.title}`, 64)
+      : compactDetail(commandText, 64)) ??
+    compactDetail(invocationDetails, 64);
+  const titleText = specialPresentation?.toolLabel ?? formatToolName(toolName);
   const defaultSections: ToolSection[] = [];
   if (commandText && !titleDetail && !useCommandAsTitle) {
     defaultSections.push({
@@ -891,9 +1379,33 @@ export const AssistantToolGroup = ({ group }: AssistantToolGroupProps) => {
   }, [group.toolCallId]);
   const showBodyToggle = hasBody;
   const headerRailColor = parsedResult?.status === 'error' ? ERROR_RAIL_COLOR : uiTheme.accent;
+  const sourceMeta =
+    group.source ??
+    readReplySourceMeta(group.use?.data) ??
+    readReplySourceMeta(group.result?.data) ??
+    group.streams.map((segment) => readReplySourceMeta(segment.data)).find(Boolean);
+  const sourceHeader =
+    sourceMeta?.isSubagent && sourceMeta.sourceLabel ? (
+      <box paddingLeft={3} paddingBottom={1} flexDirection="column">
+        <text fg={uiTheme.muted} attributes={uiTheme.typography.note}>
+          {sourceMeta.sourceLabel}
+        </text>
+        {sourceMeta.spawnedByLabel ? (
+          <text fg={uiTheme.subtle} attributes={uiTheme.typography.note}>
+            {sourceMeta.spawnedByLabel}
+          </text>
+        ) : null}
+        {sourceMeta.spawnToolCallId ? (
+          <text fg={uiTheme.subtle} attributes={uiTheme.typography.note}>
+            {`spawn call: ${sourceMeta.spawnToolCallId}`}
+          </text>
+        ) : null}
+      </box>
+    ) : null;
 
   return (
     <box flexDirection="column">
+      {sourceHeader}
       <box>
         <box flexDirection="row">
           <box

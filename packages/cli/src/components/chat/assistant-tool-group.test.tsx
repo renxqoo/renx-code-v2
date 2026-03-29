@@ -1,5 +1,5 @@
-import { fireEvent, render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { fireEvent, render } from '@testing-library/react';
 
 import { uiTheme } from '../../ui/theme';
 import type { ReplySegment } from '../../types/chat';
@@ -301,6 +301,115 @@ describe('AssistantToolGroup', () => {
     expect(text).toContain('stdout');
   });
 
+  it('keeps shell comments out of the title and shows the full command in the expanded body', () => {
+    const command = [
+      '# search possible timer leaks',
+      'Get-ChildItem -Path "D:\\work\\renx-code\\packages\\cli\\src" -Recurse -Include "*.ts"',
+    ].join('\n');
+    const group: ToolSegmentGroup = {
+      toolCallId: 'call_local_shell_commented_multiline',
+      use: createToolUseSegment('local_shell', { command }, 'call_local_shell_commented_multiline'),
+      streams: [createToolStreamSegment('call_local_shell_commented_multiline', 'stdout', '49\n')],
+    };
+
+    const { container } = render(<AssistantToolGroup group={group} />);
+    const text = container.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    expect(text).toContain('$ Get-ChildItem -Path "D:\\work\\renx-code\\packages\\cli\\src"');
+    expect(text).not.toContain('$ # search possible timer leaks');
+    expect(text).toContain('command');
+    expect(text).toContain('stdout');
+  });
+
+  it('shows a subagent header and resolves the tool name from stream metadata', () => {
+    const group: ToolSegmentGroup = {
+      toolCallId: 'exec|exec_child|call_stream_only',
+      streams: [
+        {
+          id: '1:tool:exec|exec_child|call_stream_only:stdout',
+          type: 'text',
+          content: 'child output',
+          data: {
+            toolCallId: 'call_stream_only',
+            toolName: 'local_shell',
+            arguments: JSON.stringify({ command: 'echo child' }),
+            executionId: 'exec_child',
+            conversationId: 'conv_child',
+            sourceKey: 'exec|exec_child',
+            sourceLabel: 'subagent CLI renderer worker',
+            spawnedByLabel: 'spawned by Spawn Agent (CLI renderer worker | worker | background)',
+            spawnToolCallId: 'call_spawn_1',
+            isSubagent: true,
+            showSourceHeader: true,
+          },
+        },
+      ],
+      source: {
+        executionId: 'exec_child',
+        conversationId: 'conv_child',
+        sourceKey: 'exec|exec_child',
+        sourceLabel: 'subagent CLI renderer worker',
+        spawnedByLabel: 'spawned by Spawn Agent (CLI renderer worker | worker | background)',
+        spawnToolCallId: 'call_spawn_1',
+        isSubagent: true,
+        showSourceHeader: true,
+      },
+    };
+
+    const { container } = render(<AssistantToolGroup group={group} />);
+    const text = container.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    expect(text).toContain('subagent CLI renderer worker');
+    expect(text).toContain('spawned by Spawn Agent (CLI renderer worker | worker | background)');
+    expect(text).toContain('spawn call: call_spawn_1');
+    expect(text).toContain('$ echo child');
+    expect(text).toContain('running');
+  });
+
+  it('keeps showing the subagent header on tool cards even when source dedupe suppresses the segment header flag', () => {
+    const group: ToolSegmentGroup = {
+      toolCallId: 'exec|exec_child|call_stream_repeat',
+      streams: [
+        {
+          id: '1:tool:exec|exec_child|call_stream_repeat:stdout',
+          type: 'text',
+          content: 'repeat child output',
+          data: {
+            toolCallId: 'call_stream_repeat',
+            toolName: 'local_shell',
+            arguments: JSON.stringify({ command: 'echo repeat child' }),
+            executionId: 'exec_child',
+            conversationId: 'conv_child',
+            sourceKey: 'exec|exec_child',
+            sourceLabel: 'subagent CLI renderer worker',
+            spawnedByLabel: 'spawned by Spawn Agent (CLI renderer worker | worker | background)',
+            spawnToolCallId: 'call_spawn_1',
+            isSubagent: true,
+            showSourceHeader: false,
+          },
+        },
+      ],
+      source: {
+        executionId: 'exec_child',
+        conversationId: 'conv_child',
+        sourceKey: 'exec|exec_child',
+        sourceLabel: 'subagent CLI renderer worker',
+        spawnedByLabel: 'spawned by Spawn Agent (CLI renderer worker | worker | background)',
+        spawnToolCallId: 'call_spawn_1',
+        isSubagent: true,
+        showSourceHeader: false,
+      },
+    };
+
+    const { container } = render(<AssistantToolGroup group={group} />);
+    const text = container.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    expect(text).toContain('subagent CLI renderer worker');
+    expect(text).toContain('spawned by Spawn Agent (CLI renderer worker | worker | background)');
+    expect(text).toContain('spawn call: call_spawn_1');
+    expect(text).toContain('$ echo repeat child');
+  });
+
   it('keeps the body open when the same running tool call completes successfully', () => {
     const runningGroup: ToolSegmentGroup = {
       toolCallId: 'call_local_shell_preserve_open_on_success',
@@ -400,60 +509,7 @@ describe('AssistantToolGroup', () => {
     expect(headerText).not.toContain('--flag-three');
   });
 
-  it('falls back to generic tool rendering for spawn_agent and task tools', () => {
-    const spawnGroup: ToolSegmentGroup = {
-      toolCallId: 'call_spawn_generic',
-      streams: [],
-      use: createToolUseSegment(
-        'spawn_agent',
-        { role: 'Explore', description: 'Analyze UI Rendering', linkedTaskId: 'task_101' },
-        'call_spawn_generic'
-      ),
-      result: createToolResultSegment(
-        'spawn_agent',
-        {
-          summary: 'Spawned subagent.',
-          output: '{"agentId":"subexec_1","status":"running"}',
-        },
-        { callId: 'call_spawn_generic' }
-      ),
-    };
-
-    const taskListGroup: ToolSegmentGroup = {
-      toolCallId: 'call_task_list_generic',
-      streams: [],
-      use: createToolUseSegment(
-        'task_list',
-        { namespace: 'session_01', statuses: ['pending', 'in_progress'] },
-        'call_task_list_generic'
-      ),
-      result: createToolResultSegment(
-        'task_list',
-        {
-          summary: '2 tasks found.',
-          output: '{"tasks":[{"id":"task_1"},{"id":"task_2"}]}'
-        },
-        { callId: 'call_task_list_generic' }
-      ),
-    };
-
-    const { container: spawnContainer } = render(<AssistantToolGroup group={spawnGroup} />);
-    const { container: taskContainer } = render(<AssistantToolGroup group={taskListGroup} />);
-
-    const spawnText = spawnContainer.textContent?.replace(/\s+/g, ' ').trim() ?? '';
-    const taskText = taskContainer.textContent?.replace(/\s+/g, ' ').trim() ?? '';
-
-    expect(spawnText).toContain('spawn agent');
-    expect(spawnText).toContain('(completed)');
-    expect(spawnText).toContain('"role":"Explore"');
-    expect(spawnText).not.toContain('Analyze UI Rendering · Explore');
-    expect(taskText).toContain('task list');
-    expect(taskText).toContain('(completed)');
-    expect(taskText).toContain('"namespace":"session_01"');
-    expect(taskText).not.toContain('2 tasks in');
-  });
-
-  it('shows file_edit diff results in full without nested expand hints', () => {
+  it('summarizes file_edit diff results without repeating match and replacement blocks', () => {
     const diff = [
       'diff --git a/src/example.tsx b/src/example.tsx',
       '--- a/src/example.tsx',
@@ -498,8 +554,7 @@ describe('AssistantToolGroup', () => {
 
     expect(text).toContain('Applied 1 edit to src/example.tsx.');
     expect(text).toContain('diff');
-    expect(text).not.toContain('hidden');
-    expect(text).not.toContain('click to expand');
+    expect(text).toContain('hidden');
     expect(text).not.toContain('match');
     expect(text).not.toContain('replace with');
     expect(container.querySelector('diff')).not.toBeNull();

@@ -15,8 +15,9 @@
 ```bash
 pnpm install
 ```
+
 D:\work\renx-code\image.png 看图片多个agent执行，ui样式并不是D:\work\renx-code\packages\cli\doc\subagent-ui-redesign.md草图画的样，都是tool runing
-常用开发命令（在仓库根目录执行）：exec_cli_1774643299299...	opentui-1774633941371
+常用开发命令（在仓库根目录执行）：exec_cli_1774643299299... opentui-1774633941371
 
 ```bash
 pnpm run build

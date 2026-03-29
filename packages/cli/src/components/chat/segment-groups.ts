@@ -1,4 +1,6 @@
 import type { ReplySegment } from '../../types/chat';
+import type { ReplySourceMeta } from '../../utils/reply-source';
+import { readReplySourceMeta } from '../../utils/reply-source';
 
 type ToolSegmentKind = 'use' | 'stream' | 'result';
 
@@ -13,6 +15,7 @@ export type ToolSegmentGroup = {
   use?: ReplySegment;
   streams: ReplySegment[];
   result?: ReplySegment;
+  source?: ReplySourceMeta;
 };
 
 export type ReplyRenderItem =
@@ -58,6 +61,51 @@ export const buildReplyRenderItems = (segments: ReplySegment[]): ReplyRenderItem
   const items: ReplyRenderItem[] = [];
   let activeGroup: ToolSegmentGroup | null = null;
 
+  const readSourceMergeKey = (segment: ReplySegment): string => {
+    const sourceMeta = readReplySourceMeta(segment.data);
+    return sourceMeta?.sourceKey ?? '';
+  };
+
+  const appendPlainSegment = (segment: ReplySegment) => {
+    const previous = items[items.length - 1];
+    if (
+      previous?.type === 'segment' &&
+      previous.segment.type === 'thinking' &&
+      segment.type === 'thinking' &&
+      readSourceMergeKey(previous.segment) === readSourceMergeKey(segment)
+    ) {
+      previous.segment = {
+        ...previous.segment,
+        content: `${previous.segment.content}${segment.content}`,
+      };
+      return;
+    }
+
+    items.push({
+      type: 'segment',
+      segment,
+    });
+  };
+
+  const mergeGroupSource = (
+    current: ReplySourceMeta | undefined,
+    next: ReplySourceMeta | null
+  ): ReplySourceMeta | undefined => {
+    if (!next) {
+      return current;
+    }
+    if (!current) {
+      return next;
+    }
+    if (next.showSourceHeader) {
+      return {
+        ...current,
+        ...next,
+      };
+    }
+    return current;
+  };
+
   const flushActiveGroup = () => {
     if (!activeGroup) {
       return;
@@ -73,10 +121,7 @@ export const buildReplyRenderItems = (segments: ReplySegment[]): ReplyRenderItem
     const meta = parseToolSegmentMeta(segment.id);
     if (!meta) {
       flushActiveGroup();
-      items.push({
-        type: 'segment',
-        segment,
-      });
+      appendPlainSegment(segment);
       continue;
     }
 
@@ -87,6 +132,8 @@ export const buildReplyRenderItems = (segments: ReplySegment[]): ReplyRenderItem
         streams: [],
       };
     }
+
+    activeGroup.source = mergeGroupSource(activeGroup.source, readReplySourceMeta(segment.data));
 
     if (meta.kind === 'use') {
       activeGroup.use = segment;

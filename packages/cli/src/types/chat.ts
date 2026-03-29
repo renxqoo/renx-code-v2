@@ -1,6 +1,4 @@
-import type { SubagentRunViewModel } from './subagent-run';
-
-export type ReplySegmentType = 'thinking' | 'text' | 'code' | 'note';
+﻿export type ReplySegmentType = 'thinking' | 'text' | 'code' | 'note';
 
 export type ReplySegment = {
   id: string;
@@ -23,8 +21,6 @@ export type AssistantReply = {
   status: ReplyStatus;
   completionReason?: string;
   completionMessage?: string;
-  runProjections?: SubagentRunViewModel[];
-  hiddenToolCallIds?: string[];
 };
 
 export type ChatTurn = {

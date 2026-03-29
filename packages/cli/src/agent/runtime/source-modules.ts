@@ -52,12 +52,11 @@ type AgentMessage = {
   metadata?: Record<string, unknown>;
 };
 type AgentCliEvent = {
+  executionId?: string;
+  conversationId?: string;
   eventType: string;
   data: unknown;
   createdAt: number;
-  executionId?: string;
-  conversationId?: string;
-  seq?: number;
 };
 type AgentRunContextUsage = {
   stepIndex: number;

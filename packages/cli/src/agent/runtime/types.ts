@@ -3,6 +3,8 @@
 export type AgentTextDeltaEvent = {
   text: string;
   isReasoning?: boolean;
+  executionId?: string;
+  conversationId?: string;
 };
 
 export type AgentToolStreamEvent = {
@@ -13,6 +15,8 @@ export type AgentToolStreamEvent = {
   timestamp: number;
   content?: string;
   data?: unknown;
+  executionId?: string;
+  conversationId?: string;
 };
 
 export type AgentToolConfirmEvent = {
@@ -72,6 +76,8 @@ export type AgentToolResultEvent = {
   toolCall: unknown;
   result: unknown;
   content?: MessageContent;
+  executionId?: string;
+  conversationId?: string;
 };
 
 export type AgentLoopEvent = {

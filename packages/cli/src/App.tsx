@@ -8,17 +8,14 @@ import { FilePickerDialog } from './components/file-picker-dialog';
 import { FooterHints } from './components/footer-hints';
 import { ModelPickerDialog } from './components/model-picker-dialog';
 import { Prompt } from './components/prompt';
-import { RunInspector } from './components/run-inspector';
 import { TaskPanel } from './components/task-panel';
 import { ToolConfirmDialog } from './components/tool-confirm-dialog';
-import { buildConversationRunProjections } from './hooks/subagent-runs';
 import { isMediaSelection } from './files/attachment-capabilities';
 import type { PromptFileSelection } from './files/types';
 import { useAgentChat } from './hooks/use-agent-chat';
 import { useFilePicker } from './hooks/use-file-picker';
 import { useModelPicker } from './hooks/use-model-picker';
 import { useTaskPanel } from './hooks/use-task-panel';
-import { useRunInspector } from './hooks/use-run-inspector';
 import { requestExit } from './runtime/exit';
 import { copyTextToClipboard } from './runtime/clipboard';
 import { uiTheme } from './ui/theme';
@@ -49,6 +46,7 @@ const isFullAccessModeEnabled = (): boolean => {
 };
 
 export const App = () => {
+  const taskPanel = useTaskPanel();
   const {
     turns,
     inputValue,
@@ -69,8 +67,11 @@ export const App = () => {
     setToolConfirmScope,
     submitToolConfirmSelection,
     rejectPendingToolConfirm,
-  } = useAgentChat();
-  const taskPanel = useTaskPanel({ runs: buildConversationRunProjections(turns) });
+  } = useAgentChat({
+    onTaskMutation: () => {
+      void taskPanel.refresh({ silent: true });
+    },
+  });
   const [slashMenuVisible, setSlashMenuVisible] = useState(false);
   const modelPicker = useModelPicker({
     onModelChanged: setModelLabelDisplay,
@@ -79,7 +80,6 @@ export const App = () => {
   const dimensions = useTerminalDimensions();
   const renderer = useRenderer();
   const [copyToastVisible, setCopyToastVisible] = useState(false);
-  const runInspector = useRunInspector();
   const selectionCopyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copyToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fullAccessModeEnabled = isFullAccessModeEnabled();
@@ -130,10 +130,10 @@ export const App = () => {
   }, [renderer]);
 
   useEffect(() => {
-    if (!taskPanel.visible && runInspector.visible) {
-      runInspector.close();
+    if (!isThinking) {
+      void taskPanel.refresh();
     }
-  }, [runInspector, taskPanel.visible]);
+  }, [isThinking, taskPanel.refresh]);
 
   const submitWithCommands = useCallback(() => {
     const command = resolveSlashCommand(inputValue);
@@ -224,51 +224,13 @@ export const App = () => {
 
     if (key.ctrl && key.name === 'l') {
       resetConversation();
+      void taskPanel.refresh();
       return;
     }
 
     if (key.ctrl && key.name === 't') {
       taskPanel.toggle();
       return;
-    }
-
-    if (key.ctrl && key.name === 'i') {
-      runInspector.toggle();
-      return;
-    }
-
-    if (key.name === 'i' && taskPanel.visible && taskPanel.selectedRun) {
-      runInspector.toggle();
-      return;
-    }
-
-    if (runInspector.visible) {
-      if (key.name === 'left') {
-        runInspector.cycleTab(-1);
-        return;
-      }
-
-      if (key.name === 'right') {
-        runInspector.cycleTab(1);
-        return;
-      }
-
-      if (key.name === 'escape') {
-        runInspector.close();
-        return;
-      }
-    }
-
-    if (taskPanel.visible && taskPanel.tasks.length > 0) {
-      if (key.name === 'up') {
-        taskPanel.moveSelection(-1);
-        return;
-      }
-
-      if (key.name === 'down') {
-        taskPanel.moveSelection(1);
-        return;
-      }
     }
 
     if (key.name === 'escape') {
@@ -321,13 +283,6 @@ export const App = () => {
         contextUsagePercent={contextUsagePercent}
         isFullAccessMode={fullAccessModeEnabled}
         taskPanelVisible={taskPanel.visible}
-      />
-      <RunInspector
-        visible={runInspector.visible}
-        viewportWidth={dimensions.width}
-        viewportHeight={dimensions.height}
-        run={taskPanel.selectedRun}
-        activeTab={runInspector.activeTab}
       />
       <ToolConfirmDialog
         visible={Boolean(pendingToolConfirm)}

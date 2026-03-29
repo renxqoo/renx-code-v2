@@ -39,6 +39,7 @@ import { ToolCallBuffer } from './tool-call-buffer';
 import type { AttachmentModelCapabilities } from '../../files/attachment-capabilities';
 import { resolveAttachmentModelCapabilities } from '../../files/attachment-capabilities';
 import type { InputContentPart, MessageContent } from '../../types/message-content';
+import { buildToolInstanceKey } from '../../utils/reply-source';
 
 type RuntimeCore = {
   modelId: string;
@@ -516,11 +517,14 @@ const createExecutionId = (): string => {
 
 const toTextDeltaEvent = (
   payload: Record<string, unknown>,
-  isReasoning: boolean
+  isReasoning: boolean,
+  source: { executionId?: string; conversationId?: string }
 ): AgentTextDeltaEvent => {
   return {
     text: readString(payload.content) ?? readString(payload.reasoningContent) ?? '',
     isReasoning,
+    executionId: source.executionId,
+    conversationId: source.conversationId,
   };
 };
 
@@ -543,39 +547,23 @@ const toLoopEvent = (stepIndex: number): AgentLoopEvent => {
   };
 };
 
-const toAttributedToolCall = (
-  toolCall: AgentToolUseEvent,
-  envelope: CliEventEnvelopeLike
-): AgentToolUseEvent => {
-  const record = asRecord(toolCall);
-  const executionId = readString(record.executionId) ?? readString(envelope.executionId);
-  const conversationId =
-    readString(record.conversationId) ?? readString(envelope.conversationId);
-
-  if (!executionId && !conversationId) {
-    return toolCall;
-  }
-
-  return {
-    ...record,
-    ...(executionId ? { executionId } : {}),
-    ...(conversationId ? { conversationId } : {}),
-  };
-};
-
 const toToolStreamEvent = (
   envelope: CliEventEnvelopeLike,
   sequenceByToolCallId: Map<string, number>
 ): AgentToolStreamEvent => {
   const payload = asRecord(envelope.data);
   const toolCallId = readString(payload.toolCallId) ?? 'unknown';
-  const previousSequence = sequenceByToolCallId.get(toolCallId) ?? 0;
+  const toolInstanceKey =
+    buildToolInstanceKey(
+      {
+        executionId: envelope.executionId,
+        conversationId: envelope.conversationId,
+      },
+      toolCallId
+    ) ?? toolCallId;
+  const previousSequence = sequenceByToolCallId.get(toolInstanceKey) ?? 0;
   const sequence = previousSequence + 1;
-  sequenceByToolCallId.set(toolCallId, sequence);
-
-  const executionId = readString(payload.executionId) ?? readString(envelope.executionId);
-  const conversationId =
-    readString(payload.conversationId) ?? readString(envelope.conversationId);
+  sequenceByToolCallId.set(toolInstanceKey, sequence);
 
   return {
     toolCallId,
@@ -584,11 +572,9 @@ const toToolStreamEvent = (
     sequence,
     timestamp: envelope.createdAt,
     content: readString(payload.chunk) ?? readString(payload.content),
-    data: {
-      ...payload,
-      ...(executionId ? { executionId } : {}),
-      ...(conversationId ? { conversationId } : {}),
-    },
+    data: payload,
+    executionId: envelope.executionId,
+    conversationId: envelope.conversationId,
   };
 };
 
@@ -596,10 +582,11 @@ const toToolResultEvent = (
   payload: Record<string, unknown>,
   toolCallsById: Map<string, AgentToolUseEvent>,
   capabilities: AttachmentModelCapabilities,
-  envelope?: CliEventEnvelopeLike
+  source: { executionId?: string; conversationId?: string }
 ): AgentToolResultEvent => {
   const toolCallId =
     readString(payload.tool_call_id) ?? readString(payload.toolCallId) ?? 'unknown';
+  const toolInstanceKey = buildToolInstanceKey(source, toolCallId) ?? toolCallId;
   const metadata = asRecord(payload.metadata);
   const toolResult = asRecord(metadata.toolResult);
   const error = asRecord(toolResult.error);
@@ -608,23 +595,16 @@ const toToolResultEvent = (
   const content = readString(payload.content);
   const output =
     explicitOutput !== undefined ? explicitOutput : content !== summary ? content : undefined;
-  const toolCall = toAttributedToolCall(
-    toolCallsById.get(toolCallId) ??
-      ({
-        id: toolCallId,
-        function: { name: 'tool', arguments: '{}' },
-      } as AgentToolUseEvent),
-    envelope ?? ({ createdAt: Date.now() } as CliEventEnvelopeLike)
-  );
+  const toolCall =
+    toolCallsById.get(toolInstanceKey) ??
+    ({
+      id: toolCallId,
+      function: { name: 'tool', arguments: '{}' },
+      executionId: source.executionId,
+      conversationId: source.conversationId,
+    } as AgentToolUseEvent);
   const structured = asRecord(toolResult.structured);
   const contentParts = buildReadFileImageToolResultContent(toolCall, structured, capabilities);
-
-  const resultExecutionId =
-    readString(payload.executionId) ??
-    readString(asRecord(toolResult.payload).executionId) ??
-    readString(envelope?.executionId);
-  const resultConversationId =
-    readString(payload.conversationId) ?? readString(envelope?.conversationId);
 
   return {
     toolCall,
@@ -637,12 +617,12 @@ const toToolResultEvent = (
         ...(toolResult.payload !== undefined ? { payload: toolResult.payload } : {}),
         ...(toolResult.structured !== undefined ? { structured: toolResult.structured } : {}),
         ...(toolResult.metadata !== undefined ? { metadata: toolResult.metadata } : {}),
-        ...(resultExecutionId ? { executionId: resultExecutionId } : {}),
-        ...(resultConversationId ? { conversationId: resultConversationId } : {}),
       },
       raw: payload,
     },
     ...(contentParts ? { content: contentParts } : {}),
+    executionId: source.executionId,
+    conversationId: source.conversationId,
   };
 };
 
@@ -1081,9 +1061,13 @@ export const runAgentPrompt = async (
         },
         onEvent: async (envelope) => {
           const payload = asRecord(envelope.data);
+          const source = {
+            executionId: envelope.executionId,
+            conversationId: envelope.conversationId,
+          };
           switch (envelope.eventType) {
             case 'chunk': {
-              const event = toTextDeltaEvent(payload, false);
+              const event = toTextDeltaEvent(payload, false, source);
               if (event.text.length > 0) {
                 streamedState.text += event.text;
                 safeInvoke(() => handlers.onTextDelta?.(event));
@@ -1091,7 +1075,7 @@ export const runAgentPrompt = async (
               break;
             }
             case 'reasoning_chunk': {
-              const event = toTextDeltaEvent(payload, true);
+              const event = toTextDeltaEvent(payload, true, source);
               if (event.text.length > 0) {
                 safeInvoke(() => handlers.onTextDelta?.(event));
               }
@@ -1109,13 +1093,15 @@ export const runAgentPrompt = async (
               const rawToolCalls = payload.toolCalls;
               if (Array.isArray(rawToolCalls) && rawToolCalls.length > 0) {
                 for (const item of rawToolCalls) {
-                  const toolCall = toAttributedToolCall(
-                    asRecord(item) as AgentToolUseEvent,
-                    envelope
-                  );
+                  const toolCall = {
+                    ...asRecord(item),
+                    executionId: envelope.executionId,
+                    conversationId: envelope.conversationId,
+                  } as AgentToolUseEvent;
                   const toolCallId = readString(asRecord(toolCall).id);
-                  if (toolCallId) {
-                    toolCallsById.set(toolCallId, toolCall);
+                  const toolInstanceKey = buildToolInstanceKey(source, toolCallId);
+                  if (toolInstanceKey) {
+                    toolCallsById.set(toolInstanceKey, toolCall);
                   }
                   toolCallBuffer.register(
                     toolCall,
@@ -1126,10 +1112,15 @@ export const runAgentPrompt = async (
                   );
                 }
               } else {
-                const toolCall = toAttributedToolCall(payload as AgentToolUseEvent, envelope);
+                const toolCall = {
+                  ...payload,
+                  executionId: envelope.executionId,
+                  conversationId: envelope.conversationId,
+                } as AgentToolUseEvent;
                 const toolCallId = readString(asRecord(toolCall).id);
-                if (toolCallId) {
-                  toolCallsById.set(toolCallId, toolCall);
+                const toolInstanceKey = buildToolInstanceKey(source, toolCallId);
+                if (toolInstanceKey) {
+                  toolCallsById.set(toolInstanceKey, toolCall);
                 }
                 toolCallBuffer.register(
                   toolCall,
@@ -1143,14 +1134,14 @@ export const runAgentPrompt = async (
             }
             case 'tool_result': {
               const toolCallId = readString(payload.tool_call_id) ?? readString(payload.toolCallId);
-              toolCallBuffer.ensureEmitted(toolCallId, (toolCall) => {
+              toolCallBuffer.ensureEmitted(buildToolInstanceKey(source, toolCallId), (toolCall) => {
                 safeInvoke(() => handlers.onToolUse?.(toolCall));
               });
               const toolResultEvent = toToolResultEvent(
                 payload,
                 toolCallsById,
                 attachmentCapabilities,
-                envelope
+                source
               );
               safeInvoke(() => handlers.onToolResult?.(toolResultEvent));
               break;

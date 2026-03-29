@@ -79,22 +79,7 @@ export const FooterHints = ({
           </text>
         ) : null}
         <text fg={uiTheme.muted} attributes={TextAttributes.BOLD}>
-          <strong>ctrl+t</strong> {taskPanelVisible ? 'runs off' : 'runs on'}
-        </text>
-        <text fg={uiTheme.muted} attributes={TextAttributes.BOLD}>
-          <strong>↑↓</strong> select run
-        </text>
-        <text fg={uiTheme.muted} attributes={TextAttributes.BOLD}>
-          <strong>enter</strong> expand
-        </text>
-        <text fg={uiTheme.muted} attributes={TextAttributes.BOLD}>
-          <strong>i</strong> inspector
-        </text>
-        <text fg={uiTheme.muted} attributes={TextAttributes.BOLD}>
-          <strong>←→</strong> tabs
-        </text>
-        <text fg={uiTheme.muted} attributes={TextAttributes.BOLD}>
-          <strong>ctrl+i</strong> inspector
+          <strong>ctrl+t</strong> {taskPanelVisible ? 'tasks off' : 'tasks on'}
         </text>
         <text fg={uiTheme.muted} attributes={TextAttributes.BOLD}>
           <strong>context</strong> {contextUsageLabel}

@@ -41,24 +41,6 @@ describe('cli-commands', () => {
     });
   });
 
-  it('parses theme override', () => {
-    expect(parseCliCommand(['--theme', 'konayuki'])).toMatchObject({
-      command: 'tui',
-      themeName: 'konayuki',
-      errors: [],
-    });
-    expect(parseCliCommand(['run', 'hello', '--theme=default'])).toMatchObject({
-      command: 'run',
-      themeName: 'default',
-      errors: [],
-    });
-  });
-
-  it('reports invalid theme name', () => {
-    const result = parseCliCommand(['--theme', 'unknown']);
-    expect(result.errors[0]).toContain('Invalid value for --theme');
-  });
-
   it('parses internal tree-sitter diagnose command', () => {
     expect(parseCliCommand(['__tree-sitter-diagnose', '--output', 'json'])).toMatchObject({
       command: 'internal:tree-sitter-diagnose',
@@ -105,7 +87,6 @@ describe('cli-commands', () => {
     expect(help).toContain('renx run <prompt>');
     expect(help).toContain('session open');
     expect(help).toContain('--output <mode>');
-    expect(help).toContain('--theme <name>');
     expect(help).toContain('--json                Alias for --output json');
   });
 });

@@ -23,6 +23,7 @@ const TOOL_DISPLAY_CONFIG: Record<string, ToolDisplayConfig> = {
     icon: '◉',
   },
   local_shell: {
+    displayName: 'local shell',
     icon: '$',
     hiddenArgumentKeys: ['command', 'description'],
   },
@@ -93,7 +94,7 @@ export function getToolDisplayIcon(toolName: string): string {
     }
   }
 
-  return '◉';
+  return '⚙';
 }
 
 export function getToolHiddenArgumentKeys(toolName: string): string[] {
