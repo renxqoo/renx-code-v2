@@ -266,15 +266,16 @@ export const buildAgentEventHandlers = ({
     source: ReturnType<typeof readEventSource>
   ) => {
     const type: 'thinking' | 'text' = isReasoning ? 'thinking' : 'text';
+    const streamSourceKey = source.isSubagent ? source.sourceKey : undefined;
     if (
       !activeTextSegment ||
       activeTextSegment.type !== type ||
-      activeTextSegment.sourceKey !== source.sourceKey
+      activeTextSegment.sourceKey !== streamSourceKey
     ) {
       activeTextSegment = {
-        id: createStreamSegmentId(type, source.isSubagent ? source.sourceKey : undefined),
+        id: createStreamSegmentId(type, streamSourceKey),
         type,
-        sourceKey: source.isSubagent ? source.sourceKey : undefined,
+        sourceKey: streamSourceKey,
       };
     }
     appendSegment(

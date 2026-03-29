@@ -101,6 +101,20 @@ export class ToolV2AbortError extends ToolV2Error {
   }
 }
 
+export class ToolV2TimeoutError extends ToolV2Error {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, {
+      name: 'ToolV2TimeoutError',
+      code: 3011,
+      errorCode: 'TOOL_V2_TIMEOUT',
+      category: 'timeout',
+      retryable: true,
+      httpStatus: 408,
+      details,
+    });
+  }
+}
+
 export class ToolV2ResourceNotFoundError extends ToolV2Error {
   constructor(message: string, details?: Record<string, unknown>) {
     super(message, {

@@ -6,7 +6,7 @@ export type ToolDisplayConfig = {
 
 const TOOL_DISPLAY_CONFIG: Record<string, ToolDisplayConfig> = {
   spawn_agent: {
-    displayName: 'spawn agent',
+    displayName: 'Agent',
     icon: '◉',
     hiddenArgumentKeys: ['prompt', 'description', 'metadata'],
   },
@@ -23,7 +23,6 @@ const TOOL_DISPLAY_CONFIG: Record<string, ToolDisplayConfig> = {
     icon: '◉',
   },
   local_shell: {
-    displayName: 'local shell',
     icon: '$',
     hiddenArgumentKeys: ['command', 'description'],
   },

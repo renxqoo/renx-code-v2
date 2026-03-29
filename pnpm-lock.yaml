@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       '@opentui/core':
-        specifier: ^0.1.84
+        specifier: ^0.1.91
         version: 0.1.91(stage-js@1.0.1)(typescript@5.9.3)(web-tree-sitter@0.25.10)
     devDependencies:
       '@testing-library/react':

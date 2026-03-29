@@ -898,6 +898,64 @@ describe('local_shell v2', () => {
     expect(meta.timedOut).toBe(false);
   });
 
+  it('returns a timeout failure when a foreground shell command exceeds its timeout', async () => {
+    const runtime: ShellRuntime = {
+      getCapabilities() {
+        return {
+          sandboxing: [
+            { mode: 'workspace-write', enforcement: 'advisory' },
+            { mode: 'full-access', enforcement: 'advisory' },
+          ],
+          escalation: {
+            supported: true,
+          },
+        };
+      },
+      async execute() {
+        return {
+          exitCode: 124,
+          timedOut: true,
+          aborted: false,
+          output: 'partial output',
+        };
+      },
+    };
+    const system = new EnterpriseToolSystem([
+      new LocalShellToolV2({
+        runtime,
+        approvalMode: 'policy',
+      }),
+    ]);
+
+    const result = await system.execute(
+      {
+        toolCallId: 'shell-foreground-timeout',
+        toolName: 'local_shell',
+        arguments: JSON.stringify({
+          command: 'node src/index.ts',
+          timeoutMs: 250,
+        }),
+      },
+      createContext(workspaceDir)
+    );
+
+    expect(result.success).toBe(false);
+    if (result.success) {
+      return;
+    }
+    expect(result.error.errorCode).toBe('TOOL_V2_TIMEOUT');
+    expect(result.error.category).toBe('timeout');
+    expect(result.output).toContain('Shell command timed out');
+    expect(result.output).toContain('partial output');
+    expect(result.metadata).toMatchObject({
+      exitCode: 124,
+      timedOut: true,
+      aborted: false,
+      timeoutMs: 250,
+      workdir: workspaceDir,
+    });
+  });
+
   it('does not start a background shell task when the parent signal is already aborted', async () => {
     const runtime = new BackgroundRecordingShellRuntime({ autoComplete: false });
     const backgroundStoreDir = await fs.mkdtemp(

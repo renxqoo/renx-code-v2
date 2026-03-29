@@ -340,6 +340,30 @@ describe('buildAgentEventHandlers', () => {
     });
   });
 
+  it('keeps root text deltas in one segment when execution source metadata is present', () => {
+    const { handlers, readSegments, turnId } = buildHarness();
+
+    handlers.onTextDelta?.({
+      text: '你好',
+      executionId: 'exec_root',
+      conversationId: 'conv_root',
+    });
+    handlers.onTextDelta?.({
+      text: '世界',
+      executionId: 'exec_root',
+      conversationId: 'conv_root',
+    });
+
+    const segments = readSegments();
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toMatchObject({
+      id: `${turnId}:text:1`,
+      type: 'text',
+      content: '你好世界',
+    });
+  });
+
   it('labels child segments with the spawned agent and originating spawn_agent call', () => {
     const { handlers, readSegments, turnId } = buildHarness();
 

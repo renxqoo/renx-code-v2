@@ -150,6 +150,176 @@ describe('AssistantToolGroup', () => {
     expect(headerRailBox?.getAttribute('bordercolor')).toBe(uiTheme.accent);
   });
 
+  it('renders read_file headers as a natural file action label', () => {
+    const group: ToolSegmentGroup = {
+      toolCallId: 'call_read_file_header_label',
+      streams: [],
+      use: createToolUseSegment(
+        'read_file',
+        { path: 'D:/work/renx-code/package.json', mode: 'text' },
+        'call_read_file_header_label'
+      ),
+      result: createToolResultSegment(
+        'read_file',
+        {
+          output: '{\n  "name": "renx-code"\n}',
+        },
+        { callId: 'call_read_file_header_label' }
+      ),
+    };
+
+    const { container } = render(<AssistantToolGroup group={group} />);
+    const headerText = container.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    expect(headerText).toContain('Read package.json');
+    expect(headerText).toContain('(completed)');
+    expect(headerText).not.toContain('read_file');
+    expect(headerText).not.toContain('(D:/work/renx-code/package.json)');
+  });
+
+  it('renders file_edit headers as a natural file action label', () => {
+    const group: ToolSegmentGroup = {
+      toolCallId: 'call_file_edit_header_label',
+      streams: [],
+      use: createToolUseSegment(
+        'file_edit',
+        {
+          path: 'D:/work/renx-code/packages/cli/src/index.tsx',
+          dryRun: false,
+          edits: [{ oldText: 'before', newText: 'after' }],
+        },
+        'call_file_edit_header_label'
+      ),
+      result: createToolResultSegment(
+        'file_edit',
+        {
+          summary: 'Applied 1 replacement.',
+        },
+        { callId: 'call_file_edit_header_label' }
+      ),
+    };
+
+    const { container } = render(<AssistantToolGroup group={group} />);
+    const headerText = container.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    expect(headerText).toContain('Edit index.tsx');
+    expect(headerText).toContain('(completed)');
+    expect(headerText).not.toContain('file edit');
+  });
+
+  it('renders grep headers as a natural search label', () => {
+    const group: ToolSegmentGroup = {
+      toolCallId: 'call_grep_header_label',
+      streams: [],
+      use: createToolUseSegment(
+        'grep',
+        { pattern: 'TODO', path: 'packages/cli/src' },
+        'call_grep_header_label'
+      ),
+      result: createToolResultSegment(
+        'grep',
+        {
+          summary: 'Found 3 matches.',
+          metadata: { countMatches: 3, countFiles: 2 },
+        },
+        { callId: 'call_grep_header_label' }
+      ),
+    };
+
+    const { container } = render(<AssistantToolGroup group={group} />);
+    const headerText = container.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    expect(headerText).toContain('Search "TODO" | in packages/cli/src');
+    expect(headerText).toContain('(completed)');
+    expect(headerText).not.toContain('grep');
+  });
+
+  it('renders spawn_agent headers as a natural action label', () => {
+    const group: ToolSegmentGroup = {
+      toolCallId: 'call_spawn_agent_header_label',
+      streams: [],
+      use: createToolUseSegment(
+        'spawn_agent',
+        {
+          description: 'inspect failing tests',
+          role: 'worker',
+          runInBackground: true,
+        },
+        'call_spawn_agent_header_label'
+      ),
+      result: createToolResultSegment(
+        'spawn_agent',
+        {
+          payload: {
+            agentRun: {
+              agentId: 'agent_1',
+              status: 'completed',
+              description: 'inspect failing tests',
+            },
+          },
+        },
+        { callId: 'call_spawn_agent_header_label' }
+      ),
+    };
+
+    const { container } = render(<AssistantToolGroup group={group} />);
+    const headerText = container.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    expect(headerText).toContain('Start agent: inspect failing tests | worker | background');
+    expect(headerText).toContain('(completed)');
+    expect(headerText).not.toContain('spawn agent');
+  });
+
+  it('renders skill headers as a natural action label', () => {
+    const group: ToolSegmentGroup = {
+      toolCallId: 'call_skill_header_label',
+      streams: [],
+      use: createToolUseSegment('skill', { name: 'trading-decision' }, 'call_skill_header_label'),
+      result: createToolResultSegment(
+        'skill',
+        {
+          summary: 'Loaded skill successfully.',
+        },
+        { callId: 'call_skill_header_label' }
+      ),
+    };
+
+    const { container } = render(<AssistantToolGroup group={group} />);
+    const headerText = container.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    expect(headerText).toContain('Load skill | trading-decision');
+    expect(headerText).toContain('(completed)');
+    expect(headerText).not.toContain('skill({"name"');
+  });
+
+  it('renders web_fetch headers as a natural action label', () => {
+    const group: ToolSegmentGroup = {
+      toolCallId: 'call_web_fetch_header_label',
+      streams: [],
+      use: createToolUseSegment(
+        'web_fetch',
+        { url: 'https://stockapp.finance.qq.com/crc1/pdf/financing_pdf?id=123456' },
+        'call_web_fetch_header_label'
+      ),
+      result: createToolResultSegment(
+        'web_fetch',
+        {
+          summary: 'Fetched page successfully.',
+        },
+        { callId: 'call_web_fetch_header_label' }
+      ),
+    };
+
+    const { container } = render(<AssistantToolGroup group={group} />);
+    const headerText = container.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    expect(headerText).toContain(
+      'Fetch | stockapp.finance.qq.com/crc1/pdf/financing_pdf?id=123456'
+    );
+    expect(headerText).toContain('(completed)');
+    expect(headerText).not.toContain('web_fetch({"url"');
+  });
+
   it('reduces expanded body left indent to stay visually aligned with the header', () => {
     const group: ToolSegmentGroup = {
       toolCallId: 'call_read_file_body_align',
@@ -205,6 +375,39 @@ describe('AssistantToolGroup', () => {
     const headerSurfaceBox = headerPaddingBox?.firstElementChild as HTMLElement | null;
     const headerRailBox = headerSurfaceBox?.firstElementChild as HTMLElement | null;
 
+    expect(headerRailBox?.getAttribute('bordercolor')).toBe('#dc2626');
+  });
+
+  it('renders timed out shell tools with a timed out status label', () => {
+    const group: ToolSegmentGroup = {
+      toolCallId: 'call_local_shell_header_timeout',
+      use: createToolUseSegment(
+        'local_shell',
+        { command: 'agent-browser open https://example.com' },
+        'call_local_shell_header_timeout'
+      ),
+      streams: [
+        createToolStreamSegment('call_local_shell_header_timeout', 'stdout', 'opening browser'),
+      ],
+      result: createToolResultSegment(
+        'local_shell',
+        {
+          summary: 'Shell command timed out',
+          metadata: { exitCode: 124, timedOut: true },
+        },
+        { callId: 'call_local_shell_header_timeout', success: false }
+      ),
+    };
+
+    const { container } = render(<AssistantToolGroup group={group} />);
+    const headerText = container.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+    const rootBox = container.querySelector('box');
+    const headerPaddingBox = rootBox?.children[0] as HTMLElement | undefined;
+    const headerSurfaceBox = headerPaddingBox?.firstElementChild as HTMLElement | null;
+    const headerRailBox = headerSurfaceBox?.firstElementChild as HTMLElement | null;
+
+    expect(headerText).toContain('timed out');
+    expect(headerText).not.toContain('(error)');
     expect(headerRailBox?.getAttribute('bordercolor')).toBe('#dc2626');
   });
 
@@ -482,6 +685,64 @@ describe('AssistantToolGroup', () => {
     expect(headerPaddingBox?.tagName.toLowerCase()).toBe('box');
     expect(headerSurfaceBox?.tagName.toLowerCase()).toBe('box');
     expect(headerRailBox?.tagName.toLowerCase()).toBe('box');
+  });
+
+  it('renders local_shell header with only the shell command and no tool name prefix', () => {
+    const command = 'Get-ChildItem -Path src -Recurse -File';
+    const group: ToolSegmentGroup = {
+      toolCallId: 'call_local_shell_header_command_only',
+      streams: [],
+      use: createToolUseSegment(
+        'local_shell',
+        { command, workdir: 'D:/work/renx-code/packages/cli' },
+        'call_local_shell_header_command_only'
+      ),
+      result: createToolResultSegment(
+        'local_shell',
+        {
+          summary: 'Command completed successfully with no output.',
+          metadata: { exitCode: 0 },
+        },
+        { callId: 'call_local_shell_header_command_only' }
+      ),
+    };
+
+    const { container } = render(<AssistantToolGroup group={group} />);
+    const headerText = container.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    expect(headerText).toContain('$ Get-ChildItem -Path src -Recurse -File');
+    expect(headerText).toContain('D:/work/renx-code/packages/cli');
+    expect(headerText).toContain('exit 0');
+    expect(headerText).toContain('(completed)');
+    expect(headerText).not.toContain('local_shell');
+  });
+
+  it('does not duplicate the shell command in the local_shell header summary', () => {
+    const command = 'Get-ChildItem';
+    const group: ToolSegmentGroup = {
+      toolCallId: 'call_local_shell_header_no_duplicate_command',
+      streams: [],
+      use: createToolUseSegment(
+        'local_shell',
+        { command, workdir: 'D:/work/renx-code/packages/cli' },
+        'call_local_shell_header_no_duplicate_command'
+      ),
+      result: createToolResultSegment(
+        'local_shell',
+        {
+          summary: 'Command completed successfully with no output.',
+          metadata: { exitCode: 0 },
+        },
+        { callId: 'call_local_shell_header_no_duplicate_command' }
+      ),
+    };
+
+    const { container } = render(<AssistantToolGroup group={group} />);
+    const headerText = container.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    expect(headerText).toContain('$ Get-ChildItem | D:/work/renx-code/packages/cli | exit 0');
+    expect(headerText).not.toContain('$ $ Get-ChildItem');
+    expect(headerText).not.toContain('($ Get-ChildItem');
   });
 
   it('truncates long tool invocation text in the header to keep it on one line', () => {

@@ -762,7 +762,17 @@ export function createForegroundProcessLifecycleController(options: {
     options.child.kill(signal);
   };
 
+  const releaseChildStreams = () => {
+    options.child.stdout?.destroy();
+    options.child.stderr?.destroy();
+  };
+
   const requestTermination = (primarySignal: NodeJS.Signals) => {
+    if (exited) {
+      clearEscalationTimer();
+      releaseChildStreams();
+      return;
+    }
     terminateChild(primarySignal);
     clearEscalationTimer();
     const escalationDelayMs = Math.max(1, options.escalationDelayMs ?? 1_000);
@@ -783,7 +793,7 @@ export function createForegroundProcessLifecycleController(options: {
   };
 
   const timeout = setTimeout(() => {
-    if (aborted || exited || timedOut) {
+    if (aborted || timedOut) {
       return;
     }
     timedOut = true;
@@ -812,7 +822,6 @@ export function createForegroundProcessLifecycleController(options: {
     aborted: () => aborted,
     markExited: () => {
       exited = true;
-      clearTimeout(timeout);
       clearEscalationTimer();
       removeAbortListener();
     },
