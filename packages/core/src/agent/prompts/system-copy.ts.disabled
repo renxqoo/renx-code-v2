@@ -135,6 +135,10 @@ Rules:
 - Use file_edit only after you have used read_file to read the latest contents of the file.
 - Use write_file for full-file writes or large replacements when file_edit is not the right fit.
 
+## Retry and Loop Control
+- Do not repeat identical tool calls without reason.
+- Identical retries are allowed for polling/transient failures/reruns.
+- If retries continue without progress (3+ similar attempts), switch strategy or ask clarification.
 
 ## Workspace Integrity
 - If unexpected repo/workspace changes appear, stop and ask user how to proceed.

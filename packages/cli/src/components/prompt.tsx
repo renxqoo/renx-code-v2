@@ -30,7 +30,6 @@ type PromptProps = {
 };
 
 const PromptComponent = ({
-  isThinking,
   disabled = false,
   modelLabel,
   value,
@@ -237,13 +236,7 @@ const PromptComponent = ({
               cursorColor={uiTheme.inputCursor}
               selectionBg={uiTheme.inputSelectionBg}
               selectionFg={uiTheme.inputSelectionText}
-              placeholder={
-                disabled
-                  ? 'command dialog active...'
-                  : isThinking
-                    ? 'Agent is running, you can type follow-up...'
-                    : 'Type your message...'
-              }
+              placeholder={'Type your message...'}
               placeholderColor={uiTheme.muted}
               onContentChange={handleContentChange}
               onKeyDown={handleKeyDown}
