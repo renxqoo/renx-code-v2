@@ -51,6 +51,7 @@ export const MODEL_DEFINITIONS: Record<BuiltinModelId, ModelDefinition> = {
     LLMMAX_TOKENS: 200 * 1000,
     features: ['streaming', 'function-calling', 'vision'],
     modalities: { image: true },
+    thinking: false,
   },
   'glm-5': {
     id: 'glm-5',
@@ -65,6 +66,7 @@ export const MODEL_DEFINITIONS: Record<BuiltinModelId, ModelDefinition> = {
     LLMMAX_TOKENS: 200 * 1000,
     features: ['streaming', 'function-calling', 'vision'],
     modalities: { image: true },
+    thinking: false,
   },
   'glm-5.1': {
     id: 'glm-5.1',
@@ -79,7 +81,7 @@ export const MODEL_DEFINITIONS: Record<BuiltinModelId, ModelDefinition> = {
     LLMMAX_TOKENS: 200 * 1000,
     features: ['streaming', 'function-calling', 'vision'],
     modalities: { image: true },
-    thinking: true,
+    thinking: false,
   },
 
   'minimax-2.7': {
