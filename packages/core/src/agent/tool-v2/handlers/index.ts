@@ -19,3 +19,4 @@ export * from './task-update';
 export * from './wait-agents';
 export * from './web-fetch';
 export * from './write-file';
+export * from './openclaw-weixin';

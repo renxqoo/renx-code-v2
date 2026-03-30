@@ -30,7 +30,7 @@ import { SkillToolV2, type SkillToolV2Options } from './handlers/skill';
 import { WebFetchToolV2 } from './handlers/web-fetch';
 import { WriteFileToolV2 } from './handlers/write-file';
 import { getTaskStateStoreV2 } from './task-store';
-
+import { OpenClawWeixinTool } from './handlers/openclaw-weixin';
 export interface CreateBuiltInToolHandlersV2Options extends Partial<SubagentToolFactoryOptions> {
   readonly shell?: LocalShellToolV2Options;
   readonly skill?: SkillToolV2Options;
@@ -50,6 +50,7 @@ export function createBuiltInToolHandlersV2(
   const handlers: ToolHandler[] = [
     new ReadFileToolV2(),
     new FileEditToolV2(),
+    new OpenClawWeixinTool(),
     new FileHistoryListToolV2(),
     new FileHistoryRestoreToolV2(),
     new LspToolV2(),

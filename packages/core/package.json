@@ -19,6 +19,7 @@
     "demo:tool-auth-agent": "tsx ./scripts/demo-tool-auth-agent.ts"
   },
   "dependencies": {
+    "@renx-code/weixin-adapter": "workspace:*",
     "@opentui/core": "^0.1.84",
     "@opentui/react": "^0.1.84",
     "diff": "^8.0.3",
