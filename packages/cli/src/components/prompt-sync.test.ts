@@ -32,4 +32,14 @@ describe('shouldSyncPromptTextarea', () => {
       })
     ).toBe(true);
   });
+
+  it('syncs a submit-triggered clear even when the focused textarea still contains the last user input', () => {
+    expect(
+      shouldSyncPromptTextarea({
+        textareaValue: 'hello',
+        nextValue: '',
+        lastUserValue: 'hello',
+      })
+    ).toBe(true);
+  });
 });

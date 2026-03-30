@@ -18,6 +18,7 @@ export const shouldSyncPromptTextarea = ({
   }
 
   if (
+    nextValue.length > 0 &&
     lastUserValue === textareaValue &&
     nextValue.length < textareaValue.length &&
     textareaValue.startsWith(nextValue)
