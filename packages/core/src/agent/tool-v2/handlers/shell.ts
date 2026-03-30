@@ -7,7 +7,7 @@ import type {
   ToolPermissionProfile,
   ToolSandboxMode,
 } from '../contracts';
-import { ToolV2AbortError, ToolV2ExecutionError } from '../errors';
+import { ToolV2AbortError, ToolV2ExecutionError, ToolV2TimeoutError } from '../errors';
 import {
   arraySchema,
   booleanSchema,
@@ -387,6 +387,31 @@ export class LocalShellToolV2 extends StructuredToolHandler<typeof schema> {
           exitCode: result.exitCode,
           timedOut: result.timedOut,
           aborted: result.aborted,
+          outputTruncated: result.artifact?.truncated || false,
+          ...(result.artifact
+            ? {
+                outputArtifact: {
+                  runId: result.artifact.runId,
+                  runDir: result.artifact.runDir,
+                  combinedPath: result.artifact.combinedPath,
+                  stdoutPath: result.artifact.stdoutPath,
+                  stderrPath: result.artifact.stderrPath,
+                  metaPath: result.artifact.metaPath,
+                },
+              }
+            : {}),
+        }
+      );
+    }
+    if (result.timedOut) {
+      throw new ToolV2TimeoutError(
+        formattedOutput ? `Shell command timed out\n${formattedOutput}` : 'Shell command timed out',
+        {
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          aborted: result.aborted,
+          timeoutMs: args.timeoutMs ?? this.defaultTimeoutMs,
+          workdir,
           outputTruncated: result.artifact?.truncated || false,
           ...(result.artifact
             ? {

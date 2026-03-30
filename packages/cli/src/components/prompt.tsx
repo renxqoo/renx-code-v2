@@ -1,4 +1,5 @@
 import type { KeyEvent, PasteEvent, TextareaRenderable } from '@opentui/core';
+import { decodePasteBytes } from '@opentui/core';
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { FileMentionMenu } from './file-mention-menu';
@@ -151,8 +152,9 @@ const PromptComponent = ({
   );
 
   const handlePaste = useCallback((event: PasteEvent) => {
-    const normalized = event.text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    if (normalized === event.text) {
+    const pastedText = decodePasteBytes(event.bytes);
+    const normalized = pastedText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    if (normalized === pastedText) {
       return;
     }
 

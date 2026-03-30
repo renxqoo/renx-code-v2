@@ -113,6 +113,33 @@ const createTaskToolResultEvent = (): AgentToolResultEvent => ({
   },
 });
 
+const createSpawnAgentResultEvent = (): AgentToolResultEvent => ({
+  toolCall: {
+    id: 'call_spawn_1',
+    function: {
+      name: 'spawn_agent',
+      arguments: JSON.stringify({
+        role: 'worker',
+        description: 'Investigate flaky CLI tool rendering',
+        runInBackground: true,
+      }),
+    },
+  },
+  result: {
+    success: true,
+    data: {
+      structured: {
+        agentId: 'agent_child_1',
+        role: 'worker',
+        description: 'Investigate flaky CLI tool rendering',
+        executionId: 'exec_child_spawned',
+        conversationId: 'conv_child_spawned',
+        status: 'running',
+      },
+    },
+  },
+});
+
 describe('buildAgentEventHandlers', () => {
   it('keeps ordered stream segments as thinking -> text -> thinking -> tool -> tool result', () => {
     const { handlers, readSegments, turnId } = buildHarness();
@@ -251,5 +278,128 @@ describe('buildAgentEventHandlers', () => {
     expect(segments.some((segment) => segment.id === `${turnId}:tool-result:call_task_1`)).toBe(
       false
     );
+  });
+
+  it('namespaces subagent text and tool segments without changing root segment ids', () => {
+    const { handlers, readSegments, turnId } = buildHarness();
+
+    handlers.onTextDelta?.({
+      text: 'root text',
+      executionId: 'exec_root',
+      conversationId: 'conv_root',
+    });
+    handlers.onToolUse?.({
+      id: 'call_shared',
+      executionId: 'exec_root',
+      conversationId: 'conv_root',
+      function: {
+        name: 'local_shell',
+        arguments: JSON.stringify({ command: 'pwd' }),
+      },
+    });
+    handlers.onTextDelta?.({
+      text: 'child thinking',
+      isReasoning: true,
+      executionId: 'exec_child',
+      conversationId: 'conv_child',
+    });
+    handlers.onToolUse?.({
+      id: 'call_shared',
+      executionId: 'exec_child',
+      conversationId: 'conv_child',
+      function: {
+        name: 'read_file',
+        arguments: JSON.stringify({ path: 'notes.txt' }),
+      },
+    });
+
+    const segments = readSegments();
+    const rootText = segments.find((segment) => segment.id === `${turnId}:text:1`);
+    const rootTool = segments.find((segment) => segment.id === `${turnId}:tool-use:call_shared`);
+    const childThinking = segments.find((segment) =>
+      segment.id.startsWith(`${turnId}:thinking:2:exec|exec_child`)
+    );
+    const childTool = segments.find(
+      (segment) => segment.id === `${turnId}:tool-use:exec|exec_child|call_shared`
+    );
+
+    expect(rootText).toBeTruthy();
+    expect(rootTool).toBeTruthy();
+    expect(childThinking?.data).toMatchObject({
+      executionId: 'exec_child',
+      conversationId: 'conv_child',
+      isSubagent: true,
+      showSourceHeader: true,
+      sourceLabel: 'subagent exec_child',
+    });
+    expect(childTool?.data).toMatchObject({
+      executionId: 'exec_child',
+      conversationId: 'conv_child',
+      isSubagent: true,
+      showSourceHeader: false,
+    });
+  });
+
+  it('keeps root text deltas in one segment when execution source metadata is present', () => {
+    const { handlers, readSegments, turnId } = buildHarness();
+
+    handlers.onTextDelta?.({
+      text: '你好',
+      executionId: 'exec_root',
+      conversationId: 'conv_root',
+    });
+    handlers.onTextDelta?.({
+      text: '世界',
+      executionId: 'exec_root',
+      conversationId: 'conv_root',
+    });
+
+    const segments = readSegments();
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toMatchObject({
+      id: `${turnId}:text:1`,
+      type: 'text',
+      content: '你好世界',
+    });
+  });
+
+  it('labels child segments with the spawned agent and originating spawn_agent call', () => {
+    const { handlers, readSegments, turnId } = buildHarness();
+
+    handlers.onToolUse?.({
+      id: 'call_spawn_1',
+      executionId: 'exec_root',
+      conversationId: 'conv_root',
+      function: {
+        name: 'spawn_agent',
+        arguments: JSON.stringify({
+          role: 'worker',
+          description: 'Investigate flaky CLI tool rendering',
+          runInBackground: true,
+        }),
+      },
+    });
+    handlers.onToolResult?.(createSpawnAgentResultEvent());
+    handlers.onTextDelta?.({
+      text: 'child update',
+      executionId: 'exec_child_spawned',
+      conversationId: 'conv_child_spawned',
+    });
+
+    const childSegment = readSegments().find((segment) =>
+      segment.id.startsWith(`${turnId}:text:1:exec|exec_child_spawned`)
+    );
+
+    expect(childSegment?.data).toMatchObject({
+      executionId: 'exec_child_spawned',
+      conversationId: 'conv_child_spawned',
+      isSubagent: true,
+      showSourceHeader: true,
+      sourceLabel: 'subagent Investigate flaky CLI tool rendering (worker)',
+      spawnedByLabel:
+        'spawned by Spawn Agent (Investigate flaky CLI tool rendering | worker | background)',
+      spawnToolCallId: 'call_spawn_1',
+    });
   });
 });

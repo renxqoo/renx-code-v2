@@ -4,6 +4,7 @@ import {
   type MarkdownThemePlatform,
   type OpenCodeTheme,
 } from './open-code-theme';
+import { DEFAULT_OPEN_CODE_THEME_NAME, type OpenCodeThemeName } from './theme-name';
 import type { UiThemeMode } from './theme';
 
 type SyntaxRule = {
@@ -271,7 +272,11 @@ const createSubtleMarkdownSyntax = (theme: OpenCodeTheme, platform: MarkdownThem
     })
   );
 
-const defaultMarkdownTheme = resolveOpenCodeTheme('dark', process.platform);
+const defaultMarkdownTheme = resolveOpenCodeTheme(
+  'dark',
+  DEFAULT_OPEN_CODE_THEME_NAME,
+  process.platform
+);
 
 export let opencodeMarkdownSyntax = createMarkdownSyntax(defaultMarkdownTheme, process.platform);
 export let opencodeSubtleMarkdownSyntax = createSubtleMarkdownSyntax(
@@ -279,11 +284,22 @@ export let opencodeSubtleMarkdownSyntax = createSubtleMarkdownSyntax(
   process.platform
 );
 
+export let opencodeThemeName: OpenCodeThemeName = DEFAULT_OPEN_CODE_THEME_NAME;
+
+export const applyMarkdownTheme = (
+  mode: UiThemeMode,
+  themeName: OpenCodeThemeName,
+  platform: MarkdownThemePlatform = process.platform
+) => {
+  const theme = resolveOpenCodeTheme(mode, themeName, platform);
+  opencodeThemeName = themeName;
+  opencodeMarkdownSyntax = createMarkdownSyntax(theme, platform);
+  opencodeSubtleMarkdownSyntax = createSubtleMarkdownSyntax(theme, platform);
+};
+
 export const applyMarkdownThemeMode = (
   mode: UiThemeMode,
   platform: MarkdownThemePlatform = process.platform
 ) => {
-  const theme = resolveOpenCodeTheme(mode, platform);
-  opencodeMarkdownSyntax = createMarkdownSyntax(theme, platform);
-  opencodeSubtleMarkdownSyntax = createSubtleMarkdownSyntax(theme, platform);
+  applyMarkdownTheme(mode, opencodeThemeName, platform);
 };

@@ -7,6 +7,7 @@ import { ProviderRegistry, MODEL_CONFIGS, ModelId, Models } from '../registry';
 import { OpenAICompatibleProvider } from '../openai-compatible';
 import { StandardAdapter } from '../adapters/standard';
 import { ResponsesAdapter } from '../adapters/responses';
+import { MiniMaxAdapter } from '../adapters/minimax';
 
 // Mock process.env
 const originalEnv = process.env;
@@ -87,6 +88,31 @@ describe('ProviderRegistry', () => {
       expect(MODEL_CONFIGS['gpt-5.3'].LLMMAX_TOKENS).toBe(258 * 1000);
       expect(MODEL_CONFIGS['gpt-5.3'].features).toContain('reasoning');
     });
+
+    it('should advertise reasoning capability for MiniMax reasoning models', () => {
+      expect(MODEL_CONFIGS['minimax-2.7'].features).toContain('reasoning');
+      expect(MODEL_CONFIGS['minimax-2.5'].features).toContain('reasoning');
+    });
+
+    it('should preserve explicit thinking defaults for models that define them', () => {
+      const modelsWithThinking = Object.values(MODEL_CONFIGS).filter(
+        (config): config is typeof config & { thinking: boolean } =>
+          typeof config.thinking === 'boolean'
+      );
+
+      expect(modelsWithThinking.length).toBeGreaterThan(0);
+      modelsWithThinking.forEach((config) => {
+        expect(typeof config.thinking).toBe('boolean');
+      });
+      expect(
+        Object.fromEntries(modelsWithThinking.map((config) => [config.id, config.thinking]))
+      ).toMatchObject({
+        'glm-5.1': false,
+        'kimi-k2.5': false,
+        'minimax-2.7': true,
+        'minimax-2.5': true,
+      });
+    });
   });
 
   describe('createFromEnv', () => {
@@ -106,6 +132,7 @@ describe('ProviderRegistry', () => {
 
       expect(provider).toBeInstanceOf(OpenAICompatibleProvider);
       expect(provider.config.apiKey).toBe('test-minimax-key');
+      expect(provider.adapter).toBeInstanceOf(MiniMaxAdapter);
     });
 
     it('should create provider for kimi-k2.5', () => {
@@ -156,6 +183,21 @@ describe('ProviderRegistry', () => {
       expect(provider.adapter).toBeInstanceOf(ResponsesAdapter);
     });
 
+    it('should use explicit model thinking defaults when present', () => {
+      const modelsWithThinking = Object.values(MODEL_CONFIGS).filter(
+        (config): config is typeof config & { thinking: boolean } =>
+          typeof config.thinking === 'boolean'
+      );
+
+      expect(modelsWithThinking.length).toBeGreaterThan(0);
+
+      modelsWithThinking.forEach((config) => {
+        process.env[config.envApiKey] = `test-${config.id}-key`;
+        const provider = ProviderRegistry.createFromEnv(config.id);
+        expect(provider.config.thinking).toBe(config.thinking);
+      });
+    });
+
     it('should create provider for a custom model from RENX_CUSTOM_MODELS_JSON', () => {
       process.env.CUSTOM_OPENAI_API_KEY = 'custom-key';
       process.env.RENX_CUSTOM_MODELS_JSON = JSON.stringify({
@@ -187,7 +229,7 @@ describe('ProviderRegistry', () => {
 
       const provider = ProviderRegistry.createFromEnv('glm-4.7');
 
-      expect(provider.config.baseURL).toBe('https://open.bigmodel.cn/api/paas/v4');
+      expect(provider.config.baseURL).toBe('https://open.bigmodel.cn/api/coding/paas/v4');
     });
 
     it('should use custom baseURL from env var', () => {
@@ -358,9 +400,10 @@ describe('ProviderRegistry', () => {
     it('should return models for glm provider', () => {
       const models = ProviderRegistry.listModelsByProvider('glm');
 
-      expect(models).toHaveLength(2);
+      expect(models).toHaveLength(3);
       expect(models.map((m) => m.id)).toContain('glm-4.7');
       expect(models.map((m) => m.id)).toContain('glm-5');
+      expect(models.map((m) => m.id)).toContain('glm-5.1');
     });
 
     it('should return models for deepseek provider', () => {

@@ -28,6 +28,7 @@
  */
 
 import { BaseAPIAdapter } from './adapters/base';
+import { MiniMaxAdapter } from './adapters/minimax';
 import { StandardAdapter } from './adapters/standard';
 import { HTTPClient } from './http/client';
 import { StreamParser } from './http/stream-parser';
@@ -50,6 +51,13 @@ import type { ProviderLogger } from './types';
 
 /** Provider 默认超时时间（毫秒），作为 Agent.requestTimeout 的回退值 */
 const PROVIDER_DEFAULT_TIMEOUT = 1000 * 60 * 10; // 10分钟
+
+function shouldUseMiniMaxAdapter(config: OpenAICompatibleConfig): boolean {
+  const normalizedBaseURL = config.baseURL.replace(/\/$/, '').toLowerCase();
+  const model = config.model.toLowerCase();
+
+  return normalizedBaseURL.includes('api.minimaxi.com') || model.startsWith('minimax-');
+}
 
 /**
  * OpenAI 兼容 Provider 基类
@@ -91,13 +99,18 @@ export class OpenAICompatibleProvider extends LLMProvider {
       defaultTimeoutMs: this.defaultTimeout,
     });
 
-    // 初始化 Adapter（未提供则使用标准适配器）
+    // 初始化 Adapter（未提供时，按已知 provider 特征选择适配器，否则退回标准适配器）
     this.adapter =
       adapter ??
-      new StandardAdapter({
-        defaultModel: config.model,
-        endpointPath: config.chatCompletionsPath ?? '/chat/completions',
-      });
+      (shouldUseMiniMaxAdapter(this.config)
+        ? new MiniMaxAdapter({
+            defaultModel: config.model,
+            endpointPath: config.chatCompletionsPath ?? '/chat/completions',
+          })
+        : new StandardAdapter({
+            defaultModel: config.model,
+            endpointPath: config.chatCompletionsPath ?? '/chat/completions',
+          }));
   }
 
   /**
@@ -202,6 +215,18 @@ export class OpenAICompatibleProvider extends LLMProvider {
       stream_options,
       tools,
       thinking: thinking ?? this.config.thinking,
+    });
+
+    this.logger?.info('LLM request', {
+      model: model ?? this.config.model,
+      baseURL: this.config.baseURL,
+      endpointPath: this.adapter.getEndpointPath(),
+      adapter: this.adapter.constructor.name,
+      thinking:
+        (requestBody as { thinking?: unknown }).thinking ??
+        thinking ??
+        this.config.thinking ??
+        false,
     });
 
     return {

@@ -3,7 +3,8 @@ import type { Token } from 'marked';
 
 import type { ReplySegment } from '../../types/chat';
 import { opencodeMarkdownSyntax, opencodeSubtleMarkdownSyntax } from '../../ui/opencode-markdown';
-import { uiTheme } from '../../ui/theme';
+import { MESSAGE_RAIL_BORDER_CHARS, uiTheme } from '../../ui/theme';
+import { readReplySourceMeta } from '../../utils/reply-source';
 import { CodeBlock } from './code-block';
 
 type AssistantSegmentProps = {
@@ -50,7 +51,11 @@ const ThinkingSegment = ({ content, streaming }: { content: string; streaming: b
 
   return (
     <box flexDirection="row">
-      <box width={1} backgroundColor={uiTheme.divider} />
+      <box
+        border={['left']}
+        borderColor={uiTheme.divider}
+        customBorderChars={MESSAGE_RAIL_BORDER_CHARS}
+      />
       <box flexGrow={1} paddingLeft={2}>
         <markdown
           streaming={streaming}
@@ -102,14 +107,63 @@ const TextSegment = ({ content, streaming }: { content: string; streaming: boole
   );
 };
 
+const SourceHeader = ({
+  label,
+  detail,
+  callId,
+}: {
+  label: string;
+  detail?: string;
+  callId?: string;
+}) => {
+  return (
+    <box paddingLeft={3} paddingBottom={1} flexDirection="column">
+      <text fg={uiTheme.muted} attributes={uiTheme.typography.note}>
+        {label}
+      </text>
+      {detail ? (
+        <text fg={uiTheme.subtle} attributes={uiTheme.typography.note}>
+          {detail}
+        </text>
+      ) : null}
+      {callId ? (
+        <text fg={uiTheme.subtle} attributes={uiTheme.typography.note}>
+          {`spawn call: ${callId}`}
+        </text>
+      ) : null}
+    </box>
+  );
+};
+
 export const AssistantSegment = ({ segment, streaming }: AssistantSegmentProps) => {
+  const sourceMeta = readReplySourceMeta(segment.data);
+  const sourceHeader =
+    sourceMeta?.isSubagent && sourceMeta.showSourceHeader && sourceMeta.sourceLabel ? (
+      <SourceHeader
+        label={sourceMeta.sourceLabel}
+        detail={sourceMeta.spawnedByLabel}
+        callId={sourceMeta.spawnToolCallId}
+      />
+    ) : null;
+
   if (segment.type === 'thinking') {
-    return <ThinkingSegment content={segment.content} streaming={streaming} />;
+    return (
+      <box flexDirection="column">
+        {sourceHeader}
+        <ThinkingSegment content={segment.content} streaming={streaming} />
+      </box>
+    );
   }
 
   if (segment.type === 'code') {
     return (
-      <CodeSegment content={segment.content} languageHint={readSegmentLanguageHint(segment.data)} />
+      <box flexDirection="column">
+        {sourceHeader}
+        <CodeSegment
+          content={segment.content}
+          languageHint={readSegmentLanguageHint(segment.data)}
+        />
+      </box>
     );
   }
 
@@ -117,5 +171,10 @@ export const AssistantSegment = ({ segment, streaming }: AssistantSegmentProps) 
   //   return <NoteSegment content={segment.content} />;
   // }
 
-  return <TextSegment content={segment.content} streaming={streaming} />;
+  return (
+    <box flexDirection="column">
+      {sourceHeader}
+      <TextSegment content={segment.content} streaming={streaming} />
+    </box>
+  );
 };

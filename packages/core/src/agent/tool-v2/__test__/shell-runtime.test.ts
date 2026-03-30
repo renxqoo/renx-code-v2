@@ -846,6 +846,40 @@ describe('shell runtime adapters', () => {
     expect(terminatedSignals[0]).toBe('SIGTERM');
   });
 
+  it('returns after foreground timeout when the process exits but descendants keep stdio open', async () => {
+    const scriptPath = path.join(workspaceDir, 'foreground-exit-before-close.js');
+    await fs.writeFile(
+      scriptPath,
+      [
+        "const { spawn } = require('node:child_process');",
+        "spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {",
+        "  stdio: ['ignore', process.stdout, process.stderr],",
+        '});',
+        'process.exit(0);',
+      ].join('\n'),
+      'utf8'
+    );
+
+    const command =
+      process.platform === 'win32'
+        ? `& "${process.execPath}" "${scriptPath}"`
+        : `"${process.execPath}" "${scriptPath}"`;
+    const startedAt = Date.now();
+    const runtime = new LocalProcessShellRuntimeImpl();
+    const result = await runtime.execute({
+      command,
+      cwd: workspaceDir,
+      timeoutMs: 100,
+      sandbox: 'workspace-write',
+    });
+    const elapsedMs = Date.now() - startedAt;
+
+    expect(result.timedOut).toBe(true);
+    expect(result.aborted).toBe(false);
+    expect(result.exitCode).toBe(124);
+    expect(elapsedMs).toBeLessThan(5_000);
+  });
+
   it('returns after foreground timeout when a POSIX shell command leaves a child running', async () => {
     if (process.platform === 'win32') {
       return;

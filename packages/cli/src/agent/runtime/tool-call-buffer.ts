@@ -1,8 +1,18 @@
 import type { AgentToolUseEvent } from './types';
+import { buildToolInstanceKey } from '../../utils/reply-source';
 
-const readToolCallId = (event: AgentToolUseEvent): string | undefined => {
+const readToolCallKey = (event: AgentToolUseEvent): string | undefined => {
   const maybeId = (event as { id?: unknown }).id;
-  return typeof maybeId === 'string' && maybeId.length > 0 ? maybeId : undefined;
+  const toolCallId = typeof maybeId === 'string' && maybeId.length > 0 ? maybeId : undefined;
+  const executionId =
+    typeof (event as { executionId?: unknown }).executionId === 'string'
+      ? ((event as { executionId?: string }).executionId ?? undefined)
+      : undefined;
+  const conversationId =
+    typeof (event as { conversationId?: unknown }).conversationId === 'string'
+      ? ((event as { conversationId?: string }).conversationId ?? undefined)
+      : undefined;
+  return buildToolInstanceKey({ executionId, conversationId }, toolCallId);
 };
 
 export class ToolCallBuffer {
@@ -16,45 +26,45 @@ export class ToolCallBuffer {
     emit: (event: AgentToolUseEvent) => void,
     executing = false
   ) {
-    const toolCallId = readToolCallId(toolCall);
-    if (!toolCallId) {
+    const toolCallKey = readToolCallKey(toolCall);
+    if (!toolCallKey) {
       emit(toolCall);
       return;
     }
 
-    this.toolCallsById.set(toolCallId, toolCall);
-    if (!this.plannedIds.has(toolCallId)) {
-      this.plannedIds.add(toolCallId);
-      this.plannedOrder.push(toolCallId);
+    this.toolCallsById.set(toolCallKey, toolCall);
+    if (!this.plannedIds.has(toolCallKey)) {
+      this.plannedIds.add(toolCallKey);
+      this.plannedOrder.push(toolCallKey);
     }
 
     if (executing) {
-      this.emit(toolCallId, emit);
+      this.emit(toolCallKey, emit);
     }
   }
 
   flush(emit: (event: AgentToolUseEvent) => void) {
-    for (const toolCallId of this.plannedOrder) {
-      this.emit(toolCallId, emit);
+    for (const toolCallKey of this.plannedOrder) {
+      this.emit(toolCallKey, emit);
     }
   }
 
-  ensureEmitted(toolCallId: string | undefined, emit: (event: AgentToolUseEvent) => void) {
-    if (!toolCallId) {
+  ensureEmitted(toolCallKey: string | undefined, emit: (event: AgentToolUseEvent) => void) {
+    if (!toolCallKey) {
       return;
     }
-    this.emit(toolCallId, emit);
+    this.emit(toolCallKey, emit);
   }
 
-  private emit(toolCallId: string, emit: (event: AgentToolUseEvent) => void) {
-    if (this.emittedIds.has(toolCallId)) {
+  private emit(toolCallKey: string, emit: (event: AgentToolUseEvent) => void) {
+    if (this.emittedIds.has(toolCallKey)) {
       return;
     }
-    const toolCall = this.toolCallsById.get(toolCallId);
+    const toolCall = this.toolCallsById.get(toolCallKey);
     if (!toolCall) {
       return;
     }
-    this.emittedIds.add(toolCallId);
+    this.emittedIds.add(toolCallKey);
     emit(toolCall);
   }
 }

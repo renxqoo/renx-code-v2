@@ -1,26 +1,15 @@
 import { useEffect, useState } from 'react';
 
+import type { ReplySegment } from '../../types/chat';
 import { opencodeMarkdownSyntax } from '../../ui/opencode-markdown';
-import { uiTheme } from '../../ui/theme';
+import { MESSAGE_RAIL_BORDER_CHARS, uiTheme } from '../../ui/theme';
+import { readReplySourceMeta } from '../../utils/reply-source';
 import { getToolDisplayIcon, getToolDisplayName } from '../tool-display-config';
 import { resolveToolResultFallbackText } from './assistant-tool-result';
 import { CodeBlock, inferFiletypeFromPath, looksLikeDiff } from './code-block';
 import { parseToolSegmentMeta, type ToolSegmentGroup } from './segment-groups';
 
 const ERROR_RAIL_COLOR = '#dc2626';
-const MESSAGE_RAIL_BORDER_CHARS = {
-  topLeft: '',
-  topRight: '',
-  bottomRight: '',
-  horizontal: ' ',
-  bottomT: '',
-  topT: '',
-  cross: '',
-  leftT: '',
-  rightT: '',
-  vertical: '┃',
-  bottomLeft: '╹',
-};
 
 type AssistantToolGroupProps = {
   group: ToolSegmentGroup;
@@ -37,13 +26,14 @@ type ParsedToolUse = {
 type ParsedToolResult = {
   name: string;
   callId: string;
-  status: 'success' | 'error' | 'unknown';
+  status: 'success' | 'error' | 'timed_out' | 'unknown';
   details?: string;
   summary?: string;
   output?: string;
   payload?: unknown;
   metadata?: unknown;
   error?: string;
+  timedOut?: boolean;
 };
 
 type ToolSection = {
@@ -146,12 +136,37 @@ const parseToolUse = (content?: string, data?: unknown): ParsedToolUse | null =>
   };
 };
 
+const parseToolUseFromStreamSegments = (segments: ReplySegment[]): ParsedToolUse | null => {
+  for (const segment of segments) {
+    const data = readObject(segment.data);
+    const toolName = readString(data?.toolName);
+    const callId = readString(data?.toolCallId);
+    const rawArguments =
+      readString(data?.arguments) ?? readString(readObject(data?.data)?.arguments);
+    const args = parseToolArgumentsObject(rawArguments);
+    if (!toolName || !callId) {
+      continue;
+    }
+    return {
+      name: toolName,
+      callId,
+      command:
+        toolName === 'local_shell' && typeof args?.command === 'string' ? args.command : undefined,
+      details: rawArguments,
+      args,
+    };
+  }
+  return null;
+};
+
 const parseToolResultFromData = (value: unknown): ParsedToolResult | null => {
   const event = asObjectLike(value);
   const toolCall = asObjectLike(event?.toolCall);
   const toolFunction = asObjectLike(toolCall?.function);
   const result = asObjectLike(event?.result);
   const data = asObjectLike(result?.data);
+  const metadata = asObjectLike(data?.metadata);
+  const payload = asObjectLike(data?.payload);
   const name = typeof toolFunction?.name === 'string' ? toolFunction.name : undefined;
   const callId = typeof toolCall?.id === 'string' ? toolCall.id : undefined;
   if (!name || !callId) {
@@ -159,7 +174,19 @@ const parseToolResultFromData = (value: unknown): ParsedToolResult | null => {
   }
 
   const successValue = result?.success;
-  const status = successValue === true ? 'success' : successValue === false ? 'error' : 'unknown';
+  const timedOut =
+    (typeof metadata?.timedOut === 'boolean' ? metadata.timedOut : undefined) ??
+    (typeof metadata?.timed_out === 'boolean' ? metadata.timed_out : undefined) ??
+    (typeof payload?.timedOut === 'boolean' ? payload.timedOut : undefined) ??
+    (typeof payload?.timed_out === 'boolean' ? payload.timed_out : undefined) ??
+    false;
+  const status = timedOut
+    ? 'timed_out'
+    : successValue === true
+      ? 'success'
+      : successValue === false
+        ? 'error'
+        : 'unknown';
   const summary = typeof data?.summary === 'string' ? data.summary : undefined;
   const output = typeof data?.output === 'string' ? data.output : undefined;
   const error = typeof result?.error === 'string' ? result.error : undefined;
@@ -174,6 +201,7 @@ const parseToolResultFromData = (value: unknown): ParsedToolResult | null => {
     payload: data?.payload,
     metadata: data?.metadata,
     error,
+    timedOut,
   };
 };
 
@@ -310,6 +338,20 @@ const normalizeToolDisplayText = (value: string): string => {
   return current;
 };
 
+const getPathLeaf = (value?: string): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.replace(/\\/g, '/').trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  const segments = normalized.split('/').filter(Boolean);
+  return segments[segments.length - 1] ?? normalized;
+};
+
 const resolveSectionLanguageHint = (
   toolName: string,
   section: Pick<ToolSection, 'label' | 'tone' | 'languageHint'>
@@ -356,6 +398,17 @@ const resolveStructuredResultObject = (
 
 const formatToolName = (toolName: string): string => {
   return getToolDisplayName(toolName);
+};
+
+const isFailureStatus = (status?: ParsedToolResult['status']): boolean => {
+  return status === 'error' || status === 'timed_out';
+};
+
+const getResultSectionLabel = (status?: ParsedToolResult['status']): string => {
+  if (status === 'timed_out') {
+    return 'timeout';
+  }
+  return status === 'error' ? 'error' : 'output';
 };
 
 const stripReadFileLinePrefixes = (value: string): string => {
@@ -548,6 +601,7 @@ const buildReadFilePresentation = (
   result: ParsedToolResult | null
 ): SpecialToolPresentation | null => {
   const path = readString(args?.path);
+  const pathLeaf = getPathLeaf(path);
   const mode = readString(args?.mode) ?? 'text';
   const content = getResultBodyText(result);
   if (!content) {
@@ -556,8 +610,7 @@ const buildReadFilePresentation = (
 
   if (mode === 'image') {
     return {
-      toolLabel: formatToolName('read_file'),
-      headerDetail: path,
+      toolLabel: pathLeaf ? `Read ${pathLeaf}` : 'Read file',
       sections: [
         {
           label: 'result',
@@ -575,8 +628,7 @@ const buildReadFilePresentation = (
   const isCode = Boolean(filetype && filetype !== 'markdown' && filetype !== 'text');
 
   return {
-    toolLabel: formatToolName('read_file'),
-    headerDetail: path,
+    toolLabel: pathLeaf ? `Read ${pathLeaf}` : 'Read file',
     sections: markdownLike
       ? [
           {
@@ -614,11 +666,6 @@ const buildFileEditPresentation = (
 ): SpecialToolPresentation => {
   const path = readString(args?.path);
   const replacementCount = countEditReplacements(args);
-  const headerDetail = formatSummaryMeta([
-    path,
-    readBoolean(args?.dryRun) ? 'dry run' : 'applied',
-    formatReplacementCount(replacementCount),
-  ]);
   const bodyText = getResultBodyText(result);
   const isDiff = looksLikeDiff(bodyText);
   const sections: ToolSection[] = [];
@@ -640,7 +687,7 @@ const buildFileEditPresentation = (
 
   if (bodyText) {
     sections.push({
-      label: isDiff ? 'diff' : result?.status === 'error' ? 'error' : 'output',
+      label: isDiff ? 'diff' : getResultSectionLabel(result?.status),
       content: bodyText,
       tone: isDiff ? 'code' : 'body',
       renderKind: isDiff ? 'code' : 'text',
@@ -651,9 +698,54 @@ const buildFileEditPresentation = (
   }
 
   return {
-    toolLabel: formatToolName('file_edit'),
-    headerDetail: headerDetail ?? undefined,
+    toolLabel: buildFileEditTitle(path, {
+      dryRun: readBoolean(args?.dryRun) === true,
+      replacementCount,
+    }),
+    headerDetail: undefined,
     sections,
+  };
+};
+
+const normalizeInlineWhitespace = (value: string): string => {
+  return value.trim().replace(/\s+/g, ' ');
+};
+
+const summarizeShellCommand = (
+  rawCommand?: string
+): {
+  title?: string;
+  showCommandSection: boolean;
+} => {
+  if (!rawCommand) {
+    return {
+      title: undefined,
+      showCommandSection: false,
+    };
+  }
+
+  const normalizedRaw = normalizeInlineWhitespace(rawCommand);
+  if (!normalizedRaw) {
+    return {
+      title: undefined,
+      showCommandSection: false,
+    };
+  }
+
+  const lines = rawCommand
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const executableLines = lines.filter((line) => !line.startsWith('#'));
+  const title =
+    executableLines.length > 0
+      ? executableLines.map((line) => normalizeInlineWhitespace(line)).join(' ')
+      : normalizedRaw;
+
+  return {
+    title,
+    showCommandSection: title !== normalizedRaw,
   };
 };
 
@@ -673,7 +765,21 @@ const buildLocalShellPresentation = (
     .join('')
     .trim();
   const metadata = readObject(result?.metadata) ?? readObject(result?.payload);
+  const rawCommand = readString(args?.command);
+  const commandSummary = summarizeShellCommand(rawCommand);
   const sections: ToolSection[] = [];
+
+  if (rawCommand && commandSummary.showCommandSection) {
+    sections.push({
+      label: 'command',
+      content: rawCommand,
+      tone: 'code',
+      renderKind: 'code',
+      languageHint: 'bash',
+      showLabel: true,
+      collapsible: true,
+    });
+  }
 
   if (stdout) {
     sections.push(inferShellStreamSection('stdout', stdout));
@@ -685,7 +791,7 @@ const buildLocalShellPresentation = (
     const bodyText = getResultBodyText(result);
     if (bodyText) {
       sections.push({
-        label: result?.status === 'error' ? 'error' : 'output',
+        label: getResultSectionLabel(result?.status),
         content: bodyText,
         tone: 'code',
         renderKind: 'code',
@@ -693,14 +799,18 @@ const buildLocalShellPresentation = (
     }
   }
 
-  const headerDetail = formatSummaryMeta([
+  const headerDetailParts = [
     readString(args?.workdir),
     readNumber(metadata?.exitCode) !== undefined ? `exit ${readNumber(metadata?.exitCode)}` : null,
-  ]);
+  ].filter((value): value is string => Boolean(value));
+  const headerDetail = headerDetailParts.length > 0 ? headerDetailParts.join(' | ') : null;
+  const titleParts = [
+    commandSummary.title ? truncate(commandSummary.title, 64) : 'shell',
+    headerDetail,
+  ].filter((value): value is string => Boolean(value));
 
   return {
-    toolLabel: formatToolName('local_shell'),
-    headerDetail: headerDetail ?? undefined,
+    toolLabel: titleParts.join(' | '),
     sections,
   };
 };
@@ -722,6 +832,186 @@ const compactDetail = (value?: string, maxLength = 72): string | null => {
     return null;
   }
   return truncate(normalized, maxLength);
+};
+
+const joinTitleParts = (parts: Array<string | null | undefined>): string | undefined => {
+  const filtered = parts
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part));
+  return filtered.length > 0 ? filtered.join(' | ') : undefined;
+};
+
+const buildFileEditTitle = (
+  path?: string,
+  options?: { dryRun?: boolean; replacementCount?: number }
+): string => {
+  const pathLeaf = getPathLeaf(path);
+  return (
+    joinTitleParts([
+      `${options?.dryRun ? 'Preview edit' : 'Edit'} ${pathLeaf ?? 'file'}`,
+      formatReplacementCount(options?.replacementCount ?? 0),
+    ]) ?? (options?.dryRun ? 'Preview edit file' : 'Edit file')
+  );
+};
+
+const buildTaskTitle = (
+  toolName: string,
+  args: Record<string, unknown> | null
+): string | undefined => {
+  if (!args) {
+    return undefined;
+  }
+
+  if (toolName === 'spawn_agent') {
+    const prompt = readString(args.prompt);
+    const description = readString(args.description);
+    return joinTitleParts([
+      description ? `Start agent: ${truncate(description, 56)}` : null,
+      !description && prompt ? `Start agent: ${truncate(prompt, 56)}` : null,
+      !description && !prompt ? 'Start agent' : null,
+      readString(args.role),
+      readBoolean(args.runInBackground) ? 'background' : 'foreground',
+    ]);
+  }
+
+  if (toolName === 'agent_status') {
+    return joinTitleParts([`Inspect agent ${readString(args.agentId) ?? 'run'}`]);
+  }
+
+  if (toolName === 'wait_agents') {
+    const agentCount = readArray(args.agentIds).length;
+    return joinTitleParts([
+      agentCount > 0
+        ? `Wait for ${agentCount} agent${agentCount === 1 ? '' : 's'}`
+        : 'Wait for agents',
+      readNumber(args.timeoutMs) !== undefined
+        ? `${Math.round((readNumber(args.timeoutMs) ?? 0) / 1000)}s timeout`
+        : null,
+    ]);
+  }
+
+  if (toolName === 'cancel_agent') {
+    return joinTitleParts([`Cancel agent ${readString(args.agentId) ?? 'run'}`]);
+  }
+
+  if (toolName === 'task_create') {
+    const subject = readString(args.subject);
+    return joinTitleParts([
+      subject ? `Create task ${truncate(subject, 56)}` : 'Create task',
+      readString(args.namespace),
+    ]);
+  }
+
+  if (toolName === 'task_get') {
+    return joinTitleParts([`Inspect task ${readString(args.taskId) ?? ''}`]);
+  }
+
+  if (toolName === 'task_list') {
+    return joinTitleParts([
+      readString(args.namespace) ? `List tasks in ${readString(args.namespace)}` : 'List tasks',
+      readString(args.owner) ? `owner ${readString(args.owner)}` : null,
+      readString(args.tag) ? `tag ${readString(args.tag)}` : null,
+    ]);
+  }
+
+  if (toolName === 'task_update') {
+    return joinTitleParts([`Update task ${readString(args.taskId) ?? ''}`]);
+  }
+
+  if (toolName === 'task_stop') {
+    return joinTitleParts([
+      `Stop ${readString(args.taskId) ?? readString(args.agentId) ?? 'task'}`,
+    ]);
+  }
+
+  if (toolName === 'task_output') {
+    return joinTitleParts([
+      `Watch ${readString(args.taskId) ?? readString(args.agentId) ?? 'task'}`,
+      readBoolean(args.block) === false ? 'non-blocking' : null,
+    ]);
+  }
+
+  return undefined;
+};
+
+const buildSearchTitle = (
+  toolName: string,
+  args: Record<string, unknown> | null
+): string | undefined => {
+  if (!args) {
+    return undefined;
+  }
+
+  if (toolName === 'grep') {
+    const pattern = readString(args.pattern);
+    if (!pattern) {
+      return undefined;
+    }
+    return joinTitleParts([
+      `Search ${JSON.stringify(pattern)}`,
+      readString(args.path) ? `in ${readString(args.path)}` : null,
+    ]);
+  }
+
+  if (toolName === 'glob') {
+    const pattern = readString(args.pattern);
+    if (!pattern) {
+      return undefined;
+    }
+    return joinTitleParts([
+      `Find files ${pattern}`,
+      readString(args.path) ? `in ${readString(args.path)}` : null,
+    ]);
+  }
+
+  return undefined;
+};
+
+const summarizeUrlForTitle = (value?: string): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    const url = new URL(value);
+    const normalized = `${url.host}${url.pathname}${url.search}`;
+    return truncate(normalized, 64);
+  } catch {
+    return truncate(value, 64);
+  }
+};
+
+const buildFallbackToolTitle = (
+  toolName: string,
+  args: Record<string, unknown> | null
+): string | undefined => {
+  if (!args) {
+    return undefined;
+  }
+
+  if (toolName === 'skill') {
+    return joinTitleParts([
+      'Load skill',
+      readString(args.name) ?? readString(args.skillName) ?? null,
+    ]);
+  }
+
+  if (toolName === 'web_fetch') {
+    return joinTitleParts(['Fetch', summarizeUrlForTitle(readString(args.url))]);
+  }
+
+  if (toolName === 'web_search') {
+    return joinTitleParts(['Search web', readString(args.query) ?? readString(args.q) ?? null]);
+  }
+
+  if (toolName === 'write_file') {
+    return joinTitleParts([
+      'Write',
+      getPathLeaf(readString(args.path)) ?? readString(args.path) ?? null,
+    ]);
+  }
+
+  return undefined;
 };
 
 const formatStatusLabel = (status?: string): string | null => {
@@ -839,7 +1129,7 @@ const summarizeAgentRun = (
   };
 };
 
-const buildTaskHeaderDetail = (
+const _buildTaskHeaderDetail = (
   toolName: string,
   args: Record<string, unknown> | null
 ): string | null => {
@@ -952,7 +1242,7 @@ const buildTaskResultSections = (
     return [];
   }
 
-  if (result?.status === 'error') {
+  if (isFailureStatus(result?.status)) {
     return [
       {
         label: 'result',
@@ -1109,7 +1399,7 @@ const buildTaskResultSections = (
   ];
 };
 
-const buildSearchHeaderDetail = (
+const _buildSearchHeaderDetail = (
   toolName: string,
   args: Record<string, unknown> | null
 ): string | null => {
@@ -1221,8 +1511,8 @@ const buildSpecialToolPresentation = (
     const sections = buildTaskResultSections(toolName, parsedResult);
 
     return {
-      toolLabel: formatToolName(toolName),
-      headerDetail: buildTaskHeaderDetail(toolName, args) ?? undefined,
+      toolLabel: buildTaskTitle(toolName, args) ?? formatToolName(toolName),
+      headerDetail: undefined,
       sections,
     };
   }
@@ -1231,8 +1521,8 @@ const buildSpecialToolPresentation = (
     const sections = buildSearchResultSections(parsedResult);
 
     return {
-      toolLabel: formatToolName(toolName),
-      headerDetail: buildSearchHeaderDetail(toolName, args) ?? undefined,
+      toolLabel: buildSearchTitle(toolName, args) ?? formatToolName(toolName),
+      headerDetail: undefined,
       sections,
     };
   }
@@ -1242,11 +1532,16 @@ const buildSpecialToolPresentation = (
 
 export const AssistantToolGroup = ({ group }: AssistantToolGroupProps) => {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
-  const parsedUse = parseToolUse(group.use?.content, group.use?.data);
+  const parsedUse =
+    parseToolUse(group.use?.content, group.use?.data) ??
+    parseToolUseFromStreamSegments(group.streams);
   const parsedResult = parseToolResult(group.result?.content, group.result?.data);
   const toolName = parsedUse?.name ?? parsedResult?.name ?? 'tool';
   const commandText = parsedUse?.command;
+  const shellCommandSummary =
+    toolName === 'local_shell' ? summarizeShellCommand(commandText) : null;
   const invocationDetails = parsedUse?.details;
+  const parsedArgs = parsedUse?.args ?? parseJsonObject(parsedUse?.details);
   const icon = resolveToolIcon(toolName);
   const outputText = mergeOutputLines(group, parsedResult);
   const _hasInvocationDetails = Boolean(invocationDetails);
@@ -1257,15 +1552,18 @@ export const AssistantToolGroup = ({ group }: AssistantToolGroupProps) => {
     parsedUse,
     parsedResult
   );
-  const useCommandAsTitle = toolName === 'local_shell' && Boolean(commandText);
-  const titleDetail = useCommandAsTitle
+  const fallbackTitle = specialPresentation
     ? undefined
-    : (specialPresentation?.headerDetail ??
-      compactDetail(commandText, 64) ??
-      compactDetail(invocationDetails, 64));
-  const titleText = useCommandAsTitle
-    ? `$ ${truncate(commandText ?? '', 96)}`
-    : (specialPresentation?.toolLabel ?? formatToolName(toolName));
+    : buildFallbackToolTitle(toolName, parsedArgs);
+  const useCommandAsTitle = false;
+  const titleDetail = specialPresentation
+    ? (specialPresentation.headerDetail ?? null)
+    : fallbackTitle
+      ? null
+      : ((toolName === 'local_shell' && shellCommandSummary?.title
+          ? compactDetail(`$ ${shellCommandSummary.title}`, 64)
+          : compactDetail(commandText, 64)) ?? compactDetail(invocationDetails, 64));
+  const titleText = specialPresentation?.toolLabel ?? fallbackTitle ?? formatToolName(toolName);
   const defaultSections: ToolSection[] = [];
   if (commandText && !titleDetail && !useCommandAsTitle) {
     defaultSections.push({
@@ -1283,7 +1581,7 @@ export const AssistantToolGroup = ({ group }: AssistantToolGroupProps) => {
   }
   if (hasOutput) {
     defaultSections.push({
-      label: parsedResult?.status === 'error' ? 'error' : 'output',
+      label: getResultSectionLabel(parsedResult?.status),
       content: outputText,
       tone: 'code',
     });
@@ -1291,51 +1589,97 @@ export const AssistantToolGroup = ({ group }: AssistantToolGroupProps) => {
   const sections = specialPresentation?.sections ?? defaultSections;
   const hasBody = sections.length > 0;
   const statusText =
-    parsedResult?.status === 'success'
-      ? 'completed'
-      : parsedResult?.status === 'error'
-        ? 'error'
-        : group.result
-          ? 'finished'
-          : 'running';
+    parsedResult?.status === 'timed_out'
+      ? 'timed out'
+      : parsedResult?.status === 'success'
+        ? 'completed'
+        : parsedResult?.status === 'error'
+          ? 'error'
+          : group.result
+            ? 'finished'
+            : 'running';
   const defaultBodyExpanded =
-    parsedResult?.status === 'error' || (!group.result && sections.length > 0);
+    isFailureStatus(parsedResult?.status) || (!group.result && sections.length > 0);
   const [bodyExpanded, setBodyExpanded] = useState(defaultBodyExpanded);
   useEffect(() => {
-    setBodyExpanded(parsedResult?.status === 'error' || (!group.result && sections.length > 0));
+    setBodyExpanded(
+      isFailureStatus(parsedResult?.status) || (!group.result && sections.length > 0)
+    );
   }, [group.toolCallId]);
   const showBodyToggle = hasBody;
-  const headerRailColor = parsedResult?.status === 'error' ? ERROR_RAIL_COLOR : uiTheme.accent;
+  const headerRailColor = isFailureStatus(parsedResult?.status) ? ERROR_RAIL_COLOR : uiTheme.accent;
+  const sourceMeta =
+    group.source ??
+    readReplySourceMeta(group.use?.data) ??
+    readReplySourceMeta(group.result?.data) ??
+    group.streams.map((segment) => readReplySourceMeta(segment.data)).find(Boolean);
+  const sourceHeader =
+    sourceMeta?.isSubagent && sourceMeta.sourceLabel ? (
+      <box paddingLeft={3} paddingBottom={1} flexDirection="column">
+        <text fg={uiTheme.muted} attributes={uiTheme.typography.note}>
+          {sourceMeta.sourceLabel}
+        </text>
+        {sourceMeta.spawnedByLabel ? (
+          <text fg={uiTheme.subtle} attributes={uiTheme.typography.note}>
+            {sourceMeta.spawnedByLabel}
+          </text>
+        ) : null}
+        {sourceMeta.spawnToolCallId ? (
+          <text fg={uiTheme.subtle} attributes={uiTheme.typography.note}>
+            {`spawn call: ${sourceMeta.spawnToolCallId}`}
+          </text>
+        ) : null}
+      </box>
+    ) : null;
 
   return (
     <box flexDirection="column">
+      {sourceHeader}
       <box>
-        <box backgroundColor={uiTheme.userPromptBg} flexDirection="row">
+        <box flexDirection="row">
           <box
             border={['left']}
             borderColor={headerRailColor}
             customBorderChars={MESSAGE_RAIL_BORDER_CHARS}
           />
-          <box flexGrow={1} paddingLeft={2} paddingRight={1} paddingTop={1} paddingBottom={1}>
+          <box
+            flexGrow={1}
+            paddingLeft={2}
+            paddingRight={1}
+            paddingTop={1}
+            paddingBottom={1}
+            backgroundColor={uiTheme.userPromptBg}
+          >
             <box flexDirection="row">
-              <box flexGrow={1}>
-                <text
-                  fg={uiTheme.text}
-                  attributes={uiTheme.typography.note}
-                  wrapMode={'truncate-end' as any}
-                  onMouseUp={
-                    showBodyToggle ? () => setBodyExpanded((previous) => !previous) : undefined
-                  }
-                >
-                  {useCommandAsTitle ? null : (
-                    <>
-                      <span fg={uiTheme.accent}>{icon}</span>{' '}
-                    </>
-                  )}
-                  {titleText}
-                  {titleDetail ? <span fg={uiTheme.muted}>({titleDetail})</span> : null}
-                  <span fg={uiTheme.subtle}> ({statusText})</span>
-                </text>
+              <box flexGrow={1} flexDirection="row">
+                {useCommandAsTitle ? null : (
+                  <box paddingRight={1}>
+                    <text
+                      fg={uiTheme.accent}
+                      attributes={uiTheme.typography.note}
+                      onMouseUp={
+                        showBodyToggle ? () => setBodyExpanded((previous) => !previous) : undefined
+                      }
+                    >
+                      {icon}
+                    </text>
+                  </box>
+                )}
+                <box flexGrow={1}>
+                  <text
+                    fg={uiTheme.text}
+                    attributes={uiTheme.typography.note}
+                    wrapMode={'truncate-end' as any}
+                    onMouseUp={
+                      showBodyToggle ? () => setBodyExpanded((previous) => !previous) : undefined
+                    }
+                  >
+                    {useCommandAsTitle ? null : ' '}
+                    {titleText}
+                    {titleDetail ? <span fg={uiTheme.muted}>({titleDetail})</span> : null}
+                    <span fg={uiTheme.subtle}> ({statusText})</span>
+                  </text>
+                </box>
               </box>
               {showBodyToggle ? (
                 <text
@@ -1351,7 +1695,7 @@ export const AssistantToolGroup = ({ group }: AssistantToolGroupProps) => {
         </box>
       </box>
       {hasBody && bodyExpanded ? (
-        <box flexDirection="row" marginTop={1} paddingLeft={2}>
+        <box flexDirection="row" marginTop={1}>
           <box
             border={['left']}
             borderColor={uiTheme.divider}

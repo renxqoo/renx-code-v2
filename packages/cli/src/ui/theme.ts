@@ -1,8 +1,10 @@
 import { TextAttributes, rgbToHex } from '@opentui/core';
 
 import { resolveOpenCodeTheme, type OpenCodeThemeMode } from './open-code-theme';
+import { DEFAULT_OPEN_CODE_THEME_NAME, type OpenCodeThemeName } from './theme-name';
 
 export type UiThemeMode = OpenCodeThemeMode;
+export type UiThemeName = OpenCodeThemeName;
 type TextAttributeValue = (typeof TextAttributes)[keyof typeof TextAttributes];
 
 export type UiTheme = {
@@ -90,8 +92,12 @@ const baseTypography: UiTheme['typography'] = {
 
 const toHex = (value: Parameters<typeof rgbToHex>[0]) => rgbToHex(value).toLowerCase();
 
-const createTheme = (mode: UiThemeMode, platform: NodeJS.Platform): UiTheme => {
-  const theme = resolveOpenCodeTheme(mode, platform);
+const createTheme = (
+  mode: UiThemeMode,
+  themeName: UiThemeName,
+  platform: NodeJS.Platform
+): UiTheme => {
+  const theme = resolveOpenCodeTheme(mode, themeName, platform);
 
   return {
     bg: toHex(theme.background),
@@ -144,9 +150,30 @@ const cloneTheme = (theme: UiTheme): UiTheme => ({
   layout: { ...theme.layout },
   typography: { ...theme.typography },
 });
+export const MESSAGE_RAIL_BORDER_CHARS = {
+  topLeft: '',
+  topRight: '',
+  bottomRight: '',
+  horizontal: ' ',
+  bottomT: '',
+  topT: '',
+  cross: '',
+  leftT: '',
+  rightT: '',
+  vertical: '┃',
+  bottomLeft: '╹',
+};
+export let uiTheme: UiTheme = cloneTheme(
+  createTheme('dark', DEFAULT_OPEN_CODE_THEME_NAME, process.platform)
+);
 
-export let uiTheme: UiTheme = cloneTheme(createTheme('dark', process.platform));
+export let uiThemeName: UiThemeName = DEFAULT_OPEN_CODE_THEME_NAME;
+
+export const applyUiTheme = (themeName: UiThemeName, mode: UiThemeMode) => {
+  uiThemeName = themeName;
+  uiTheme = cloneTheme(createTheme(mode, themeName, process.platform));
+};
 
 export const applyUiThemeMode = (mode: UiThemeMode) => {
-  uiTheme = cloneTheme(createTheme(mode, process.platform));
+  applyUiTheme(uiThemeName, mode);
 };

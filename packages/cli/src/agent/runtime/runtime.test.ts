@@ -1502,6 +1502,157 @@ describe('runtime', () => {
     );
   });
 
+  it('forwards execution source metadata for subagent text and tool events', async () => {
+    const handlers: AgentEventHandlers = {
+      onTextDelta: vi.fn(),
+      onToolUse: vi.fn(),
+      onToolStream: vi.fn(),
+      onToolResult: vi.fn(),
+    };
+    const modules = buildMockModules({
+      AgentAppService: class FakeAppServiceWithSubagentEvents {
+        async listContextMessages() {
+          return [];
+        }
+
+        async getRun() {
+          return null;
+        }
+
+        async runForeground(
+          request: unknown,
+          callbacks?: {
+            onEvent?: (event: {
+              executionId: string;
+              conversationId: string;
+              eventType: string;
+              data: unknown;
+              createdAt: number;
+            }) => void | Promise<void>;
+          }
+        ) {
+          await callbacks?.onEvent?.({
+            executionId: 'exec_child',
+            conversationId: 'conv_child',
+            eventType: 'tool_call',
+            createdAt: Date.now(),
+            data: {
+              toolCalls: [
+                {
+                  id: 'call_child_1',
+                  type: 'function',
+                  function: {
+                    name: 'local_shell',
+                    arguments: JSON.stringify({ command: 'echo child' }),
+                  },
+                },
+              ],
+            },
+          });
+          await callbacks?.onEvent?.({
+            executionId: 'exec_child',
+            conversationId: 'conv_child',
+            eventType: 'reasoning_chunk',
+            createdAt: Date.now(),
+            data: {
+              reasoningContent: 'child reasoning',
+            },
+          });
+          await callbacks?.onEvent?.({
+            executionId: 'exec_child',
+            conversationId: 'conv_child',
+            eventType: 'chunk',
+            createdAt: Date.now(),
+            data: {
+              content: 'child answer',
+            },
+          });
+          await callbacks?.onEvent?.({
+            executionId: 'exec_child',
+            conversationId: 'conv_child',
+            eventType: 'tool_stream',
+            createdAt: Date.now(),
+            data: {
+              toolCallId: 'call_child_1',
+              toolName: 'local_shell',
+              chunkType: 'stdout',
+              chunk: 'child output',
+            },
+          });
+          await callbacks?.onEvent?.({
+            executionId: 'exec_child',
+            conversationId: 'conv_child',
+            eventType: 'tool_result',
+            createdAt: Date.now(),
+            data: {
+              tool_call_id: 'call_child_1',
+              content: 'child output',
+              metadata: {
+                toolResult: {
+                  success: true,
+                  summary: 'child done',
+                  output: 'child output',
+                },
+              },
+            },
+          });
+
+          return {
+            executionId: (request as { executionId?: string }).executionId ?? 'exec_runtime',
+            conversationId: 'conv_runtime',
+            messages: [],
+            events: [],
+            finishReason: 'stop' as const,
+            steps: 1,
+            run: {
+              executionId: (request as { executionId?: string }).executionId ?? 'exec_runtime',
+              runId: (request as { executionId?: string }).executionId ?? 'exec_runtime',
+              conversationId: 'conv_runtime',
+              status: 'COMPLETED' as const,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              stepIndex: 1,
+            },
+          };
+        }
+
+        async appendUserInputToRun() {
+          return { accepted: true };
+        }
+      },
+    });
+    mockGetSourceModules.mockResolvedValue(
+      modules as unknown as Awaited<ReturnType<typeof sourceModules.getSourceModules>>
+    );
+
+    await runAgentPrompt('Test prompt', handlers);
+
+    expect(handlers.onTextDelta).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionId: 'exec_child',
+        conversationId: 'conv_child',
+      })
+    );
+    expect(handlers.onToolUse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionId: 'exec_child',
+        conversationId: 'conv_child',
+      })
+    );
+    expect(handlers.onToolStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionId: 'exec_child',
+        conversationId: 'conv_child',
+      })
+    );
+    expect(handlers.onToolResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionId: 'exec_child',
+        conversationId: 'conv_child',
+      })
+    );
+  });
+
   it('stores app state under RENX_HOME by default', async () => {
     const modules = buildMockModules();
     const appStoreClass = modules.createSqliteAgentAppStore('/ignore').constructor as {
