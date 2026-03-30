@@ -22,4 +22,24 @@ describe('prompt textarea flicker regression', () => {
       })
     ).toBe(false);
   });
+
+  it('does not sync an older parent value back into a focused textarea after the user inserts text in the middle', () => {
+    expect(
+      shouldSyncPromptTextarea({
+        textareaValue: 'hello brave world',
+        nextValue: 'hello world',
+        lastUserValue: 'hello brave world',
+      })
+    ).toBe(false);
+  });
+
+  it('does not sync an older parent value back into a focused textarea after the user deletes text in the middle', () => {
+    expect(
+      shouldSyncPromptTextarea({
+        textareaValue: 'hello world',
+        nextValue: 'helloworld',
+        lastUserValue: 'hello world',
+      })
+    ).toBe(false);
+  });
 });

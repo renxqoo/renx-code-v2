@@ -93,6 +93,9 @@ describe('chat-local-replies', () => {
       const textContent = segments[1]!.content;
 
       expect(textContent).toContain('Esc - stop current response when the agent is thinking');
+      expect(textContent).toContain(
+        'Ctrl+C - copy current selection, or press twice within 1s to exit when nothing is selected'
+      );
       expect(textContent).toContain('Ctrl+L - clear conversation panel');
       expect(textContent).toContain('Use /files to attach local workspace files');
     });

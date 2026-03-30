@@ -33,6 +33,16 @@ describe('shouldSyncPromptTextarea', () => {
     ).toBe(true);
   });
 
+  it('syncs an external rewrite that does not look like a stale echo of the current user input', () => {
+    expect(
+      shouldSyncPromptTextarea({
+        textareaValue: 'hello',
+        nextValue: 'HELLO',
+        lastUserValue: 'hello',
+      })
+    ).toBe(true);
+  });
+
   it('syncs a submit-triggered clear even when the focused textarea still contains the last user input', () => {
     expect(
       shouldSyncPromptTextarea({

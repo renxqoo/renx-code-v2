@@ -20,6 +20,8 @@ import { requestExit } from './runtime/exit';
 import { copyTextToClipboard } from './runtime/clipboard';
 import { uiTheme } from './ui/theme';
 
+const EXIT_CONFIRM_WINDOW_MS = 1000;
+
 const appendFileTokens = (currentValue: string, files: PromptFileSelection[]) => {
   if (files.length === 0) {
     return currentValue;
@@ -80,54 +82,47 @@ export const App = () => {
   const dimensions = useTerminalDimensions();
   const renderer = useRenderer();
   const [copyToastVisible, setCopyToastVisible] = useState(false);
-  const selectionCopyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectedTextRef = useRef('');
   const copyToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const exitConfirmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const exitConfirmArmedRef = useRef(false);
   const fullAccessModeEnabled = isFullAccessModeEnabled();
+
+  const clearExitConfirm = useCallback(() => {
+    exitConfirmArmedRef.current = false;
+    if (exitConfirmTimeoutRef.current) {
+      clearTimeout(exitConfirmTimeoutRef.current);
+      exitConfirmTimeoutRef.current = null;
+    }
+  }, []);
+
+  const showCopyToast = useCallback(() => {
+    setCopyToastVisible(true);
+    if (copyToastTimeoutRef.current) {
+      clearTimeout(copyToastTimeoutRef.current);
+    }
+    copyToastTimeoutRef.current = setTimeout(() => {
+      setCopyToastVisible(false);
+      copyToastTimeoutRef.current = null;
+    }, 1500);
+  }, []);
 
   useEffect(() => {
     const handleSelection = (selection: Selection) => {
-      const selectedText = selection.getSelectedText();
-      if (!selectedText) {
-        return;
-      }
-
-      if (selectionCopyTimeoutRef.current) {
-        clearTimeout(selectionCopyTimeoutRef.current);
-      }
-
-      selectionCopyTimeoutRef.current = setTimeout(() => {
-        void copyTextToClipboard(selectedText, renderer).then((success) => {
-          if (!success) {
-            return;
-          }
-
-          setCopyToastVisible(true);
-          if (copyToastTimeoutRef.current) {
-            clearTimeout(copyToastTimeoutRef.current);
-          }
-          copyToastTimeoutRef.current = setTimeout(() => {
-            setCopyToastVisible(false);
-            copyToastTimeoutRef.current = null;
-          }, 1500);
-        });
-        selectionCopyTimeoutRef.current = null;
-      }, 80);
+      selectedTextRef.current = selection.getSelectedText();
     };
 
     renderer.on('selection', handleSelection);
 
     return () => {
       renderer.off('selection', handleSelection);
-      if (selectionCopyTimeoutRef.current) {
-        clearTimeout(selectionCopyTimeoutRef.current);
-        selectionCopyTimeoutRef.current = null;
-      }
+      clearExitConfirm();
       if (copyToastTimeoutRef.current) {
         clearTimeout(copyToastTimeoutRef.current);
         copyToastTimeoutRef.current = null;
       }
     };
-  }, [renderer]);
+  }, [clearExitConfirm, renderer]);
 
   useEffect(() => {
     if (!isThinking) {
@@ -170,7 +165,28 @@ export const App = () => {
 
   useKeyboard((key) => {
     if (key.ctrl && key.name === 'c') {
-      requestExit(0);
+      const selectedText = selectedTextRef.current;
+      if (selectedText) {
+        clearExitConfirm();
+        void copyTextToClipboard(selectedText, renderer).then((success) => {
+          if (success) {
+            showCopyToast();
+          }
+        });
+        return;
+      }
+
+      if (exitConfirmArmedRef.current) {
+        clearExitConfirm();
+        requestExit(0);
+        return;
+      }
+
+      exitConfirmArmedRef.current = true;
+      exitConfirmTimeoutRef.current = setTimeout(() => {
+        exitConfirmArmedRef.current = false;
+        exitConfirmTimeoutRef.current = null;
+      }, EXIT_CONFIRM_WINDOW_MS);
       return;
     }
 

@@ -36,6 +36,7 @@ export const buildHelpSegments = (turnId: number): LocalReplySegment[] => {
         '',
         'Keyboard shortcuts:',
         'Esc - stop current response when the agent is thinking',
+        'Ctrl+C - copy current selection, or press twice within 1s to exit when nothing is selected',
         'Ctrl+L - clear conversation panel',
         'Use /files to attach local workspace files',
         'Use @/path to search and attach files inline',
