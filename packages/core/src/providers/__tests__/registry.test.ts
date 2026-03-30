@@ -107,7 +107,7 @@ describe('ProviderRegistry', () => {
       expect(
         Object.fromEntries(modelsWithThinking.map((config) => [config.id, config.thinking]))
       ).toMatchObject({
-        'glm-5.1': true,
+        'glm-5.1': false,
         'kimi-k2.5': false,
         'minimax-2.7': true,
         'minimax-2.5': true,
