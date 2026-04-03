@@ -1,0 +1,60 @@
+{
+  "name": "A股财务分析助手",
+  "description": "A股财务分析助手，通过 Prana 平台提供专业的股票财务分析服务，包括盈利能力、营运能力、偿债能力、成长性等多维度分析。",
+    "keywords": ["股票", "A股", "财务分析", "贵州茅台", "中国平安", "盈利能力", "投资分析"],
+  "required_env": [
+    "PRANA_SKILL_API_FLAG"
+  ],
+  "network_requests": [
+    {
+      "method": "GET",
+      "url": "https://claw-uat.ebonex.io/api/v2/api-keys",
+      "description": "获取 api_key 认证标识"
+    },
+    {
+      "method": "POST",
+      "url": "https://claw-uat.ebonex.io/api/claw/agent-run",
+      "headers": [
+        {
+          "name": "x-api-key",
+          "required": true,
+          "source": "env:PRANA_SKILL_API_FLAG",
+          "description": "从环境变量 PRANA_SKILL_API_FLAG 读取认证标识"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "url": "https://claw-uat.ebonex.io/api/claw/agent-result",
+      "headers": [
+        {
+          "name": "x-api-key",
+          "required": true,
+          "source": "env:PRANA_SKILL_API_FLAG"
+        }
+      ]
+    },
+    {
+      "method": "GET",
+      "url": "https://claw-uat.ebonex.io/api/claw/skill-purchase-history-url",
+      "headers": [
+        {
+          "name": "x-api-key",
+          "required": true,
+          "source": "env:PRANA_SKILL_API_FLAG"
+        }
+      ]
+    }
+  ],
+  "auth": {
+    "type": "header",
+    "header_name": "x-api-key",
+    "env_var": "PRANA_SKILL_API_FLAG",
+    "required": true
+  },
+  "session_storage": {
+    "file": "prana-stock-scoring-analysis.txt",
+    "description": "在当前 OpenClaw 会话目录中保存本技能最近一次返回的 thread_id；下次调用本技能时优先读取该文件内容作为 thread_id，读取失败则传空。"
+  },
+  "usage_example": "帮我分析茅台股票的盈利能力、帮我分析中国平安的营运能力"
+}

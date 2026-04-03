@@ -220,11 +220,11 @@ export async function getUploadUrl(
   return JSON.parse(rawText) as GetUploadUrlResp;
 }
 
-/** Send a single message downstream. */
+/** Send a single message downstream. Returns parsed response body. */
 export async function sendMessage(
   params: WeixinApiOptions & { body: SendMessageReq },
-): Promise<void> {
-  await apiPostFetch({
+): Promise<Record<string, unknown>> {
+  const rawText = await apiPostFetch({
     baseUrl: params.baseUrl,
     endpoint: "ilink/bot/sendmessage",
     body: JSON.stringify({ ...params.body, base_info: buildBaseInfo() }),
@@ -232,6 +232,30 @@ export async function sendMessage(
     timeoutMs: params.timeoutMs ?? DEFAULT_API_TIMEOUT_MS,
     label: "sendMessage",
   });
+
+  // Parse response and check for business-level errors
+  try {
+    const resp = JSON.parse(rawText) as Record<string, unknown>;
+    if (resp.ret !== undefined && resp.ret !== 0) {
+      throw new Error(
+        `sendMessage business error: ret=${resp.ret} errcode=${resp.errcode ?? ""} errmsg=${resp.errmsg ?? ""}`,
+      );
+    }
+    if (resp.errcode !== undefined && resp.errcode !== 0) {
+      throw new Error(
+        `sendMessage business error: ret=${resp.ret ?? ""} errcode=${resp.errcode} errmsg=${resp.errmsg ?? ""}`,
+      );
+    }
+    return resp;
+  } catch (parseErr) {
+    // If parseErr is our own business-error throw, re-throw it
+    if (parseErr instanceof Error && parseErr.message.startsWith("sendMessage business error")) {
+      throw parseErr;
+    }
+    // Otherwise JSON parse failed — non-fatal, return empty object
+    logger.warn(`sendMessage: could not parse response as JSON: ${String(parseErr)}`);
+    return {};
+  }
 }
 
 /** Fetch bot config (includes typing_ticket) for a given user. */
